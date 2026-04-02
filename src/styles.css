@@ -17,22 +17,20 @@ body {
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.92);
+  background: #000000;
   color: #fff;
-  border-radius: 22px;
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 0 0 22px 22px;
   cursor: pointer;
   overflow: hidden;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border: none;
 }
 
-/* Collapsed pill */
+/* Collapsed pill — width driven by JS via CSS custom property */
 .island.collapsed {
-  width: 220px;
+  width: var(--pill-width, 200px);
   height: 36px;
-  margin-top: 4px;
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              height 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .island.collapsed .detail {
@@ -41,10 +39,11 @@ body {
 
 /* Expanded */
 .island.expanded {
-  width: 280px;
+  width: 300px;
   height: 400px;
-  margin-top: 4px;
-  border-radius: 20px;
+  border-radius: 0 0 20px 20px;
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              height 0.35s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
 }
 
 .island.expanded .pill {
@@ -98,6 +97,12 @@ body {
 
 .status-dot.idle {
   background: #4ade80;
+}
+
+/* Disconnected state */
+.status-dot.disconnected {
+  background: #6b7280;
+  animation: pulse 2s ease-in-out infinite;
 }
 
 .status-text {
@@ -250,6 +255,17 @@ body {
 .history-meta {
   flex-shrink: 0;
   color: rgba(255, 255, 255, 0.3);
+}
+
+/* Completion flash */
+@keyframes completion-flash {
+  0% { background: #000000; }
+  15% { background: #0a2a0a; }
+  100% { background: #000000; }
+}
+
+.island.flash-complete {
+  animation: completion-flash 0.6s ease-out;
 }
 
 /* Animations */

@@ -1,8 +1,12 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 const MAX_HISTORY: usize = 50;
+
+/// File-level mutex to prevent concurrent read-modify-write races
+static HISTORY_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -20,12 +24,14 @@ fn history_path() -> PathBuf {
 }
 
 pub fn save_entry(entry: HistoryEntry) {
+    let _guard = HISTORY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     let path = history_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    let mut entries = load_entries();
+    let mut entries = load_entries_inner(&path);
     entries.push(entry);
 
     // Keep only the last MAX_HISTORY entries
@@ -39,8 +45,12 @@ pub fn save_entry(entry: HistoryEntry) {
 }
 
 pub fn load_entries() -> Vec<HistoryEntry> {
-    let path = history_path();
-    match std::fs::read_to_string(&path) {
+    let _guard = HISTORY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    load_entries_inner(&history_path())
+}
+
+fn load_entries_inner(path: &PathBuf) -> Vec<HistoryEntry> {
+    match std::fs::read_to_string(path) {
         Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
         Err(_) => Vec::new(),
     }

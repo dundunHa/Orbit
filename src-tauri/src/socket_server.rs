@@ -1,10 +1,11 @@
+use std::sync::atomic::Ordering;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::sync::oneshot;
 use tauri::Emitter;
 
 use crate::history;
-use crate::state::{HookPayload, PendingPermission, PermissionDecision, Session, SessionMap, PendingPermissions};
+use crate::state::{ConnectionCount, HookPayload, PendingPermission, PermissionDecision, Session, SessionMap, PendingPermissions};
 
 const SOCKET_PATH: &str = "/tmp/orbit.sock";
 
@@ -12,6 +13,7 @@ pub async fn start(
     app_handle: tauri::AppHandle,
     sessions: SessionMap,
     pending: PendingPermissions,
+    conn_count: ConnectionCount,
 ) {
     // Remove stale socket
     let _ = std::fs::remove_file(SOCKET_PATH);
@@ -30,9 +32,23 @@ pub async fn start(
                 let sessions = sessions.clone();
                 let pending = pending.clone();
                 let handle = app_handle.clone();
+                let conn_count = conn_count.clone();
+
+                // Increment connection count
+                let count = conn_count.fetch_add(1, Ordering::Relaxed) + 1;
+                let _ = handle.emit("connection-count", count);
 
                 tauri::async_runtime::spawn(async move {
                     handle_connection(stream, sessions, pending, &handle).await;
+
+                    // Decrement connection count when done (guard against underflow)
+                    let prev = conn_count.load(Ordering::Relaxed);
+                    let count = if prev > 0 {
+                        conn_count.fetch_sub(1, Ordering::Relaxed) - 1
+                    } else {
+                        0
+                    };
+                    let _ = handle.emit("connection-count", count);
                 });
             }
             Err(e) => {
@@ -78,7 +94,7 @@ async fn handle_connection(
     let is_session_end = payload.hook_event_name == "SessionEnd";
 
     // Update session state
-    {
+    let history_entry = {
         let mut sessions = sessions.lock().await;
         let session = sessions
             .entry(payload.session_id.clone())
@@ -95,18 +111,25 @@ async fn handle_connection(
         // Emit update to frontend
         let _ = app_handle.emit("session-update", session.clone());
 
-        // Save history on session end
+        // Prepare history entry (but don't write yet — avoid sync IO inside async lock)
         if is_session_end {
             let duration = (session.last_event_at - session.started_at).num_seconds().max(0);
-            history::save_entry(history::HistoryEntry {
+            Some(history::HistoryEntry {
                 session_id: session.id.clone(),
                 cwd: session.cwd.clone(),
                 started_at: session.started_at,
                 ended_at: session.last_event_at,
                 tool_count: session.tool_count,
                 duration_secs: duration,
-            });
+            })
+        } else {
+            None
         }
+    };
+
+    // Write history outside the lock to avoid blocking tokio worker
+    if let Some(entry) = history_entry {
+        history::save_entry(entry);
     }
 
     // Handle permission request: wait for user decision
@@ -167,7 +190,14 @@ async fn handle_connection(
                     }),
                     _ => {
                         // "ask" = let Claude Code handle it normally
-                        // Still need to close cleanly so orbit-cli doesn't hang
+                        let ask_response = serde_json::json!({
+                            "hookSpecificOutput": {
+                                "hookEventName": "PermissionRequest",
+                                "decision": { "behavior": "ask" }
+                            }
+                        });
+                        let response_bytes = serde_json::to_vec(&ask_response).unwrap_or_default();
+                        let _ = writer.write_all(&response_bytes).await;
                         return;
                     }
                 };
@@ -176,9 +206,10 @@ async fn handle_connection(
                 let _ = writer.write_all(&response_bytes).await;
             }
             _ => {
-                // Timeout or error, remove pending
+                // Timeout or error, remove pending and notify frontend
                 let mut pending = pending.lock().await;
                 pending.remove(&perm_id);
+                let _ = app_handle.emit("permission-timeout", &perm_id);
             }
         }
     }

@@ -8,12 +8,13 @@
   },
   "app": {
     "macOSPrivateApi": true,
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
         "title": "Orbit",
-        "width": 300,
-        "height": 44,
+        "width": 320,
+        "height": 36,
         "x": 0,
         "y": 0,
         "transparent": true,

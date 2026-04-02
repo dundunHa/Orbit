@@ -23,22 +23,25 @@ pub fn run() {
             let app_state = state::AppState::new();
             app.manage(app_state.sessions.clone());
             app.manage(app_state.pending_permissions.clone());
+            app.manage(app_state.connection_count.clone());
 
             let handle = app.handle().clone();
 
             // Position window at notch
             if let Some(window) = app.get_webview_window("main") {
-                let (x, y) = notch::get_notch_position();
-                let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+                let (x, y, _notch_height, screen_width) = notch::get_notch_position(320.0);
+                let _ = commands::SCREEN_WIDTH.set(screen_width);
+                let _ = window.set_position(tauri::LogicalPosition::new(x, y));
                 let _ = window.show();
             }
 
             // Start socket server in background
             let sessions = app_state.sessions.clone();
             let pending = app_state.pending_permissions.clone();
+            let conn_count = app_state.connection_count.clone();
             let app_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
-                socket_server::start(app_handle, sessions, pending).await;
+                socket_server::start(app_handle, sessions, pending, conn_count).await;
             });
 
             // Start anomaly detector

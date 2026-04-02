@@ -1,5 +1,5 @@
 #[cfg(target_os = "macos")]
-pub fn get_notch_position() -> (i32, i32) {
+pub fn get_notch_position(pill_width: f64) -> (f64, f64, f64, f64) {
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSScreen;
 
@@ -23,29 +23,30 @@ pub fn get_notch_position() -> (i32, i32) {
 
         if let Some(screen) = screen {
             let frame = screen.frame();
-            let scale = screen.backingScaleFactor();
+            let screen_width = frame.size.width; // Already in logical points
 
-            let screen_width_px = (frame.size.width * scale) as i32;
-            let pill_width_px = (300.0 * scale) as i32;
-
-            let x = (screen_width_px - pill_width_px) / 2;
-
-            let y = if best_inset_top > 0.0 {
-                // Notch exists: position a few physical pixels from top
-                (2.0 * scale) as i32
+            let notch_height = if best_inset_top > 0.0 {
+                best_inset_top
             } else {
-                0
+                28.0 // Fallback for non-notch screens (menu bar height)
             };
 
-            return (x, y);
+            let x = (screen_width - pill_width) / 2.0;
+            let y = 0.0; // Flush with top of screen to fuse with notch
+
+            return (x, y, notch_height, screen_width);
         }
     }
 
-    // Fallback
-    (560, 0)
+    // Fallback: center on assumed 1440pt wide screen
+    let screen_width = 1440.0;
+    let x = (screen_width - pill_width) / 2.0;
+    (x, 0.0, 28.0, screen_width)
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn get_notch_position() -> (i32, i32) {
-    (560, 0)
+pub fn get_notch_position(pill_width: f64) -> (f64, f64, f64, f64) {
+    let screen_width = 1440.0;
+    let x = (screen_width - pill_width) / 2.0;
+    (x, 0.0, 28.0, screen_width)
 }

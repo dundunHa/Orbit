@@ -8,7 +8,8 @@ const { invoke } = window.__TAURI__.core;
 let sessions = {};   // All sessions keyed by session_id
 let activeSessionId = null;
 let isExpanded = false;
-let currentPermId = null;
+let isAnimating = false; // IMPL-06: animation lock
+const pendingPerms = new Map(); // IMPL-05: Map<permId, {sessionId, toolName, toolInput}>
 
 // DOM elements
 const island = document.getElementById('island');
@@ -32,6 +33,24 @@ const STATUS_PRIORITY = {
   'WaitingForInput': 1,
   'Ended': 0,
 };
+
+// Dynamic pill widths per status
+const STATUS_WIDTH = {
+  'WaitingForApproval': 260,
+  'Anomaly': 240,
+  'RunningTool': 220,
+  'Processing': 200,
+  'Compacting': 200,
+  'WaitingForInput': 180,
+  'Ended': 180,
+};
+
+// IMPL-06: unlock animation on transitionend (only for island itself, not children)
+island.addEventListener('transitionend', (e) => {
+  if (e.target === island) {
+    isAnimating = false;
+  }
+});
 
 // Initialize: load existing sessions
 async function init() {
@@ -67,17 +86,41 @@ function selectActiveSession() {
 // Listen for session updates from Rust backend
 listen('session-update', (event) => {
   const session = event.payload;
+  const prev = sessions[session.id];
   sessions[session.id] = session;
+
+  // IMPL-04: Stop event → completion flash
+  if (prev && prev.status.type !== 'WaitingForInput' && prev.status.type !== 'Ended'
+      && (session.status.type === 'WaitingForInput' || session.status.type === 'Ended')) {
+    island.classList.add('flash-complete');
+    setTimeout(() => island.classList.remove('flash-complete'), 600);
+  }
+
   selectActiveSession();
 });
 
 // Listen for permission requests
 listen('permission-request', (event) => {
-  const { perm_id, tool_name, tool_input } = event.payload;
-  currentPermId = perm_id;
-  showPermission(tool_name, tool_input);
+  const { perm_id, session_id, tool_name, tool_input } = event.payload;
+  pendingPerms.set(perm_id, { sessionId: session_id, toolName: tool_name, toolInput: tool_input });
+  showPermission(tool_name, tool_input, perm_id);
   if (!isExpanded) {
     expandIsland();
+  }
+});
+
+// Listen for permission timeout — clean up stale UI
+listen('permission-timeout', (event) => {
+  const permId = event.payload;
+  pendingPerms.delete(permId);
+  if (permissionSection.dataset.permId === permId) {
+    if (pendingPerms.size > 0) {
+      const [nextId, next] = pendingPerms.entries().next().value;
+      showPermission(next.toolName, next.toolInput, nextId);
+    } else {
+      permissionSection.style.display = 'none';
+      delete permissionSection.dataset.permId;
+    }
   }
 });
 
@@ -86,6 +129,12 @@ function updateUI(session) {
 
   const status = session.status;
   const statusType = status.type;
+
+  // IMPL-04: dynamic pill width based on status
+  if (!isExpanded) {
+    const width = STATUS_WIDTH[statusType] || 200;
+    island.style.setProperty('--pill-width', width + 'px');
+  }
 
   // Update dot color
   statusDot.className = 'status-dot';
@@ -100,7 +149,7 @@ function updateUI(session) {
       break;
     case 'WaitingForApproval':
       statusDot.classList.add('waiting-approval');
-      statusText.textContent = 'Needs approval: ' + escapeText(status.tool_name);
+      statusText.textContent = 'Needs approval: ' + (status.tool_name || '');
       break;
     case 'Anomaly':
       statusDot.classList.add('anomaly');
@@ -132,10 +181,17 @@ function updateUI(session) {
     detailTools.textContent = session.tool_count + ' tool calls this session';
   }
 
-  // Hide permission section if no longer waiting
+  // Hide permission section if no pending perms for active session
   if (statusType !== 'WaitingForApproval') {
-    permissionSection.style.display = 'none';
-    currentPermId = null;
+    // Clean up resolved perms for this session
+    for (const [pid, p] of pendingPerms) {
+      if (p.sessionId === session.id) {
+        pendingPerms.delete(pid);
+      }
+    }
+    if (pendingPerms.size === 0) {
+      permissionSection.style.display = 'none';
+    }
   }
 }
 
@@ -149,12 +205,13 @@ function formatTool(toolName, description) {
     case 'Grep': return 'Searching code...';
     case 'Glob': return 'Finding files...';
     case 'Agent': return 'Running agent...';
-    default: return 'Running ' + escapeText(toolName) + '...';
+    default: return 'Running ' + (toolName || '') + '...';
   }
 }
 
-function showPermission(toolName, toolInput) {
+function showPermission(toolName, toolInput, permId) {
   permissionSection.style.display = 'block';
+  permissionSection.dataset.permId = permId;
   let desc = toolName || 'Unknown';
   if (toolInput && typeof toolInput === 'object') {
     if (toolInput.command) {
@@ -168,17 +225,26 @@ function showPermission(toolName, toolInput) {
 }
 
 async function handlePermission(decision) {
-  if (!currentPermId) return;
+  const permId = permissionSection.dataset.permId;
+  if (!permId) return;
   await invoke('permission_decision', {
-    permId: currentPermId,
+    perm_id: permId,
     decision: decision,
     reason: null,
   });
+  pendingPerms.delete(permId);
   permissionSection.style.display = 'none';
-  currentPermId = null;
+  delete permissionSection.dataset.permId;
+
+  // Show next pending perm if any
+  if (pendingPerms.size > 0) {
+    const [nextId, next] = pendingPerms.entries().next().value;
+    showPermission(next.toolName, next.toolInput, nextId);
+  }
 }
 
 function toggleExpand() {
+  if (isAnimating) return; // IMPL-06: prevent rapid clicks
   if (isExpanded) {
     collapseIsland();
   } else {
@@ -187,6 +253,8 @@ function toggleExpand() {
 }
 
 async function expandIsland() {
+  if (isAnimating) return;
+  isAnimating = true;
   isExpanded = true;
   island.classList.remove('collapsed');
   island.classList.add('expanded');
@@ -208,6 +276,8 @@ async function expandIsland() {
 }
 
 async function collapseIsland() {
+  if (isAnimating) return;
+  isAnimating = true;
   isExpanded = false;
   island.classList.remove('expanded');
   island.classList.add('collapsed');
@@ -250,10 +320,24 @@ function formatDuration(secs) {
   return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
 }
 
-function escapeText(str) {
-  if (!str) return '';
-  return str;
-}
+// Connection state tracking (IMPL-07)
+let isConnected = false;
+
+listen('connection-count', (event) => {
+  const count = event.payload;
+  isConnected = count > 0;
+  // Only show disconnected state if no active (non-ended) sessions exist
+  if (!isConnected && !isExpanded) {
+    const hasActiveSessions = Object.values(sessions).some(
+      s => s.status.type !== 'Ended'
+    );
+    if (!hasActiveSessions) {
+      statusDot.className = 'status-dot disconnected';
+      statusText.textContent = 'No active connections';
+      island.style.setProperty('--pill-width', '200px');
+    }
+  }
+});
 
 // Boot
 init();

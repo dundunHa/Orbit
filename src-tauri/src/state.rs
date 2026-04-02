@@ -28,16 +28,6 @@ pub enum SessionStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionEvent {
-    pub event_name: String,
-    pub timestamp: DateTime<Utc>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_input: Option<Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
     pub cwd: String,
@@ -78,6 +68,7 @@ pub struct HookPayload {
 }
 
 /// Pending permission request waiting for user decision
+#[allow(dead_code)]
 pub struct PendingPermission {
     pub session_id: String,
     pub tool_name: String,
@@ -94,10 +85,12 @@ pub struct PermissionDecision {
 
 pub type SessionMap = Arc<Mutex<HashMap<String, Session>>>;
 pub type PendingPermissions = Arc<Mutex<HashMap<String, PendingPermission>>>;
+pub type ConnectionCount = Arc<std::sync::atomic::AtomicU32>;
 
 pub struct AppState {
     pub sessions: SessionMap,
     pub pending_permissions: PendingPermissions,
+    pub connection_count: ConnectionCount,
 }
 
 impl AppState {
@@ -105,6 +98,7 @@ impl AppState {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
+            connection_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
         }
     }
 }

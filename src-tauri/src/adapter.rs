@@ -2,12 +2,14 @@ use serde_json::Value;
 
 use crate::state::HookPayload;
 
+#[allow(dead_code)]
 pub trait CliAdapter: Send + Sync {
     fn name(&self) -> &str;
     fn parse_event(&self, raw: &Value) -> Option<HookPayload>;
     fn format_status(&self, tool_name: &str, tool_input: &Option<Value>) -> String;
 }
 
+#[allow(dead_code)]
 pub struct ClaudeCodeAdapter;
 
 impl CliAdapter for ClaudeCodeAdapter {
