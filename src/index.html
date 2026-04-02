@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="island" class="island collapsed" onclick="toggleExpand()">
+    <!-- Collapsed pill view -->
+    <div class="pill">
+      <div class="status-dot"></div>
+      <span class="status-text">Waiting...</span>
+      <span class="tool-count"></span>
+    </div>
+
+    <!-- Expanded detail view -->
+    <div class="detail">
+      <div class="detail-header">
+        <span class="session-cwd"></span>
+        <span class="close-btn" onclick="event.stopPropagation(); collapseIsland()">×</span>
+      </div>
+      <div class="detail-status"></div>
+      <div class="detail-tools"></div>
+
+      <!-- Permission approval -->
+      <div class="permission-section" style="display:none">
+        <div class="permission-tool"></div>
+        <div class="permission-actions">
+          <button class="btn-allow" onclick="event.stopPropagation(); handlePermission('allow')">Allow</button>
+          <button class="btn-deny" onclick="event.stopPropagation(); handlePermission('deny')">Deny</button>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div class="history-section">
+        <div class="history-title">Recent Sessions</div>
+        <div class="history-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
