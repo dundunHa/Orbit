@@ -10,6 +10,8 @@ let activeSessionId = null;
 let isExpanded = false;
 let isAnimating = false; // IMPL-06: animation lock
 const pendingPerms = new Map(); // IMPL-05: Map<permId, {sessionId, toolName, toolInput}>
+let recentHistoryEntries = [];
+let expandedHeightFrame = null;
 
 // Notch geometry (set during init)
 let notchInfo = {
@@ -31,11 +33,14 @@ const statusText = document.querySelector('.status-text');
 const sessionCwd = document.querySelector('.session-cwd');
 const detailStatus = document.querySelector('.detail-status');
 const detailTools = document.querySelector('.detail-tools');
+const activeSummary = document.querySelector('.active-summary');
 const permissionSection = document.querySelector('.permission-section');
 const permissionTool = document.querySelector('.permission-tool');
 const historyList = document.querySelector('.history-list');
 const mascot = document.querySelector('.mascot');
 const DEFAULT_PROVIDER = 'claude-code';
+const MIN_EXPANDED_HEIGHT = 168;
+const MAX_EXPANDED_HEIGHT = 320;
 
 // Status priority for selecting which session to display
 const STATUS_PRIORITY = {
@@ -73,6 +78,7 @@ async function init() {
   const root = document.documentElement;
   root.style.setProperty('--notch-height', notchInfo.notch_height + 'px');
   root.style.setProperty('--pill-width', notchInfo.pill_width + 'px');
+  root.style.setProperty('--expanded-height', MAX_EXPANDED_HEIGHT + 'px');
 
   const layout = computePillLayout(notchInfo);
   root.style.setProperty('--notch-width', layout.centerWidth + 'px');
@@ -127,22 +133,84 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function selectActiveSession() {
-  let best = null;
-  let bestPriority = -1;
+function getSessionPriority(session) {
+  return STATUS_PRIORITY[session.status.type] ?? -1;
+}
 
-  for (const s of Object.values(sessions)) {
-    const prio = STATUS_PRIORITY[s.status.type] || 0;
-    if (prio > bestPriority || (prio === bestPriority && (!best || s.last_event_at > best.last_event_at))) {
-      best = s;
-      bestPriority = prio;
-    }
+function getSessionTimestamp(session) {
+  const timestamp = Date.parse(session.last_event_at || '');
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compareSessions(a, b) {
+  const priorityDiff = getSessionPriority(b) - getSessionPriority(a);
+  if (priorityDiff !== 0) return priorityDiff;
+  return getSessionTimestamp(b) - getSessionTimestamp(a);
+}
+
+function getActiveSessions() {
+  return Object.values(sessions)
+    .filter((session) => session.status.type !== 'Ended')
+    .sort(compareSessions);
+}
+
+function formatOtherActiveSummary(count) {
+  return count === 1 ? '另外 1 个活动会话' : `另外 ${count} 个活动会话`;
+}
+
+function getVisibleRecentCount() {
+  return recentHistoryEntries.length;
+}
+
+function computeExpandedHeight() {
+  const activeCount = getActiveSessions().length;
+  const recentCount = getVisibleRecentCount();
+  const hasPermission = permissionSection.style.display !== 'none';
+
+  let height = notchInfo.notch_height;
+  height += 92; // detail padding + header
+  height += activeCount > 0 ? 62 : 46; // active block
+  height += recentCount > 0 ? 26 + recentCount * 24 : 44; // recent block or empty state
+
+  if (hasPermission) {
+    height += 82;
   }
+
+  return Math.max(MIN_EXPANDED_HEIGHT, Math.min(MAX_EXPANDED_HEIGHT, Math.ceil(height)));
+}
+
+function scheduleExpandedHeightSync() {
+  if (!isExpanded) return;
+
+  if (expandedHeightFrame) {
+    cancelAnimationFrame(expandedHeightFrame);
+  }
+
+  expandedHeightFrame = requestAnimationFrame(async () => {
+    expandedHeightFrame = null;
+    const height = computeExpandedHeight();
+    document.documentElement.style.setProperty('--expanded-height', `${height}px`);
+
+    try {
+      await invoke('set_expanded_height', { height });
+    } catch (e) {
+      console.error('Failed to sync expanded height:', e);
+    }
+  });
+}
+
+function selectActiveSession() {
+  const activeSessions = getActiveSessions();
+  const best = activeSessions[0] || null;
 
   if (best) {
     activeSessionId = best.id;
     updateUI(best);
+    return;
   }
+
+  activeSessionId = null;
+  updateUI(null);
 }
 
 // Listen for session updates from Rust backend
@@ -159,6 +227,10 @@ listen('session-update', (event) => {
   }
 
   selectActiveSession();
+
+  if (isExpanded && prev?.status.type !== 'Ended' && session.status.type === 'Ended') {
+    refreshRecentHistory();
+  }
 });
 
 // Listen for permission requests
@@ -168,6 +240,8 @@ listen('permission-request', (event) => {
   showPermission(tool_name, tool_input, perm_id);
   if (!isExpanded) {
     expandIsland();
+  } else {
+    scheduleExpandedHeightSync();
   }
 });
 
@@ -182,12 +256,30 @@ listen('permission-timeout', (event) => {
     } else {
       permissionSection.style.display = 'none';
       delete permissionSection.dataset.permId;
+      scheduleExpandedHeightSync();
     }
   }
 });
 
 function updateUI(session) {
-  if (!session) return;
+  if (!session) {
+    statusDot.className = 'status-dot';
+    setMascotVariant(null, 'WaitingForInput');
+    sessionCwd.textContent = 'No active session';
+    detailStatus.textContent = 'No active sessions';
+    detailTools.textContent = '';
+    activeSummary.textContent = '';
+
+    if (isConnected) {
+      statusDot.classList.add('ended');
+      statusText.textContent = 'No active';
+    } else {
+      statusDot.classList.add('disconnected');
+      statusText.textContent = 'No connections';
+    }
+    scheduleExpandedHeightSync();
+    return;
+  }
 
   const status = session.status;
   const statusType = status.type;
@@ -231,10 +323,13 @@ function updateUI(session) {
 
   // Detail view
   if (isExpanded) {
+    const activeSessions = getActiveSessions();
+    const otherActiveCount = Math.max(0, activeSessions.length - 1);
     const cwdShort = session.cwd.split('/').slice(-2).join('/');
     sessionCwd.textContent = cwdShort;
     detailStatus.textContent = statusText.textContent;
     detailTools.textContent = session.tool_count + ' tool calls this session';
+    activeSummary.textContent = otherActiveCount > 0 ? formatOtherActiveSummary(otherActiveCount) : '';
   }
 
   // Hide permission section if no pending perms for active session
@@ -248,6 +343,8 @@ function updateUI(session) {
       permissionSection.style.display = 'none';
     }
   }
+
+  scheduleExpandedHeightSync();
 }
 
 function setMascotVariant(toolName, statusType) {
@@ -296,6 +393,7 @@ function showPermission(toolName, toolInput, permId) {
     }
   }
   permissionTool.textContent = desc;
+  scheduleExpandedHeightSync();
 }
 
 async function handlePermission(decision) {
@@ -313,6 +411,8 @@ async function handlePermission(decision) {
   if (pendingPerms.size > 0) {
     const [nextId, next] = pendingPerms.entries().next().value;
     showPermission(next.toolName, next.toolInput, nextId);
+  } else {
+    scheduleExpandedHeightSync();
   }
 }
 
@@ -334,6 +434,7 @@ async function expandIsland() {
 
   // Elevator: expand native window FIRST, then CSS animation fills it
   await invoke('expand_window');
+  scheduleExpandedHeightSync();
 
   // Wait one frame so the window resize is applied before CSS transition starts
   requestAnimationFrame(() => {
@@ -342,19 +443,9 @@ async function expandIsland() {
     island.setAttribute('aria-expanded', 'true');
   });
 
-  try {
-    const history = await invoke('get_history');
-    renderHistory(history);
-  } catch (e) {
-    console.error('Failed to load history:', e);
-  }
+  await refreshRecentHistory();
 
-  if (activeSessionId && sessions[activeSessionId]) {
-    const s = sessions[activeSessionId];
-    sessionCwd.textContent = s.cwd.split('/').slice(-2).join('/');
-    detailStatus.textContent = statusText.textContent;
-    detailTools.textContent = s.tool_count + ' tool calls this session';
-  }
+  updateUI(activeSessionId ? sessions[activeSessionId] : null);
 }
 
 async function collapseIsland() {
@@ -390,18 +481,33 @@ async function finishCollapse() {
   await invoke('collapse_window');
 }
 
+async function refreshRecentHistory() {
+  try {
+    const history = await invoke('get_history');
+    renderHistory(history);
+  } catch (e) {
+    console.error('Failed to load history:', e);
+  }
+}
+
 function renderHistory(entries) {
   historyList.innerHTML = '';
-  if (!entries || entries.length === 0) {
+  recentHistoryEntries = (entries || [])
+    .slice()
+    .sort((a, b) => getEntryTimestamp(b) - getEntryTimestamp(a))
+    .slice(0, 3);
+
+  if (recentHistoryEntries.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'history-item';
     empty.style.color = 'rgba(255,255,255,0.3)';
-    empty.textContent = 'No history yet';
+    empty.textContent = 'No recent sessions';
     historyList.appendChild(empty);
+    scheduleExpandedHeightSync();
     return;
   }
 
-  entries.reverse().forEach(entry => {
+  recentHistoryEntries.forEach(entry => {
     const div = document.createElement('div');
     div.className = 'history-item';
 
@@ -417,6 +523,8 @@ function renderHistory(entries) {
     div.appendChild(metaSpan);
     historyList.appendChild(div);
   });
+
+  scheduleExpandedHeightSync();
 }
 
 function formatDuration(secs) {
@@ -426,6 +534,11 @@ function formatDuration(secs) {
   return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
 }
 
+function getEntryTimestamp(entry) {
+  const timestamp = Date.parse(entry.ended_at || entry.last_event_at || entry.started_at || '');
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
 // Connection state tracking (IMPL-07)
 let isConnected = false;
 
@@ -433,9 +546,7 @@ listen('connection-count', (event) => {
   const count = event.payload;
   isConnected = count > 0;
   if (!isConnected && !isExpanded) {
-    const hasActiveSessions = Object.values(sessions).some(
-      s => s.status.type !== 'Ended'
-    );
+    const hasActiveSessions = getActiveSessions().length > 0;
     if (!hasActiveSessions) {
       statusDot.className = 'status-dot disconnected';
       setMascotVariant(null, 'WaitingForInput');

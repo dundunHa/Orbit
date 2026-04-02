@@ -3,7 +3,8 @@ use crate::notch::NotchGeometry;
 use crate::state::{PendingPermissions, PermissionDecision, Session, SessionMap};
 
 const PILL_WIDTH: f64 = 480.0;
-const EXPANDED_HEIGHT: f64 = 420.0;
+const MIN_EXPANDED_HEIGHT: f64 = 168.0;
+const MAX_EXPANDED_HEIGHT: f64 = 320.0;
 
 /// Cached screen geometry from initial notch detection, set during app setup
 pub static NOTCH_GEOMETRY: std::sync::OnceLock<NotchGeometry> = std::sync::OnceLock::new();
@@ -17,6 +18,10 @@ fn current_notch_geometry() -> NotchGeometry {
 
 fn collapsed_height() -> f64 {
     current_notch_geometry().notch_height
+}
+
+fn clamp_expanded_height(height: f64) -> f64 {
+    height.clamp(MIN_EXPANDED_HEIGHT, MAX_EXPANDED_HEIGHT)
 }
 
 /// Apply frame to NSWindow using native macOS coordinates (bottom-left origin).
@@ -156,7 +161,13 @@ pub async fn permission_decision(
 
 #[tauri::command]
 pub async fn expand_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    set_window_frame(&window, PILL_WIDTH, EXPANDED_HEIGHT);
+    set_window_frame(&window, PILL_WIDTH, MAX_EXPANDED_HEIGHT);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_expanded_height(window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
+    set_window_frame(&window, PILL_WIDTH, clamp_expanded_height(height));
     Ok(())
 }
 

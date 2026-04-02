@@ -17,6 +17,7 @@ pub fn run() {
             commands::get_notch_info,
             commands::permission_decision,
             commands::expand_window,
+            commands::set_expanded_height,
             commands::collapse_window,
         ])
         .setup(|app| {

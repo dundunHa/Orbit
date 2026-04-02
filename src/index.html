@@ -39,10 +39,14 @@
     <div class="detail">
       <div class="detail-header">
         <span class="session-cwd"></span>
-        <span class="close-btn" role="button" aria-label="Collapse" onclick="event.stopPropagation(); collapseIsland()">x</span>
+        <button class="close-btn" type="button" aria-label="Collapse" onclick="event.stopPropagation(); collapseIsland()">x</button>
       </div>
-      <div class="detail-status"></div>
-      <div class="detail-tools"></div>
+      <div class="active-section">
+        <div class="section-title">Active</div>
+        <div class="detail-status"></div>
+        <div class="detail-tools"></div>
+        <div class="active-summary"></div>
+      </div>
 
       <!-- Permission approval -->
       <div class="permission-section" style="display:none">
@@ -55,7 +59,7 @@
 
       <!-- History -->
       <div class="history-section">
-        <div class="history-title">Recent Sessions</div>
+        <div class="section-title">Recent</div>
         <div class="history-list"></div>
       </div>
     </div>
