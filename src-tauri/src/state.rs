@@ -162,10 +162,8 @@ impl Session {
                 self.status = SessionStatus::Ended;
             }
             "Notification" => {
-                if let Some(nt) = &payload.notification_type {
-                    if nt == "idle_prompt" {
-                        self.status = SessionStatus::WaitingForInput;
-                    }
+                if payload.notification_type.as_deref() == Some("idle_prompt") {
+                    self.status = SessionStatus::WaitingForInput;
                 }
             }
             "PreCompact" => {

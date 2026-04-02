@@ -30,12 +30,12 @@ pub async fn permission_decision(
 
 #[tauri::command]
 pub async fn expand_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    let _ = window.set_size(tauri::PhysicalSize::new(300, 420));
+    let _ = window.set_size(tauri::LogicalSize::new(300.0, 420.0));
     Ok(())
 }
 
 #[tauri::command]
 pub async fn collapse_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    let _ = window.set_size(tauri::PhysicalSize::new(300, 44));
+    let _ = window.set_size(tauri::LogicalSize::new(300.0, 44.0));
     Ok(())
 }

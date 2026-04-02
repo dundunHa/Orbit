@@ -1,13 +1,18 @@
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::sync::oneshot;
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
-use crate::state::{AppState, HookPayload, PendingPermission, PermissionDecision, Session};
+use crate::history;
+use crate::state::{HookPayload, PendingPermission, PermissionDecision, Session, SessionMap, PendingPermissions};
 
 const SOCKET_PATH: &str = "/tmp/orbit.sock";
 
-pub async fn start(app_handle: tauri::AppHandle) {
+pub async fn start(
+    app_handle: tauri::AppHandle,
+    sessions: SessionMap,
+    pending: PendingPermissions,
+) {
     // Remove stale socket
     let _ = std::fs::remove_file(SOCKET_PATH);
 
@@ -19,16 +24,11 @@ pub async fn start(app_handle: tauri::AppHandle) {
         }
     };
 
-    let state = AppState::new();
-    // Store state in Tauri
-    app_handle.manage(state.sessions.clone());
-    app_handle.manage(state.pending_permissions.clone());
-
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
-                let sessions = state.sessions.clone();
-                let pending = state.pending_permissions.clone();
+                let sessions = sessions.clone();
+                let pending = pending.clone();
                 let handle = app_handle.clone();
 
                 tauri::async_runtime::spawn(async move {
@@ -36,7 +36,11 @@ pub async fn start(app_handle: tauri::AppHandle) {
                 });
             }
             Err(e) => {
-                eprintln!("Socket accept error: {e}");
+                if e.kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
+                eprintln!("Socket accept error (fatal): {e}");
+                break;
             }
         }
     }
@@ -44,24 +48,17 @@ pub async fn start(app_handle: tauri::AppHandle) {
 
 async fn handle_connection(
     stream: tokio::net::UnixStream,
-    sessions: crate::state::SessionMap,
-    pending: crate::state::PendingPermissions,
+    sessions: SessionMap,
+    pending: PendingPermissions,
     app_handle: &tauri::AppHandle,
 ) {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut buf = String::new();
 
+    // Read exactly one newline-terminated JSON line
     if reader.read_line(&mut buf).await.is_err() {
-        // Try reading all at once for non-line-delimited payloads
         return;
-    }
-
-    // Also try to read remaining data
-    let mut remaining = String::new();
-    let _ = reader.read_line(&mut remaining).await;
-    if !remaining.is_empty() {
-        buf.push_str(&remaining);
     }
 
     let buf = buf.trim();
@@ -78,6 +75,7 @@ async fn handle_connection(
     };
 
     let is_permission_request = payload.hook_event_name == "PermissionRequest";
+    let is_session_end = payload.hook_event_name == "SessionEnd";
 
     // Update session state
     {
@@ -96,6 +94,19 @@ async fn handle_connection(
 
         // Emit update to frontend
         let _ = app_handle.emit("session-update", session.clone());
+
+        // Save history on session end
+        if is_session_end {
+            let duration = (session.last_event_at - session.started_at).num_seconds().max(0);
+            history::save_entry(history::HistoryEntry {
+                session_id: session.id.clone(),
+                cwd: session.cwd.clone(),
+                started_at: session.started_at,
+                ended_at: session.last_event_at,
+                tool_count: session.tool_count,
+                duration_secs: duration,
+            });
+        }
     }
 
     // Handle permission request: wait for user decision
@@ -108,25 +119,30 @@ async fn handle_connection(
             payload.tool_use_id.as_deref().unwrap_or("unknown")
         );
 
+        let tool_name = payload.tool_name.clone().unwrap_or_default();
+        let tool_input = payload.tool_input.clone().unwrap_or(serde_json::Value::Null);
+
         {
             let mut pending = pending.lock().await;
             pending.insert(
                 perm_id.clone(),
                 PendingPermission {
                     session_id: payload.session_id.clone(),
-                    tool_name: payload.tool_name.unwrap_or_default(),
-                    tool_input: payload.tool_input.unwrap_or(serde_json::Value::Null),
+                    tool_name: tool_name.clone(),
+                    tool_input: tool_input.clone(),
                     responder: tx,
                 },
             );
         }
 
-        // Emit permission request to frontend
+        // Emit permission request to frontend with full details
         let _ = app_handle.emit(
             "permission-request",
             serde_json::json!({
                 "perm_id": perm_id,
                 "session_id": payload.session_id,
+                "tool_name": tool_name,
+                "tool_input": tool_input,
             }),
         );
 
@@ -149,7 +165,11 @@ async fn handle_connection(
                             }
                         }
                     }),
-                    _ => return, // "ask" = let Claude Code handle it
+                    _ => {
+                        // "ask" = let Claude Code handle it normally
+                        // Still need to close cleanly so orbit-cli doesn't hang
+                        return;
+                    }
                 };
 
                 let response_bytes = serde_json::to_vec(&response).unwrap_or_default();

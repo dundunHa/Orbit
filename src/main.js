@@ -5,7 +5,8 @@ const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
 
 // State
-let currentSession = null;
+let sessions = {};   // All sessions keyed by session_id
+let activeSessionId = null;
 let isExpanded = false;
 let currentPermId = null;
 
@@ -21,17 +22,60 @@ const permissionSection = document.querySelector('.permission-section');
 const permissionTool = document.querySelector('.permission-tool');
 const historyList = document.querySelector('.history-list');
 
+// Status priority for selecting which session to display
+const STATUS_PRIORITY = {
+  'WaitingForApproval': 6,
+  'Anomaly': 5,
+  'RunningTool': 4,
+  'Processing': 3,
+  'Compacting': 2,
+  'WaitingForInput': 1,
+  'Ended': 0,
+};
+
+// Initialize: load existing sessions
+async function init() {
+  try {
+    const existing = await invoke('get_sessions');
+    for (const s of existing) {
+      sessions[s.id] = s;
+    }
+    selectActiveSession();
+  } catch (e) {
+    console.error('Failed to load sessions:', e);
+  }
+}
+
+function selectActiveSession() {
+  let best = null;
+  let bestPriority = -1;
+
+  for (const s of Object.values(sessions)) {
+    const prio = STATUS_PRIORITY[s.status.type] || 0;
+    if (prio > bestPriority || (prio === bestPriority && (!best || s.last_event_at > best.last_event_at))) {
+      best = s;
+      bestPriority = prio;
+    }
+  }
+
+  if (best) {
+    activeSessionId = best.id;
+    updateUI(best);
+  }
+}
+
 // Listen for session updates from Rust backend
 listen('session-update', (event) => {
   const session = event.payload;
-  currentSession = session;
-  updateUI(session);
+  sessions[session.id] = session;
+  selectActiveSession();
 });
 
 // Listen for permission requests
 listen('permission-request', (event) => {
-  currentPermId = event.payload.perm_id;
-  // Auto-expand on permission request
+  const { perm_id, tool_name, tool_input } = event.payload;
+  currentPermId = perm_id;
+  showPermission(tool_name, tool_input);
   if (!isExpanded) {
     expandIsland();
   }
@@ -56,12 +100,11 @@ function updateUI(session) {
       break;
     case 'WaitingForApproval':
       statusDot.classList.add('waiting-approval');
-      statusText.textContent = `Needs approval: ${status.tool_name}`;
-      showPermission(status.tool_name, status.tool_input);
+      statusText.textContent = 'Needs approval: ' + escapeText(status.tool_name);
       break;
     case 'Anomaly':
       statusDot.classList.add('anomaly');
-      statusText.textContent = `Stuck? (${status.idle_seconds}s idle)`;
+      statusText.textContent = 'Stuck? (' + status.idle_seconds + 's idle)';
       break;
     case 'Compacting':
       statusDot.classList.add('processing');
@@ -79,18 +122,14 @@ function updateUI(session) {
   }
 
   // Tool count
-  if (session.tool_count > 0) {
-    toolCount.textContent = `${session.tool_count} tools`;
-  } else {
-    toolCount.textContent = '';
-  }
+  toolCount.textContent = session.tool_count > 0 ? session.tool_count + ' tools' : '';
 
   // Detail view
   if (isExpanded) {
     const cwdShort = session.cwd.split('/').slice(-2).join('/');
     sessionCwd.textContent = cwdShort;
     detailStatus.textContent = statusText.textContent;
-    detailTools.textContent = `${session.tool_count} tool calls this session`;
+    detailTools.textContent = session.tool_count + ' tool calls this session';
   }
 
   // Hide permission section if no longer waiting
@@ -110,19 +149,19 @@ function formatTool(toolName, description) {
     case 'Grep': return 'Searching code...';
     case 'Glob': return 'Finding files...';
     case 'Agent': return 'Running agent...';
-    default: return `Running ${toolName}...`;
+    default: return 'Running ' + escapeText(toolName) + '...';
   }
 }
 
 function showPermission(toolName, toolInput) {
   permissionSection.style.display = 'block';
-  let desc = toolName;
+  let desc = toolName || 'Unknown';
   if (toolInput && typeof toolInput === 'object') {
     if (toolInput.command) {
-      desc = `${toolName}: ${toolInput.command.substring(0, 80)}`;
+      desc = toolName + ': ' + toolInput.command.substring(0, 80);
     } else if (toolInput.file_path) {
       const file = toolInput.file_path.split('/').pop();
-      desc = `${toolName}: ${file}`;
+      desc = toolName + ': ' + file;
     }
   }
   permissionTool.textContent = desc;
@@ -153,7 +192,6 @@ async function expandIsland() {
   island.classList.add('expanded');
   await invoke('expand_window');
 
-  // Load history
   try {
     const history = await invoke('get_history');
     renderHistory(history);
@@ -161,12 +199,11 @@ async function expandIsland() {
     console.error('Failed to load history:', e);
   }
 
-  // Update detail if we have a session
-  if (currentSession) {
-    const cwdShort = currentSession.cwd.split('/').slice(-2).join('/');
-    sessionCwd.textContent = cwdShort;
+  if (activeSessionId && sessions[activeSessionId]) {
+    const s = sessions[activeSessionId];
+    sessionCwd.textContent = s.cwd.split('/').slice(-2).join('/');
     detailStatus.textContent = statusText.textContent;
-    detailTools.textContent = `${currentSession.tool_count} tool calls this session`;
+    detailTools.textContent = s.tool_count + ' tool calls this session';
   }
 }
 
@@ -180,7 +217,11 @@ async function collapseIsland() {
 function renderHistory(entries) {
   historyList.innerHTML = '';
   if (!entries || entries.length === 0) {
-    historyList.innerHTML = '<div class="history-item"><span style="color: rgba(255,255,255,0.3)">No history yet</span></div>';
+    const empty = document.createElement('div');
+    empty.className = 'history-item';
+    empty.style.color = 'rgba(255,255,255,0.3)';
+    empty.textContent = 'No history yet';
+    historyList.appendChild(empty);
     return;
   }
 
@@ -188,19 +229,31 @@ function renderHistory(entries) {
     const div = document.createElement('div');
     div.className = 'history-item';
 
-    const cwdShort = entry.cwd.split('/').slice(-2).join('/');
-    const duration = formatDuration(entry.duration_secs);
+    const cwdSpan = document.createElement('span');
+    cwdSpan.className = 'history-cwd';
+    cwdSpan.textContent = entry.cwd.split('/').slice(-2).join('/');
 
-    div.innerHTML = `
-      <span class="history-cwd">${cwdShort}</span>
-      <span class="history-meta">${entry.tool_count}t · ${duration}</span>
-    `;
+    const metaSpan = document.createElement('span');
+    metaSpan.className = 'history-meta';
+    metaSpan.textContent = (entry.tool_count || 0) + 't · ' + formatDuration(entry.duration_secs);
+
+    div.appendChild(cwdSpan);
+    div.appendChild(metaSpan);
     historyList.appendChild(div);
   });
 }
 
 function formatDuration(secs) {
-  if (secs < 60) return `${secs}s`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
-  return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
+  if (!secs || secs < 0) return '0s';
+  if (secs < 60) return secs + 's';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm';
+  return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
 }
+
+function escapeText(str) {
+  if (!str) return '';
+  return str;
+}
+
+// Boot
+init();

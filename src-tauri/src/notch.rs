@@ -1,27 +1,38 @@
 #[cfg(target_os = "macos")]
 pub fn get_notch_position() -> (i32, i32) {
-    use objc2_app_kit::NSScreen;
     use objc2::MainThreadMarker;
+    use objc2_app_kit::NSScreen;
 
-    // We must be on the main thread for NSScreen access
     if let Some(mtm) = MainThreadMarker::new() {
         let screens = NSScreen::screens(mtm);
-        if let Some(screen) = screens.firstObject() {
-            let frame = screen.frame();
+
+        // Find the screen with the largest safeAreaInsets.top (= the notch screen)
+        let mut best_screen = None;
+        let mut best_inset_top: f64 = 0.0;
+
+        for screen in screens.iter() {
             let insets = screen.safeAreaInsets();
+            if insets.top > best_inset_top {
+                best_inset_top = insets.top;
+                best_screen = Some(screen);
+            }
+        }
 
-            let screen_width = frame.size.width as i32;
+        // Fall back to first screen if no notch found
+        let screen = best_screen.or_else(|| screens.firstObject());
 
-            // Pill width
-            let pill_width = 300;
+        if let Some(screen) = screen {
+            let frame = screen.frame();
+            let scale = screen.backingScaleFactor();
 
-            // Center horizontally
-            let x = (screen_width - pill_width) / 2;
+            let screen_width_px = (frame.size.width * scale) as i32;
+            let pill_width_px = (300.0 * scale) as i32;
 
-            // If notch exists (safeAreaInsets.top > 0), position at notch
-            // Otherwise, position at very top of screen
-            let y = if insets.top > 0.0 {
-                2
+            let x = (screen_width_px - pill_width_px) / 2;
+
+            let y = if best_inset_top > 0.0 {
+                // Notch exists: position a few physical pixels from top
+                (2.0 * scale) as i32
             } else {
                 0
             };

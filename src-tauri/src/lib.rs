@@ -19,6 +19,11 @@ pub fn run() {
             commands::collapse_window,
         ])
         .setup(|app| {
+            // Create shared state BEFORE spawning background tasks
+            let app_state = state::AppState::new();
+            app.manage(app_state.sessions.clone());
+            app.manage(app_state.pending_permissions.clone());
+
             let handle = app.handle().clone();
 
             // Position window at notch
@@ -29,9 +34,11 @@ pub fn run() {
             }
 
             // Start socket server in background
+            let sessions = app_state.sessions.clone();
+            let pending = app_state.pending_permissions.clone();
             let app_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
-                socket_server::start(app_handle).await;
+                socket_server::start(app_handle, sessions, pending).await;
             });
 
             // Start anomaly detector

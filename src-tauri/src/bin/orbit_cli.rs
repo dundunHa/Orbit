@@ -29,7 +29,6 @@ fn main() {
 }
 
 fn cmd_hook() {
-    // Read JSON from stdin
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
         std::process::exit(1);
@@ -40,29 +39,26 @@ fn cmd_hook() {
         std::process::exit(0);
     }
 
-    // Connect to Orbit socket and send the payload
     match UnixStream::connect(SOCKET_PATH) {
         Ok(mut stream) => {
             use std::io::Write;
             let payload = format!("{}\n", input);
             if stream.write_all(payload.as_bytes()).is_err() {
-                // Orbit not running, silently exit
                 std::process::exit(0);
             }
 
-            // For PermissionRequest, read response
-            let parsed: Result<Value, _> = serde_json::from_str(input);
-            if let Ok(val) = parsed {
-                if val.get("hook_event_name").and_then(|v| v.as_str()) == Some("PermissionRequest")
-                {
-                    // Wait for response from Orbit
-                    use std::io::Read;
-                    let mut response = String::new();
-                    let _ = stream.read_to_string(&mut response);
-                    if !response.is_empty() {
-                        // Print response to stdout (Claude Code reads this)
-                        print!("{}", response);
-                    }
+            // For PermissionRequest, read response from Orbit
+            if let Ok(val) = serde_json::from_str::<Value>(input)
+                && val.get("hook_event_name").and_then(|v| v.as_str())
+                    == Some("PermissionRequest")
+            {
+                // Shut down write half so server knows we're done sending
+                let _ = stream.shutdown(std::net::Shutdown::Write);
+
+                let mut response = String::new();
+                let _ = stream.read_to_string(&mut response);
+                if !response.is_empty() {
+                    print!("{}", response);
                 }
             }
         }
@@ -77,7 +73,6 @@ fn cmd_install() {
     let settings_path = get_claude_settings_path();
     println!("Installing Orbit hooks...");
 
-    // Read existing settings
     let mut settings: Value = if settings_path.exists() {
         let content = std::fs::read_to_string(&settings_path).unwrap_or_else(|_| "{}".to_string());
         serde_json::from_str(&content).unwrap_or(Value::Object(Default::default()))
@@ -85,7 +80,11 @@ fn cmd_install() {
         Value::Object(Default::default())
     };
 
-    // Get orbit-cli path (current binary)
+    // Ensure top-level is an object
+    if !settings.is_object() {
+        settings = Value::Object(Default::default());
+    }
+
     let orbit_cli = std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("orbit-cli"))
         .to_string_lossy()
@@ -93,7 +92,6 @@ fn cmd_install() {
 
     let hook_command = format!("{} hook", orbit_cli);
 
-    // Events to hook
     let events = [
         "PreToolUse",
         "PostToolUse",
@@ -107,23 +105,28 @@ fn cmd_install() {
         "PreCompact",
     ];
 
-    // Build hooks config
-    let hooks_obj = settings
-        .as_object_mut()
-        .unwrap()
+    let obj = settings.as_object_mut().expect("ensured object above");
+    let hooks_obj = obj
         .entry("hooks")
         .or_insert_with(|| Value::Object(Default::default()));
 
-    let hooks = hooks_obj.as_object_mut().unwrap();
+    if !hooks_obj.is_object() {
+        *hooks_obj = Value::Object(Default::default());
+    }
+
+    let hooks = hooks_obj.as_object_mut().expect("ensured object above");
 
     for event in &events {
         let event_hooks = hooks
             .entry(event.to_string())
             .or_insert_with(|| Value::Array(vec![]));
 
-        let arr = event_hooks.as_array_mut().unwrap();
+        if !event_hooks.is_array() {
+            *event_hooks = Value::Array(vec![]);
+        }
 
-        // Check if orbit hook already registered
+        let arr = event_hooks.as_array_mut().expect("ensured array above");
+
         let already_registered = arr.iter().any(|entry| {
             entry
                 .get("hooks")
@@ -132,30 +135,23 @@ fn cmd_install() {
                     hooks.iter().any(|h| {
                         h.get("command")
                             .and_then(|c| c.as_str())
-                            .map(|c| c.contains("orbit"))
-                            .unwrap_or(false)
+                            .is_some_and(|c| c.contains("orbit"))
                     })
                 })
                 .unwrap_or(false)
         });
 
         if !already_registered {
-            let hook_entry = serde_json::json!({
+            arr.push(serde_json::json!({
                 "hooks": [{
                     "type": "command",
                     "command": hook_command
                 }]
-            });
-            arr.push(hook_entry);
+            }));
         }
     }
 
-    // Write back
-    if let Some(parent) = settings_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let pretty = serde_json::to_string_pretty(&settings).unwrap();
-    std::fs::write(&settings_path, pretty).expect("Failed to write settings");
+    write_settings(&settings_path, &settings);
 
     println!("Done! Hooks registered in {}", settings_path.display());
     println!("Events: {}", events.join(", "));
@@ -185,8 +181,7 @@ fn cmd_uninstall() {
                             hooks.iter().any(|h| {
                                 h.get("command")
                                     .and_then(|c| c.as_str())
-                                    .map(|c| c.contains("orbit"))
-                                    .unwrap_or(false)
+                                    .is_some_and(|c| c.contains("orbit"))
                             })
                         })
                         .unwrap_or(false)
@@ -194,16 +189,29 @@ fn cmd_uninstall() {
             }
         }
 
-        // Remove empty event arrays
-        hooks.retain(|_, v| {
-            v.as_array().map(|a| !a.is_empty()).unwrap_or(true)
-        });
+        hooks.retain(|_, v| v.as_array().map(|a| !a.is_empty()).unwrap_or(true));
     }
 
-    let pretty = serde_json::to_string_pretty(&settings).unwrap();
-    std::fs::write(&settings_path, pretty).expect("Failed to write settings");
-
+    write_settings(&settings_path, &settings);
     println!("Orbit hooks removed from {}", settings_path.display());
+}
+
+fn write_settings(path: &PathBuf, settings: &Value) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match serde_json::to_string_pretty(settings) {
+        Ok(pretty) => {
+            if let Err(e) = std::fs::write(path, pretty) {
+                eprintln!("Failed to write {}: {e}", path.display());
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to serialize settings: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn get_claude_settings_path() -> PathBuf {
