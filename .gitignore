@@ -10,3 +10,6 @@ src-tauri/target/
 
 # Tauri generated
 src-tauri/gen/
+.gstack
+TODOS.md
+DESIGN.md

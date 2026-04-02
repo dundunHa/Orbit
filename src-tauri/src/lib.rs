@@ -14,6 +14,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_sessions,
             commands::get_history,
+            commands::get_notch_info,
             commands::permission_decision,
             commands::expand_window,
             commands::collapse_window,
@@ -29,9 +30,29 @@ pub fn run() {
 
             // Position window at notch
             if let Some(window) = app.get_webview_window("main") {
-                let (x, y, _notch_height, screen_width) = notch::get_notch_position(320.0);
-                let _ = commands::SCREEN_WIDTH.set(screen_width);
-                let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+                let notch = notch::get_notch_geometry();
+                let _ = commands::NOTCH_GEOMETRY.set(notch);
+
+                // Set window level above menu bar so it can overlap the notch area
+                #[cfg(target_os = "macos")]
+                {
+                    use objc2_app_kit::NSView;
+                    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    if let Ok(wh) = window.window_handle() {
+                        if let RawWindowHandle::AppKit(appkit) = wh.as_raw() {
+                            let ns_view = appkit.ns_view.as_ptr() as *mut NSView;
+                            unsafe {
+                                if let Some(ns_window) = (*ns_view).window() {
+                                    // NSStatusWindowLevel = 25, above NSMainMenuWindowLevel = 24
+                                    ns_window.setLevel(25);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Position at physical screen top and show
+                commands::set_window_frame_pub(&window, 480.0, notch.notch_height);
                 let _ = window.show();
             }
 

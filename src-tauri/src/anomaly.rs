@@ -1,4 +1,4 @@
-use crate::state::{Session, SessionStatus, SessionMap};
+use crate::state::{Session, SessionMap, SessionStatus};
 use tauri::{Emitter, Manager};
 
 const ANOMALY_THRESHOLD_SECS: u64 = 60;
@@ -10,8 +10,7 @@ pub async fn start(app_handle: tauri::AppHandle) {
     loop {
         interval.tick().await;
 
-        let sessions_state: Option<tauri::State<'_, SessionMap>> =
-            app_handle.try_state();
+        let sessions_state: Option<tauri::State<'_, SessionMap>> = app_handle.try_state();
         let sessions_state = match sessions_state {
             Some(s) => s,
             None => continue,
@@ -37,7 +36,9 @@ pub async fn start(app_handle: tauri::AppHandle) {
                             changed.push(session.clone());
                         }
                     }
-                    SessionStatus::Anomaly { previous_status, .. } => {
+                    SessionStatus::Anomaly {
+                        previous_status, ..
+                    } => {
                         session.status = SessionStatus::Anomaly {
                             idle_seconds: idle_secs,
                             previous_status: previous_status.clone(),

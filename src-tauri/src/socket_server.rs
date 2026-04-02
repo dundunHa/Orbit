@@ -1,11 +1,14 @@
 use std::sync::atomic::Ordering;
+use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::sync::oneshot;
-use tauri::Emitter;
 
 use crate::history;
-use crate::state::{ConnectionCount, HookPayload, PendingPermission, PermissionDecision, Session, SessionMap, PendingPermissions};
+use crate::state::{
+    ConnectionCount, HookPayload, PendingPermission, PendingPermissions, PermissionDecision,
+    Session, SessionMap,
+};
 
 const SOCKET_PATH: &str = "/tmp/orbit.sock";
 
@@ -113,7 +116,9 @@ async fn handle_connection(
 
         // Prepare history entry (but don't write yet — avoid sync IO inside async lock)
         if is_session_end {
-            let duration = (session.last_event_at - session.started_at).num_seconds().max(0);
+            let duration = (session.last_event_at - session.started_at)
+                .num_seconds()
+                .max(0);
             Some(history::HistoryEntry {
                 session_id: session.id.clone(),
                 cwd: session.cwd.clone(),
@@ -143,7 +148,10 @@ async fn handle_connection(
         );
 
         let tool_name = payload.tool_name.clone().unwrap_or_default();
-        let tool_input = payload.tool_input.clone().unwrap_or(serde_json::Value::Null);
+        let tool_input = payload
+            .tool_input
+            .clone()
+            .unwrap_or(serde_json::Value::Null);
 
         {
             let mut pending = pending.lock().await;

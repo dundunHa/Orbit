@@ -1,5 +1,30 @@
+#[derive(Clone, Copy, Debug)]
+pub struct NotchGeometry {
+    pub notch_height: f64,
+    pub screen_width: f64,
+    pub notch_left: f64,
+    pub notch_right: f64,
+    pub notch_width: f64,
+    pub left_safe_width: f64,
+    pub right_safe_width: f64,
+}
+
+impl NotchGeometry {
+    pub const fn fallback() -> Self {
+        Self {
+            notch_height: 28.0,
+            screen_width: 1440.0,
+            notch_left: 710.0,
+            notch_right: 730.0,
+            notch_width: 20.0,
+            left_safe_width: 710.0,
+            right_safe_width: 710.0,
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
-pub fn get_notch_position(pill_width: f64) -> (f64, f64, f64, f64) {
+pub fn get_notch_geometry() -> NotchGeometry {
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSScreen;
 
@@ -25,28 +50,40 @@ pub fn get_notch_position(pill_width: f64) -> (f64, f64, f64, f64) {
             let frame = screen.frame();
             let screen_width = frame.size.width; // Already in logical points
 
-            let notch_height = if best_inset_top > 0.0 {
-                best_inset_top
-            } else {
-                28.0 // Fallback for non-notch screens (menu bar height)
+            if best_inset_top > 0.0 {
+                let left_area = screen.auxiliaryTopLeftArea();
+                let right_area = screen.auxiliaryTopRightArea();
+                let notch_left = (left_area.origin.x + left_area.size.width) - frame.origin.x;
+                let notch_right = right_area.origin.x - frame.origin.x;
+
+                return NotchGeometry {
+                    notch_height: best_inset_top,
+                    screen_width,
+                    notch_left,
+                    notch_right,
+                    notch_width: (notch_right - notch_left).max(0.0),
+                    left_safe_width: left_area.size.width,
+                    right_safe_width: right_area.size.width,
+                };
+            }
+
+            let notch = NotchGeometry::fallback();
+            let centered_left = (screen_width - notch.notch_width) / 2.0;
+            return NotchGeometry {
+                screen_width,
+                notch_left: centered_left,
+                notch_right: centered_left + notch.notch_width,
+                left_safe_width: centered_left,
+                right_safe_width: centered_left,
+                ..notch
             };
-
-            let x = (screen_width - pill_width) / 2.0;
-            let y = 0.0; // Flush with top of screen to fuse with notch
-
-            return (x, y, notch_height, screen_width);
         }
     }
 
-    // Fallback: center on assumed 1440pt wide screen
-    let screen_width = 1440.0;
-    let x = (screen_width - pill_width) / 2.0;
-    (x, 0.0, 28.0, screen_width)
+    NotchGeometry::fallback()
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn get_notch_position(pill_width: f64) -> (f64, f64, f64, f64) {
-    let screen_width = 1440.0;
-    let x = (screen_width - pill_width) / 2.0;
-    (x, 0.0, 28.0, screen_width)
+pub fn get_notch_geometry() -> NotchGeometry {
+    NotchGeometry::fallback()
 }

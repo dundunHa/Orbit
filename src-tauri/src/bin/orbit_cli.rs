@@ -49,8 +49,7 @@ fn cmd_hook() {
 
             // For PermissionRequest, read response from Orbit
             if let Ok(val) = serde_json::from_str::<Value>(input)
-                && val.get("hook_event_name").and_then(|v| v.as_str())
-                    == Some("PermissionRequest")
+                && val.get("hook_event_name").and_then(|v| v.as_str()) == Some("PermissionRequest")
             {
                 // Shut down write half so server knows we're done sending
                 let _ = stream.shutdown(std::net::Shutdown::Write);

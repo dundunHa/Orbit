@@ -11,17 +11,31 @@ let isExpanded = false;
 let isAnimating = false; // IMPL-06: animation lock
 const pendingPerms = new Map(); // IMPL-05: Map<permId, {sessionId, toolName, toolInput}>
 
+// Notch geometry (set during init)
+let notchInfo = {
+  notch_height: 37,
+  screen_width: 1440,
+  notch_left: 620,
+  notch_right: 820,
+  notch_width: 200,
+  left_safe_width: 620,
+  right_safe_width: 620,
+  has_notch: true,
+  pill_width: 480,
+};
+
 // DOM elements
 const island = document.getElementById('island');
 const statusDot = document.querySelector('.status-dot');
 const statusText = document.querySelector('.status-text');
-const toolCount = document.querySelector('.tool-count');
 const sessionCwd = document.querySelector('.session-cwd');
 const detailStatus = document.querySelector('.detail-status');
 const detailTools = document.querySelector('.detail-tools');
 const permissionSection = document.querySelector('.permission-section');
 const permissionTool = document.querySelector('.permission-tool');
 const historyList = document.querySelector('.history-list');
+const mascot = document.querySelector('.mascot');
+const DEFAULT_PROVIDER = 'claude-code';
 
 // Status priority for selecting which session to display
 const STATUS_PRIORITY = {
@@ -34,26 +48,48 @@ const STATUS_PRIORITY = {
   'Ended': 0,
 };
 
-// Dynamic pill widths per status
-const STATUS_WIDTH = {
-  'WaitingForApproval': 260,
-  'Anomaly': 240,
-  'RunningTool': 220,
-  'Processing': 200,
-  'Compacting': 200,
-  'WaitingForInput': 180,
-  'Ended': 180,
-};
+// IMPL-06 + IMPL-08: transitionend handles animation lock + collapse window resize
+let collapseAfterTransition = false;
+let collapseFallbackTimer = null;
 
-// IMPL-06: unlock animation on transitionend (only for island itself, not children)
 island.addEventListener('transitionend', (e) => {
-  if (e.target === island) {
+  if (e.target === island && e.propertyName === 'height') {
+    if (collapseAfterTransition) {
+      finishCollapse();
+    }
     isAnimating = false;
   }
 });
 
-// Initialize: load existing sessions
+// Initialize: load notch info, set layout, load sessions
 async function init() {
+  try {
+    notchInfo = await invoke('get_notch_info');
+  } catch (e) {
+    console.error('Failed to get notch info:', e);
+  }
+
+  // Set CSS custom properties for three-zone layout
+  const root = document.documentElement;
+  root.style.setProperty('--notch-height', notchInfo.notch_height + 'px');
+  root.style.setProperty('--pill-width', notchInfo.pill_width + 'px');
+
+  const layout = computePillLayout(notchInfo);
+  root.style.setProperty('--notch-width', layout.centerWidth + 'px');
+  root.style.setProperty('--zone-left-width', layout.leftWidth + 'px');
+  root.style.setProperty('--zone-right-width', layout.rightWidth + 'px');
+
+  // First-run onboarding
+  if (!localStorage.getItem('orbit-onboarded')) {
+    localStorage.setItem('orbit-onboarded', '1');
+    mascot.classList.add('onboarding');
+    statusText.textContent = 'Hi! I\'m Orbit';
+    setTimeout(() => {
+      mascot.classList.remove('onboarding');
+      statusText.textContent = 'Waiting...';
+    }, 2000);
+  }
+
   try {
     const existing = await invoke('get_sessions');
     for (const s of existing) {
@@ -63,6 +99,32 @@ async function init() {
   } catch (e) {
     console.error('Failed to load sessions:', e);
   }
+}
+
+function computePillLayout(info) {
+  if (!info.has_notch) {
+    const centerWidth = 20;
+    const sideWidth = Math.floor((info.pill_width - centerWidth) / 2);
+    return {
+      leftWidth: sideWidth,
+      centerWidth,
+      rightWidth: info.pill_width - centerWidth - sideWidth,
+    };
+  }
+
+  const windowLeft = (info.screen_width - info.pill_width) / 2;
+  const centerLeft = clamp(info.notch_left - windowLeft, 0, info.pill_width);
+  const centerRight = clamp(info.notch_right - windowLeft, centerLeft, info.pill_width);
+
+  return {
+    leftWidth: Math.floor(centerLeft),
+    centerWidth: Math.floor(centerRight - centerLeft),
+    rightWidth: Math.floor(info.pill_width - centerRight),
+  };
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function selectActiveSession() {
@@ -89,7 +151,7 @@ listen('session-update', (event) => {
   const prev = sessions[session.id];
   sessions[session.id] = session;
 
-  // IMPL-04: Stop event → completion flash
+  // IMPL-04: Stop event -> completion flash
   if (prev && prev.status.type !== 'WaitingForInput' && prev.status.type !== 'Ended'
       && (session.status.type === 'WaitingForInput' || session.status.type === 'Ended')) {
     island.classList.add('flash-complete');
@@ -129,15 +191,12 @@ function updateUI(session) {
 
   const status = session.status;
   const statusType = status.type;
-
-  // IMPL-04: dynamic pill width based on status
-  if (!isExpanded) {
-    const width = STATUS_WIDTH[statusType] || 200;
-    island.style.setProperty('--pill-width', width + 'px');
-  }
+  const activeToolName = statusType === 'RunningTool' ? status.tool_name : null;
 
   // Update dot color
   statusDot.className = 'status-dot';
+  setMascotVariant(activeToolName, statusType);
+
   switch (statusType) {
     case 'Processing':
       statusDot.classList.add('processing');
@@ -149,19 +208,19 @@ function updateUI(session) {
       break;
     case 'WaitingForApproval':
       statusDot.classList.add('waiting-approval');
-      statusText.textContent = 'Needs approval: ' + (status.tool_name || '');
+      statusText.textContent = 'Approve?';
       break;
     case 'Anomaly':
       statusDot.classList.add('anomaly');
-      statusText.textContent = 'Stuck? (' + status.idle_seconds + 's idle)';
+      statusText.textContent = 'Stuck? (' + status.idle_seconds + 's)';
       break;
     case 'Compacting':
       statusDot.classList.add('processing');
-      statusText.textContent = 'Compacting context...';
+      statusText.textContent = 'Compacting...';
       break;
     case 'Ended':
       statusDot.classList.add('ended');
-      statusText.textContent = 'Session ended';
+      statusText.textContent = 'Ended';
       break;
     case 'WaitingForInput':
     default:
@@ -169,9 +228,6 @@ function updateUI(session) {
       statusText.textContent = 'Idle';
       break;
   }
-
-  // Tool count
-  toolCount.textContent = session.tool_count > 0 ? session.tool_count + ' tools' : '';
 
   // Detail view
   if (isExpanded) {
@@ -183,7 +239,6 @@ function updateUI(session) {
 
   // Hide permission section if no pending perms for active session
   if (statusType !== 'WaitingForApproval') {
-    // Clean up resolved perms for this session
     for (const [pid, p] of pendingPerms) {
       if (p.sessionId === session.id) {
         pendingPerms.delete(pid);
@@ -195,17 +250,36 @@ function updateUI(session) {
   }
 }
 
+function setMascotVariant(toolName, statusType) {
+  const provider = detectProvider(toolName);
+  mascot.className = `mascot mascot-${provider}`;
+
+  if (statusType === 'Processing' || statusType === 'RunningTool' || statusType === 'Compacting') {
+    mascot.classList.add('processing');
+  }
+
+  if (statusType === 'WaitingForApproval' || statusType === 'Anomaly') {
+    mascot.classList.add('approval');
+  }
+}
+
+function detectProvider(_toolName) {
+  // Current event stream is from Claude Code only. Keep this as the expansion point
+  // when Orbit supports more providers later.
+  return DEFAULT_PROVIDER;
+}
+
 function formatTool(toolName, description) {
   if (description) return description;
   switch (toolName) {
-    case 'Bash': return '$ Running command...';
-    case 'Read': return 'Reading file...';
-    case 'Edit': return 'Editing file...';
-    case 'Write': return 'Writing file...';
-    case 'Grep': return 'Searching code...';
-    case 'Glob': return 'Finding files...';
-    case 'Agent': return 'Running agent...';
-    default: return 'Running ' + (toolName || '') + '...';
+    case 'Bash': return '$ Running...';
+    case 'Read': return 'Reading...';
+    case 'Edit': return 'Editing...';
+    case 'Write': return 'Writing...';
+    case 'Grep': return 'Searching...';
+    case 'Glob': return 'Finding...';
+    case 'Agent': return 'Agent...';
+    default: return (toolName || '') + '...';
   }
 }
 
@@ -236,7 +310,6 @@ async function handlePermission(decision) {
   permissionSection.style.display = 'none';
   delete permissionSection.dataset.permId;
 
-  // Show next pending perm if any
   if (pendingPerms.size > 0) {
     const [nextId, next] = pendingPerms.entries().next().value;
     showPermission(next.toolName, next.toolInput, nextId);
@@ -256,9 +329,18 @@ async function expandIsland() {
   if (isAnimating) return;
   isAnimating = true;
   isExpanded = true;
-  island.classList.remove('collapsed');
-  island.classList.add('expanded');
+  collapseAfterTransition = false;
+  if (collapseFallbackTimer) { clearTimeout(collapseFallbackTimer); collapseFallbackTimer = null; }
+
+  // Elevator: expand native window FIRST, then CSS animation fills it
   await invoke('expand_window');
+
+  // Wait one frame so the window resize is applied before CSS transition starts
+  requestAnimationFrame(() => {
+    island.classList.remove('collapsed');
+    island.classList.add('expanded');
+    island.setAttribute('aria-expanded', 'true');
+  });
 
   try {
     const history = await invoke('get_history');
@@ -279,8 +361,32 @@ async function collapseIsland() {
   if (isAnimating) return;
   isAnimating = true;
   isExpanded = false;
+  collapseAfterTransition = true;
+  island.setAttribute('aria-expanded', 'false');
+
+  // Elevator: CSS animation FIRST (keep expanded class for transition + detail visible)
+  // Set target height via inline style; CSS transition on .expanded handles the animation
+  island.style.height = 'var(--notch-height, 37px)';
+
+  // Fallback: if transitionend doesn't fire within 400ms, force completion
+  collapseFallbackTimer = setTimeout(() => {
+    if (collapseAfterTransition) {
+      finishCollapse();
+      isAnimating = false;
+    }
+  }, 400);
+}
+
+async function finishCollapse() {
+  collapseAfterTransition = false;
+  if (collapseFallbackTimer) { clearTimeout(collapseFallbackTimer); collapseFallbackTimer = null; }
+
+  // Now swap class and clean up inline style
   island.classList.remove('expanded');
   island.classList.add('collapsed');
+  island.style.height = '';
+
+  // THEN shrink native window (elevator: door closes after you're inside)
   await invoke('collapse_window');
 }
 
@@ -326,15 +432,14 @@ let isConnected = false;
 listen('connection-count', (event) => {
   const count = event.payload;
   isConnected = count > 0;
-  // Only show disconnected state if no active (non-ended) sessions exist
   if (!isConnected && !isExpanded) {
     const hasActiveSessions = Object.values(sessions).some(
       s => s.status.type !== 'Ended'
     );
     if (!hasActiveSessions) {
       statusDot.className = 'status-dot disconnected';
-      statusText.textContent = 'No active connections';
-      island.style.setProperty('--pill-width', '200px');
+      setMascotVariant(null, 'WaitingForInput');
+      statusText.textContent = 'No connections';
     }
   }
 });

@@ -7,19 +7,39 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="island" class="island collapsed" onclick="toggleExpand()">
-    <!-- Collapsed pill view -->
+  <div id="island" class="island collapsed" role="status" aria-live="polite" aria-label="Orbit AI assistant status" aria-expanded="false" onclick="toggleExpand()">
+    <!-- Collapsed pill view — three-zone layout -->
     <div class="pill">
-      <div class="status-dot"></div>
-      <span class="status-text">Waiting...</span>
-      <span class="tool-count"></span>
+      <div class="pill-left">
+        <svg class="mascot mascot-claude" width="24" height="16" viewBox="0 0 24 16" fill="none" aria-hidden="true">
+          <g class="mascot-fill">
+            <rect x="4" y="1" width="16" height="4" />
+            <rect x="2" y="5" width="20" height="3" />
+            <rect x="4" y="8" width="16" height="4" />
+            <rect x="6" y="12" width="2" height="3" />
+            <rect x="9" y="12" width="2" height="4" />
+            <rect x="14" y="12" width="2" height="4" />
+            <rect x="17" y="12" width="2" height="3" />
+          </g>
+
+          <g class="mascot-cutout">
+            <rect x="8" y="3" width="2" height="3" />
+            <rect x="14" y="3" width="2" height="3" />
+          </g>
+        </svg>
+      </div>
+      <div class="pill-center"></div>
+      <div class="pill-right">
+        <div class="status-dot"></div>
+        <span class="status-text" aria-live="assertive">Waiting...</span>
+      </div>
     </div>
 
     <!-- Expanded detail view -->
     <div class="detail">
       <div class="detail-header">
         <span class="session-cwd"></span>
-        <span class="close-btn" onclick="event.stopPropagation(); collapseIsland()">×</span>
+        <span class="close-btn" role="button" aria-label="Collapse" onclick="event.stopPropagation(); collapseIsland()">x</span>
       </div>
       <div class="detail-status"></div>
       <div class="detail-tools"></div>
@@ -28,8 +48,8 @@
       <div class="permission-section" style="display:none">
         <div class="permission-tool"></div>
         <div class="permission-actions">
-          <button class="btn-allow" onclick="event.stopPropagation(); handlePermission('allow')">Allow</button>
-          <button class="btn-deny" onclick="event.stopPropagation(); handlePermission('deny')">Deny</button>
+          <button class="btn-allow" aria-label="Allow this action" onclick="event.stopPropagation(); handlePermission('allow')">Allow</button>
+          <button class="btn-deny" aria-label="Deny this action" onclick="event.stopPropagation(); handlePermission('deny')">Deny</button>
         </div>
       </div>
 
