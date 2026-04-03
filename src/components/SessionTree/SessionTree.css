@@ -1,0 +1,157 @@
+.session-tree {
+  --bg-color: #0d1117;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --text-main: #c9d1d9;
+  --text-muted: #6e7681;
+  --accent-parent-border: #58a6ff;
+  --accent-parent-bg: rgba(88, 166, 255, 0.05);
+  --accent-parent-text: #0d1117;
+  --agent-bg: rgba(163, 113, 247, 0.1);
+  --agent-text: #a371f7;
+  --dep-text: #d29922;
+  --indent-size: 24px;
+
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  padding: 16px 20px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  min-width: 320px;
+  overflow-x: auto;
+}
+
+.session-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  transition: background-color 0.2s ease;
+  position: relative;
+}
+
+.session-item:hover {
+  background-color: var(--bg-hover);
+}
+
+.session-item.is-parent {
+  --base-padding: 18px;
+  border-left: 2px solid var(--accent-parent-border);
+  background-color: var(--accent-parent-bg);
+  margin-left: -20px;
+  padding-left: var(--base-padding);
+}
+
+.tree-prefix {
+  color: var(--text-muted);
+  white-space: pre;
+  user-select: none;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.content-wrapper {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.status-icon {
+  margin-right: 4px;
+}
+
+.message-text {
+  word-break: break-word;
+  color: var(--text-main);
+  flex: 1;
+}
+
+.message-text strong {
+  margin-right: 8px;
+}
+
+.agent-tag {
+  background-color: var(--agent-bg);
+  color: var(--agent-text);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+
+.parent-tag {
+  background-color: var(--accent-parent-border);
+  color: var(--accent-parent-text);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dependency-tag {
+  color: var(--dep-text);
+  font-size: 11px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+
+.metadata-info {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding-left: 12px;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 1px;
+}
+
+/* Tooltip styles */
+.session-tooltip {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  background-color: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  color: #c9d1d9;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-size: 12px;
+  max-width: 300px;
+}
+
+.session-tooltip.hidden {
+  display: none;
+}
+
+.tooltip-header {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.tooltip-desc {
+  color: #8b949e;
+  margin-bottom: 8px;
+}
+
+.tooltip-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+}
+
+.tooltip-label {
+  color: #6e7681;
+}

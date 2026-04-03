@@ -5,6 +5,10 @@ mod history;
 mod notch;
 mod socket_server;
 mod state;
+mod usage_collector;
+
+#[cfg(test)]
+mod tests;
 
 use tauri::Manager;
 
@@ -52,8 +56,13 @@ pub fn run() {
                     }
                 }
 
-                // Position at physical screen top and show
-                commands::set_window_frame_pub(&window, 480.0, notch.notch_height);
+                // Position at physical screen top and show.
+                // Width is derived from the configurable left/right zones plus the notch width.
+                commands::set_window_frame_pub(
+                    &window,
+                    commands::current_pill_width(),
+                    notch.notch_height,
+                );
                 let _ = window.show();
             }
 
@@ -70,6 +79,12 @@ pub fn run() {
             let app_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
                 anomaly::start(app_handle).await;
+            });
+
+            let app_handle = handle.clone();
+            let sessions = app_state.sessions.clone();
+            tauri::async_runtime::spawn(async move {
+                usage_collector::start(app_handle, sessions).await;
             });
 
             Ok(())

@@ -232,9 +232,9 @@ function updateUI(session) {
   // Detail view
   if (isExpanded) {
     const cwdShort = session.cwd.split('/').slice(-2).join('/');
-    sessionCwd.textContent = cwdShort;
+    // sessionCwd.textContent = cwdShort;
     detailStatus.textContent = statusText.textContent;
-    detailTools.textContent = session.tool_count + ' tool calls this session';
+    // detailTools.textContent = session.tool_count + ' tool calls this session';
 
     // Token statistics
     const tps = calculateTokensPerSec(session);

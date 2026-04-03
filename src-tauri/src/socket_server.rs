@@ -9,6 +9,7 @@ use crate::state::{
     ConnectionCount, HookPayload, PendingPermission, PendingPermissions, PermissionDecision,
     Session, SessionMap,
 };
+use crate::usage_collector;
 
 const SOCKET_PATH: &str = "/tmp/orbit.sock";
 
@@ -112,15 +113,16 @@ async fn handle_connection(
 
     let is_permission_request = payload.hook_event_name == "PermissionRequest";
     let is_session_end = payload.hook_event_name == "SessionEnd";
+    let session_id = payload.session_id.clone();
 
     // Update session state
-    let history_entry = {
-        let mut sessions = sessions.lock().await;
-        let session = sessions
-            .entry(payload.session_id.clone())
+    {
+        let mut sessions_guard = sessions.lock().await;
+        let session = sessions_guard
+            .entry(session_id.clone())
             .or_insert_with(|| {
                 Session::new(
-                    payload.session_id.clone(),
+                    session_id.clone(),
                     payload.cwd.clone(),
                     payload.pid,
                     payload.tty.clone(),
@@ -134,9 +136,16 @@ async fn handle_connection(
 
         // Emit update to frontend
         let _ = app_handle.emit("session-update", session.clone());
+    }
 
-        // Prepare history entry (but don't write yet — avoid sync IO inside async lock)
-        if is_session_end {
+    if is_session_end {
+        let _ = usage_collector::refresh_session_with_latest(&sessions, &session_id).await;
+    }
+
+    // Write history outside the lock to avoid blocking tokio worker
+    let history_entry = if is_session_end {
+        let sessions_guard = sessions.lock().await;
+        if let Some(session) = sessions_guard.get(&session_id) {
             let duration = (session.last_event_at - session.started_at)
                 .num_seconds()
                 .max(0);
@@ -155,9 +164,10 @@ async fn handle_connection(
         } else {
             None
         }
+    } else {
+        None
     };
 
-    // Write history outside the lock to avoid blocking tokio worker
     if let Some(entry) = history_entry {
         history::save_entry(entry);
     }

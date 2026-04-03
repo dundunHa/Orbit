@@ -2,7 +2,9 @@ use crate::history;
 use crate::notch::NotchGeometry;
 use crate::state::{PendingPermissions, PermissionDecision, Session, SessionMap};
 
-const PILL_WIDTH: f64 = 480.0;
+const LEFT_ZONE_WIDTH: f64 = 50.0;
+const RIGHT_ZONE_WIDTH: f64 = 50.0;
+const MASCOT_LEFT_INSET: f64 = 8.0;
 const MIN_EXPANDED_HEIGHT: f64 = 168.0;
 const MAX_EXPANDED_HEIGHT: f64 = 320.0;
 
@@ -20,6 +22,19 @@ fn collapsed_height() -> f64 {
     current_notch_geometry().notch_height
 }
 
+fn pill_width(notch: NotchGeometry) -> f64 {
+    LEFT_ZONE_WIDTH + notch.notch_width + RIGHT_ZONE_WIDTH
+}
+
+fn pill_left(notch: NotchGeometry) -> f64 {
+    let width = pill_width(notch);
+    (notch.notch_left - LEFT_ZONE_WIDTH).clamp(0.0, (notch.screen_width - width).max(0.0))
+}
+
+pub fn current_pill_width() -> f64 {
+    pill_width(current_notch_geometry())
+}
+
 fn clamp_expanded_height(height: f64) -> f64 {
     height.clamp(MIN_EXPANDED_HEIGHT, MAX_EXPANDED_HEIGHT)
 }
@@ -27,7 +42,7 @@ fn clamp_expanded_height(height: f64) -> f64 {
 /// Apply frame to NSWindow using native macOS coordinates (bottom-left origin).
 /// SAFETY: Must be called on the main thread. `view_addr` must be a valid NSView pointer.
 #[cfg(target_os = "macos")]
-unsafe fn apply_native_frame(view_addr: usize, width: f64, height: f64) {
+unsafe fn apply_native_frame(view_addr: usize, x: f64, width: f64, height: f64) {
     use objc2_app_kit::NSView;
     use objc2_foundation::{NSPoint, NSRect, NSSize};
     unsafe {
@@ -37,7 +52,7 @@ unsafe fn apply_native_frame(view_addr: usize, width: f64, height: f64) {
                 let sf = screen.frame();
                 let win_rect = NSRect::new(
                     NSPoint::new(
-                        sf.origin.x + (sf.size.width - width) / 2.0,
+                        sf.origin.x + x,
                         sf.origin.y + sf.size.height - height,
                     ),
                     NSSize::new(width, height),
@@ -83,6 +98,9 @@ pub fn set_window_frame_pub(window: &tauri::WebviewWindow, width: f64, height: f
 }
 
 fn set_window_frame(window: &tauri::WebviewWindow, width: f64, height: f64) {
+    let notch = current_notch_geometry();
+    let x = pill_left(notch);
+
     #[cfg(target_os = "macos")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -97,12 +115,12 @@ fn set_window_frame(window: &tauri::WebviewWindow, width: f64, height: f64) {
                 if unsafe { pthread_main_np() } != 0 {
                     // Already on main thread (e.g. during setup), call directly
                     unsafe {
-                        apply_native_frame(view_addr, width, height);
+                        apply_native_frame(view_addr, x, width, height);
                     }
                 } else {
                     // Tauri commands run on tokio threads; dispatch to main
                     dispatch_on_main(move || unsafe {
-                        apply_native_frame(view_addr, width, height);
+                        apply_native_frame(view_addr, x, width, height);
                     });
                 }
             }
@@ -111,8 +129,6 @@ fn set_window_frame(window: &tauri::WebviewWindow, width: f64, height: f64) {
 
     #[cfg(not(target_os = "macos"))]
     {
-        let sw = current_notch_geometry().screen_width;
-        let x = (sw - width) / 2.0;
         let _ = window.set_position(tauri::LogicalPosition::new(x, 0.0));
         let _ = window.set_size(tauri::LogicalSize::new(width, height));
     }
@@ -130,7 +146,10 @@ pub fn get_notch_info() -> Result<serde_json::Value, String> {
         "left_safe_width": notch.left_safe_width,
         "right_safe_width": notch.right_safe_width,
         "has_notch": notch.notch_height > 28.0,
-        "pill_width": PILL_WIDTH
+        "pill_width": pill_width(notch),
+        "left_zone_width": LEFT_ZONE_WIDTH,
+        "right_zone_width": RIGHT_ZONE_WIDTH,
+        "mascot_left_inset": MASCOT_LEFT_INSET
     }))
 }
 
@@ -161,18 +180,18 @@ pub async fn permission_decision(
 
 #[tauri::command]
 pub async fn expand_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    set_window_frame(&window, PILL_WIDTH, MAX_EXPANDED_HEIGHT);
+    set_window_frame(&window, current_pill_width(), MAX_EXPANDED_HEIGHT);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn set_expanded_height(window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
-    set_window_frame(&window, PILL_WIDTH, clamp_expanded_height(height));
+    set_window_frame(&window, current_pill_width(), clamp_expanded_height(height));
     Ok(())
 }
 
 #[tauri::command]
 pub async fn collapse_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    set_window_frame(&window, PILL_WIDTH, collapsed_height());
+    set_window_frame(&window, current_pill_width(), collapsed_height());
     Ok(())
 }

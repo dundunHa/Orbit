@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Agent Session Tree Demo</title>
+  <link rel="stylesheet" href="components/SessionTree/SessionTree.css">
+  <style>
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      margin-bottom: 8px;
+    }
+    .hint {
+      color: #6e7681;
+      font-size: 12px;
+      margin-bottom: 20px;
+    }
+    #tree-container {
+      max-width: 800px;
+    }
+    .info {
+      margin-top: 20px;
+      padding: 12px;
+      background: rgba(88, 166, 255, 0.1);
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .info strong {
+      color: #58a6ff;
+    }
+  </style>
+</head>
+<body>
+  <h1>Team Agent Session Tree Demo</h1>
+  <p class="hint">Press ⌘+T (or Ctrl+T) to toggle compact mode | Press ⌘+1-9 to switch sessions</p>
+  
+  <div id="tree-container"></div>
+  
+  <div class="info">
+    <strong>Active Session:</strong> <span id="active-info">None</span>
+  </div>
+
+  <script type="module">
+    import { SessionTree } from './components/SessionTree/index.js';
+    import { exampleSessions } from './data/exampleSessions.js';
+
+    const infoEl = document.getElementById('active-info');
+    
+    const tree = new SessionTree({
+      containerId: 'tree-container',
+      sessions: exampleSessions,
+      onSessionClick: (session) => {
+        infoEl.textContent = `${session.id} - ${session.description}`;
+      }
+    });
+  </script>
+</body>
+</html>

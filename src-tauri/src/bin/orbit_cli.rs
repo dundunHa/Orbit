@@ -39,30 +39,45 @@ fn cmd_hook() {
         std::process::exit(0);
     }
 
+    let is_permission_request = serde_json::from_str::<Value>(input)
+        .ok()
+        .and_then(|val| {
+            val.get("hook_event_name")
+                .and_then(|v| v.as_str())
+                .map(|s| s == "PermissionRequest")
+        })
+        .unwrap_or(false);
+
     match UnixStream::connect(SOCKET_PATH) {
         Ok(mut stream) => {
             use std::io::Write;
-            let payload = format!("{}\n", input);
-            if stream.write_all(payload.as_bytes()).is_err() {
-                std::process::exit(0);
-            }
 
-            // For PermissionRequest, read response from Orbit
-            if let Ok(val) = serde_json::from_str::<Value>(input)
-                && val.get("hook_event_name").and_then(|v| v.as_str()) == Some("PermissionRequest")
-            {
-                // Shut down write half so server knows we're done sending
-                let _ = stream.shutdown(std::net::Shutdown::Write);
+            if is_permission_request {
+                if let Ok(val) = serde_json::from_str::<Value>(input) {
+                    let control_msg = serde_json::json!({
+                        "type": "PermissionRequestHandledByCli",
+                        "session_id": val.get("session_id"),
+                        "tool_use_id": val.get("tool_use_id")
+                    });
+                    let control_payload = format!("{}\n", control_msg.to_string());
+                    let _ = stream.write_all(control_payload.as_bytes());
+                }
 
-                let mut response = String::new();
-                let _ = stream.read_to_string(&mut response);
-                if !response.is_empty() {
-                    print!("{}", response);
+                let ask_response = serde_json::json!({
+                    "hookSpecificOutput": {
+                        "hookEventName": "PermissionRequest",
+                        "decision": { "behavior": "ask" }
+                    }
+                });
+                print!("{}", ask_response.to_string());
+            } else {
+                let payload = format!("{}\n", input);
+                if stream.write_all(payload.as_bytes()).is_err() {
+                    std::process::exit(0);
                 }
             }
         }
         Err(_) => {
-            // Orbit not running, silently exit
             std::process::exit(0);
         }
     }
