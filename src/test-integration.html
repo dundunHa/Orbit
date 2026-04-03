@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SessionTree Integration Test</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body {
+      background: #1a1a1a;
+      padding: 40px;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+    }
+    .test-container {
+      max-width: 480px;
+      margin: 0 auto;
+      background: #000;
+      border-radius: 0 0 22px 22px;
+      padding: 20px;
+    }
+    .test-title {
+      color: #fff;
+      font-size: 14px;
+      margin-bottom: 16px;
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <div class="test-title">SessionTree Integration Test</div>
+    <div class="active-list"></div>
+  </div>
+
+  <script type="module">
+    import { SessionTree } from './components/SessionTree/index.js';
+    import { buildSessionTree, getSessionCounts } from './utils/sessionTransform.js';
+
+    // Mock session data matching Orbit's format
+    const mockSessions = {
+      'session-001': {
+        id: 'session-001',
+        title: 'Implementing auth system',
+        status: { type: 'Processing', description: 'Thinking about auth flow' },
+        cwd: '/Users/dev/project',
+        started_at: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
+        last_event_at: new Date().toISOString(),
+        tokens_in: 4200,
+        tokens_out: 3800,
+        model: 'claude-sonnet-4',
+      },
+      'session-002': {
+        id: 'session-002',
+        title: 'Database migration',
+        status: { type: 'RunningTool', tool_name: 'Bash', description: 'Running migration script' },
+        cwd: '/Users/dev/project',
+        started_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+        last_event_at: new Date().toISOString(),
+        tokens_in: 1200,
+        tokens_out: 800,
+        model: 'claude-sonnet-4',
+        agent: '@migration-agent',
+      },
+      'session-003': {
+        id: 'session-003',
+        title: 'Code review',
+        status: { type: 'WaitingForInput' },
+        cwd: '/Users/dev/project',
+        started_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+        last_event_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+        tokens_in: 2500,
+        tokens_out: 1200,
+        model: 'claude-sonnet-4',
+      },
+    };
+
+    const activeList = document.querySelector('.active-list');
+    const treeData = buildSessionTree(mockSessions, 'session-001');
+    
+    console.log('Tree data:', treeData);
+    console.log('Session counts:', getSessionCounts(mockSessions));
+
+    const treeContainer = document.createElement('div');
+    treeContainer.id = 'session-tree-container';
+    treeContainer.className = 'session-tree-container';
+    activeList.appendChild(treeContainer);
+
+    const sessionTree = new SessionTree({
+      container: treeContainer,
+      sessions: treeData,
+      activeSessionId: '001',
+      onSessionClick: (session) => {
+        console.log('Clicked session:', session);
+      },
+      compact: false,
+    });
+
+    console.log('SessionTree initialized successfully');
+  </script>
+</body>
+</html>

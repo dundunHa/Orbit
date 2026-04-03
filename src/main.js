@@ -1,6 +1,9 @@
 // Orbit — Dynamic Island Frontend
 // Tauri IPC bridge
 
+import { SessionTree } from './components/SessionTree/index.js';
+import { buildSessionTree, getSessionCounts } from './utils/sessionTransform.js';
+
 const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
 
@@ -10,6 +13,7 @@ let activeSessionId = null;
 let isExpanded = false;
 let isAnimating = false; // IMPL-06: animation lock
 const pendingPerms = new Map(); // IMPL-05: Map<permId, {sessionId, toolName, toolInput}>
+let sessionTree = null;
 
 // Notch geometry (set during init)
 let notchInfo = {
@@ -399,9 +403,10 @@ function renderActiveSessions() {
   if (!activeList) return;
   activeList.innerHTML = '';
 
-  const activeSessions = Object.values(sessions).filter(s => s.status.type !== 'Ended');
+  const treeData = buildSessionTree(sessions, activeSessionId);
+  const counts = getSessionCounts(sessions);
 
-  if (activeSessions.length === 0) {
+  if (treeData.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'active-item empty';
     empty.textContent = 'No active sessions';
@@ -409,38 +414,23 @@ function renderActiveSessions() {
     return;
   }
 
-  activeSessions.sort((a, b) => {
-    const prioA = STATUS_PRIORITY[a.status.type] || 0;
-    const prioB = STATUS_PRIORITY[b.status.type] || 0;
-    if (prioA !== prioB) return prioB - prioA;
-    return new Date(b.last_event_at) - new Date(a.last_event_at);
-  });
+  if (sessionTree) {
+    sessionTree.destroy();
+  }
 
-  activeSessions.forEach(session => {
-    const div = document.createElement('div');
-    div.className = 'active-item';
-    if (session.id === activeSessionId) {
-      div.classList.add('current');
-    }
+  const treeContainer = document.createElement('div');
+  treeContainer.id = 'session-tree-container';
+  treeContainer.className = 'session-tree-container';
+  activeList.appendChild(treeContainer);
 
-    const cwdSpan = document.createElement('span');
-    cwdSpan.className = 'active-cwd';
-    const projectName = session.cwd.split('/').pop() || session.cwd;
-    cwdSpan.textContent = projectName;
-
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'active-title';
-    const displayTitle = session.title || 'New session';
-    titleSpan.textContent = displayTitle;
-
-    const statusSpan = document.createElement('span');
-    statusSpan.className = 'active-status';
-    statusSpan.textContent = getStatusLabel(session.status);
-
-    div.appendChild(cwdSpan);
-    div.appendChild(titleSpan);
-    div.appendChild(statusSpan);
-    activeList.appendChild(div);
+  sessionTree = new SessionTree({
+    container: treeContainer,
+    sessions: treeData,
+    activeSessionId: activeSessionId?.slice(-4),
+    onSessionClick: (session) => {
+      console.log('Session clicked:', session.id);
+    },
+    compact: false,
   });
 }
 

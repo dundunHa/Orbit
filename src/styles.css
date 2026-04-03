@@ -499,3 +499,187 @@ body {
     background: rgba(255, 255, 255, 0.15);
     border-radius: 2px;
 }
+
+/* === SessionTree Integration === */
+.session-tree-container {
+    --tree-bg: transparent;
+    --tree-bg-hover: rgba(255, 255, 255, 0.05);
+    --tree-text-main: rgba(255, 255, 255, 0.9);
+    --tree-text-muted: rgba(255, 255, 255, 0.5);
+    --tree-accent-border: #58a6ff;
+    --tree-accent-bg: rgba(88, 166, 255, 0.08);
+    --tree-agent-bg: rgba(163, 113, 247, 0.15);
+    --tree-agent-text: #a371f7;
+    --tree-dep-text: #d29922;
+    
+    background: var(--tree-bg);
+    font-size: 11px;
+    line-height: 1.6;
+    max-height: 140px;
+    overflow-y: auto;
+    margin: 0 -14px;
+    padding: 0 14px;
+}
+
+.session-tree {
+    color: var(--tree-text-main);
+}
+
+.session-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 3px 0;
+    transition: background-color 0.15s ease;
+    border-radius: 4px;
+    margin: 0 -6px;
+    padding-left: 6px;
+    padding-right: 6px;
+}
+
+.session-item:hover {
+    background-color: var(--tree-bg-hover);
+}
+
+.session-item.is-active {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.session-item.is-parent {
+    border-left: 2px solid var(--tree-accent-border);
+    background-color: var(--tree-accent-bg);
+    margin-left: -8px;
+    padding-left: 6px;
+}
+
+.tree-prefix {
+    color: var(--tree-text-muted);
+    white-space: pre;
+    user-select: none;
+    flex-shrink: 0;
+    font-size: 10px;
+}
+
+.content-wrapper {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    flex: 1;
+    min-width: 0;
+}
+
+.status-icon {
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.message-text {
+    word-break: break-word;
+    color: var(--tree-text-main);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.message-text strong {
+    margin-right: 4px;
+    font-weight: 500;
+}
+
+.agent-tag {
+    background-color: var(--tree-agent-bg);
+    color: var(--tree-agent-text);
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 9px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.parent-tag {
+    background-color: var(--tree-accent-border);
+    color: #000;
+    padding: 0 3px;
+    border-radius: 2px;
+    font-size: 8px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.dependency-tag {
+    color: var(--tree-dep-text);
+    font-size: 9px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.metadata-info {
+    color: var(--tree-text-muted);
+    font-size: 9px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.session-children {
+    margin-left: 12px;
+}
+
+/* Tooltip styles */
+.session-tooltip {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    background-color: #1a1a1a;
+    border: 0.5px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 10px 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 11px;
+    max-width: 280px;
+}
+
+.session-tooltip.hidden {
+    display: none;
+}
+
+.tooltip-header {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #fff;
+}
+
+.tooltip-desc {
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+.tooltip-meta {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 3px 10px;
+}
+
+.tooltip-label {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* SessionTree scrollbar */
+.session-tree-container::-webkit-scrollbar {
+    width: 3px;
+}
+
+.session-tree-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.session-tree-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+}
