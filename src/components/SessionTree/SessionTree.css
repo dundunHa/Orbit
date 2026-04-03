@@ -14,7 +14,7 @@
   background-color: var(--bg-color);
   color: var(--text-main);
   padding: 16px 20px;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", monospace;
   font-size: 13px;
   line-height: 1.8;
   min-width: 320px;
@@ -125,9 +125,9 @@
   border: 1px solid #30363d;
   border-radius: 6px;
   padding: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   color: #c9d1d9;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", monospace;
   font-size: 12px;
   max-width: 300px;
 }

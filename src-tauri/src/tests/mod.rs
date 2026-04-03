@@ -3,14 +3,18 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::history::HistoryEntry;
-use crate::state::{Session, SessionMap, TokenUsage, HookPayload};
+use crate::state::{HookPayload, Session, SessionMap, TokenUsage};
 use crate::usage_collector::{GlobalUsageSnapshot, ModelUsage};
 
 fn create_test_session_map() -> SessionMap {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
-fn create_test_usage_snapshot(model_name: &str, prompt: u64, completion: u64) -> GlobalUsageSnapshot {
+fn create_test_usage_snapshot(
+    model_name: &str,
+    prompt: u64,
+    completion: u64,
+) -> GlobalUsageSnapshot {
     GlobalUsageSnapshot {
         timestamp: 0,
         models: vec![ModelUsage {
@@ -47,8 +51,6 @@ fn create_session_start_payload(session_id: &str) -> HookPayload {
     }
 }
 
-
-
 #[tokio::test]
 async fn test_full_session_lifecycle_with_token_updates() {
     let sessions = create_test_session_map();
@@ -56,12 +58,7 @@ async fn test_full_session_lifecycle_with_token_updates() {
 
     {
         let mut guard = sessions.lock().await;
-        let mut session = Session::new(
-            session_id.to_string(),
-            "/tmp".to_string(),
-            None,
-            None,
-        );
+        let mut session = Session::new(session_id.to_string(), "/tmp".to_string(), None, None);
         let payload = create_session_start_payload(session_id);
         session.apply_event(&payload);
         guard.insert(session_id.to_string(), session);
@@ -86,16 +83,16 @@ async fn test_full_session_lifecycle_with_token_updates() {
     {
         let mut guard = sessions.lock().await;
         let session = guard.get_mut(session_id).unwrap();
-        
-        if let Some(model_usage) = snapshot.models.iter().find(|m| {
-            m.model_name == *session.model.as_ref().unwrap()
-        }) {
-            session.tokens_in = session.tokens_in.max(
-                model_usage.prompt_tokens + model_usage.cache_tokens
-            );
-            session.tokens_out = session.tokens_out.max(
-                model_usage.completion_tokens
-            );
+
+        if let Some(model_usage) = snapshot
+            .models
+            .iter()
+            .find(|m| m.model_name == *session.model.as_ref().unwrap())
+        {
+            session.tokens_in = session
+                .tokens_in
+                .max(model_usage.prompt_tokens + model_usage.cache_tokens);
+            session.tokens_out = session.tokens_out.max(model_usage.completion_tokens);
         }
     }
 
@@ -110,16 +107,16 @@ async fn test_full_session_lifecycle_with_token_updates() {
     {
         let mut guard = sessions.lock().await;
         let session = guard.get_mut(session_id).unwrap();
-        
-        if let Some(model_usage) = snapshot2.models.iter().find(|m| {
-            m.model_name == *session.model.as_ref().unwrap()
-        }) {
-            session.tokens_in = session.tokens_in.max(
-                model_usage.prompt_tokens + model_usage.cache_tokens
-            );
-            session.tokens_out = session.tokens_out.max(
-                model_usage.completion_tokens
-            );
+
+        if let Some(model_usage) = snapshot2
+            .models
+            .iter()
+            .find(|m| m.model_name == *session.model.as_ref().unwrap())
+        {
+            session.tokens_in = session
+                .tokens_in
+                .max(model_usage.prompt_tokens + model_usage.cache_tokens);
+            session.tokens_out = session.tokens_out.max(model_usage.completion_tokens);
         }
     }
 
@@ -159,12 +156,7 @@ async fn test_model_name_normalization() {
 
     {
         let mut guard = sessions.lock().await;
-        let mut session = Session::new(
-            session_id.to_string(),
-            "/tmp".to_string(),
-            None,
-            None,
-        );
+        let mut session = Session::new(session_id.to_string(), "/tmp".to_string(), None, None);
         session.model = Some("claude-sonnet-4-6".to_string());
         guard.insert(session_id.to_string(), session);
     }
@@ -187,17 +179,20 @@ async fn test_model_name_normalization() {
 
     for (cache_model, should_match) in test_cases {
         let snapshot = create_test_usage_snapshot(cache_model, 1000, 500);
-        
+
         let mut guard = sessions.lock().await;
         let session = guard.get_mut(session_id).unwrap();
-        
-        let normalized_session = normalize(session.model.as_ref().unwrap());
-        
-        let matched = snapshot.models.iter().any(|m| {
-            normalize(&m.model_name) == normalized_session
-        });
 
-        assert_eq!(matched, should_match, 
+        let normalized_session = normalize(session.model.as_ref().unwrap());
+
+        let matched = snapshot
+            .models
+            .iter()
+            .any(|m| normalize(&m.model_name) == normalized_session);
+
+        assert_eq!(
+            matched,
+            should_match,
             "Model '{}' should {}match session model '{}'",
             cache_model,
             if should_match { "" } else { "not " },
@@ -274,16 +269,16 @@ async fn test_multiple_sessions_different_models() {
             if let Some(session) = guard.get_mut(*session_id) {
                 if let Some(ref session_model) = session.model {
                     let normalized_session = normalize(session_model);
-                    
-                    if let Some(model_usage) = snapshot.models.iter().find(|m| {
-                        normalize(&m.model_name) == normalized_session
-                    }) {
-                        session.tokens_in = session.tokens_in.max(
-                            model_usage.prompt_tokens + model_usage.cache_tokens
-                        );
-                        session.tokens_out = session.tokens_out.max(
-                            model_usage.completion_tokens
-                        );
+
+                    if let Some(model_usage) = snapshot
+                        .models
+                        .iter()
+                        .find(|m| normalize(&m.model_name) == normalized_session)
+                    {
+                        session.tokens_in = session
+                            .tokens_in
+                            .max(model_usage.prompt_tokens + model_usage.cache_tokens);
+                        session.tokens_out = session.tokens_out.max(model_usage.completion_tokens);
                     }
                 }
             }
@@ -291,7 +286,7 @@ async fn test_multiple_sessions_different_models() {
     }
 
     let guard = sessions.lock().await;
-    
+
     let session1 = guard.get("session-1").unwrap();
     assert_eq!(session1.tokens_in, 1000);
     assert_eq!(session1.tokens_out, 500);
@@ -312,12 +307,7 @@ async fn test_monotonic_protection_against_decrease() {
 
     {
         let mut guard = sessions.lock().await;
-        let mut session = Session::new(
-            session_id.to_string(),
-            "/tmp".to_string(),
-            None,
-            None,
-        );
+        let mut session = Session::new(session_id.to_string(), "/tmp".to_string(), None, None);
         session.model = Some("claude-sonnet-4-6".to_string());
         session.tokens_in = 10000;
         session.tokens_out = 5000;
@@ -325,20 +315,20 @@ async fn test_monotonic_protection_against_decrease() {
     }
 
     let snapshot = create_test_usage_snapshot("claude-sonnet-4-6", 5000, 2000);
-    
+
     {
         let mut guard = sessions.lock().await;
         let session = guard.get_mut(session_id).unwrap();
-        
-        if let Some(model_usage) = snapshot.models.iter().find(|m| {
-            m.model_name == *session.model.as_ref().unwrap()
-        }) {
-            session.tokens_in = session.tokens_in.max(
-                model_usage.prompt_tokens + model_usage.cache_tokens
-            );
-            session.tokens_out = session.tokens_out.max(
-                model_usage.completion_tokens
-            );
+
+        if let Some(model_usage) = snapshot
+            .models
+            .iter()
+            .find(|m| m.model_name == *session.model.as_ref().unwrap())
+        {
+            session.tokens_in = session
+                .tokens_in
+                .max(model_usage.prompt_tokens + model_usage.cache_tokens);
+            session.tokens_out = session.tokens_out.max(model_usage.completion_tokens);
         }
     }
 
@@ -355,31 +345,26 @@ async fn test_session_without_model_gets_no_tokens() {
 
     {
         let mut guard = sessions.lock().await;
-        let session = Session::new(
-            session_id.to_string(),
-            "/tmp".to_string(),
-            None,
-            None,
-        );
+        let session = Session::new(session_id.to_string(), "/tmp".to_string(), None, None);
         guard.insert(session_id.to_string(), session);
     }
 
     let snapshot = create_test_usage_snapshot("claude-sonnet-4-6", 1000, 500);
-    
+
     {
         let mut guard = sessions.lock().await;
         let session = guard.get_mut(session_id).unwrap();
-        
+
         if let Some(ref session_model) = session.model {
-            if let Some(model_usage) = snapshot.models.iter().find(|m| {
-                m.model_name == *session_model
-            }) {
-                session.tokens_in = session.tokens_in.max(
-                    model_usage.prompt_tokens + model_usage.cache_tokens
-                );
-                session.tokens_out = session.tokens_out.max(
-                    model_usage.completion_tokens
-                );
+            if let Some(model_usage) = snapshot
+                .models
+                .iter()
+                .find(|m| m.model_name == *session_model)
+            {
+                session.tokens_in = session
+                    .tokens_in
+                    .max(model_usage.prompt_tokens + model_usage.cache_tokens);
+                session.tokens_out = session.tokens_out.max(model_usage.completion_tokens);
             }
         }
     }
@@ -398,13 +383,8 @@ async fn test_hook_usage_accumulation_plus_collector_update() {
 
     {
         let mut guard = sessions.lock().await;
-        let mut session = Session::new(
-            session_id.to_string(),
-            "/tmp".to_string(),
-            None,
-            None,
-        );
-        
+        let mut session = Session::new(session_id.to_string(), "/tmp".to_string(), None, None);
+
         let hook_payload = HookPayload {
             session_id: session_id.to_string(),
             hook_event_name: "PostToolUse".to_string(),
@@ -436,20 +416,20 @@ async fn test_hook_usage_accumulation_plus_collector_update() {
     }
 
     let snapshot = create_test_usage_snapshot("claude-sonnet-4-6", 5000, 2000);
-    
+
     {
         let mut guard = sessions.lock().await;
         let session = guard.get_mut(session_id).unwrap();
-        
-        if let Some(model_usage) = snapshot.models.iter().find(|m| {
-            m.model_name == *session.model.as_ref().unwrap()
-        }) {
-            session.tokens_in = session.tokens_in.max(
-                model_usage.prompt_tokens + model_usage.cache_tokens
-            );
-            session.tokens_out = session.tokens_out.max(
-                model_usage.completion_tokens
-            );
+
+        if let Some(model_usage) = snapshot
+            .models
+            .iter()
+            .find(|m| m.model_name == *session.model.as_ref().unwrap())
+        {
+            session.tokens_in = session
+                .tokens_in
+                .max(model_usage.prompt_tokens + model_usage.cache_tokens);
+            session.tokens_out = session.tokens_out.max(model_usage.completion_tokens);
         }
     }
 

@@ -51,10 +51,7 @@ unsafe fn apply_native_frame(view_addr: usize, x: f64, width: f64, height: f64) 
             if let Some(screen) = ns_window.screen() {
                 let sf = screen.frame();
                 let win_rect = NSRect::new(
-                    NSPoint::new(
-                        sf.origin.x + x,
-                        sf.origin.y + sf.size.height - height,
-                    ),
+                    NSPoint::new(sf.origin.x + x, sf.origin.y + sf.size.height - height),
                     NSSize::new(width, height),
                 );
                 ns_window.setFrame_display(win_rect, true);

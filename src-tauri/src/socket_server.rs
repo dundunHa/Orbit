@@ -88,8 +88,14 @@ async fn handle_connection(
 
     if let Ok(control) = serde_json::from_str::<serde_json::Value>(buf) {
         if control.get("type").and_then(|v| v.as_str()) == Some("PermissionRequestHandledByCli") {
-            let session_id = control.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
-            let tool_use_id = control.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let session_id = control
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let tool_use_id = control
+                .get("tool_use_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
             let perm_id = format!("{}-{}", session_id, tool_use_id);
 
             let mut pending = pending.lock().await;
@@ -118,16 +124,14 @@ async fn handle_connection(
     // Update session state
     {
         let mut sessions_guard = sessions.lock().await;
-        let session = sessions_guard
-            .entry(session_id.clone())
-            .or_insert_with(|| {
-                Session::new(
-                    session_id.clone(),
-                    payload.cwd.clone(),
-                    payload.pid,
-                    payload.tty.clone(),
-                )
-            });
+        let session = sessions_guard.entry(session_id.clone()).or_insert_with(|| {
+            Session::new(
+                session_id.clone(),
+                payload.cwd.clone(),
+                payload.pid,
+                payload.tty.clone(),
+            )
+        });
         session.apply_event(&payload);
 
         if session.title.is_none() {

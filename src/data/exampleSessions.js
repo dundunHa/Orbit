@@ -1,4 +1,4 @@
-import { getStatusConfig } from '../constants/session.js';
+import { getStatusConfig } from "../constants/session.js";
 
 /**
  * @typedef {import('../types/session.js').SessionNode} SessionNode
@@ -51,7 +51,7 @@ export const exampleSessions = [
             metadata: { duration: "1m 02s", tokens: "500 tokens" },
             level: 2,
             children: [],
-          }
+          },
         ],
       },
       {
@@ -73,7 +73,7 @@ export const exampleSessions = [
         metadata: { duration: "-", tokens: "-" },
         level: 1,
         children: [],
-      }
+      },
     ],
   },
   {
@@ -89,5 +89,5 @@ export const exampleSessions = [
     },
     level: 0,
     children: [],
-  }
+  },
 ];

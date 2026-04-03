@@ -1,4 +1,4 @@
-import { getStatusConfig, TREE_CONNECTORS } from '../../constants/session.js';
+import { getStatusConfig, TREE_CONNECTORS } from "../../constants/session.js";
 
 /**
  * SessionTree - A visual tree component for displaying hierarchical agent sessions
@@ -17,12 +17,13 @@ export class SessionTree {
     this.onSessionClick = options.onSessionClick;
     this.compact = options.compact || false;
     this.activeSessionId = null;
-    
-    this.container = options.container || document.getElementById(options.containerId);
+
+    this.container =
+      options.container || document.getElementById(options.containerId);
     if (!this.container) {
-      throw new Error('SessionTree: Container not found');
+      throw new Error("SessionTree: Container not found");
     }
-    
+
     this.tooltip = this._createTooltip();
     this._setupKeyboardShortcuts();
     this.render();
@@ -33,8 +34,8 @@ export class SessionTree {
    * @returns {HTMLElement}
    */
   _createTooltip() {
-    const tooltip = document.createElement('div');
-    tooltip.className = 'session-tooltip hidden';
+    const tooltip = document.createElement("div");
+    tooltip.className = "session-tooltip hidden";
     document.body.appendChild(tooltip);
     return tooltip;
   }
@@ -46,7 +47,7 @@ export class SessionTree {
    */
   _showTooltip(session, event) {
     const statusConfig = getStatusConfig(session.status);
-    
+
     this.tooltip.innerHTML = `
       <div class="tooltip-header">${session.id}</div>
       <div class="tooltip-desc">${session.description}</div>
@@ -54,23 +55,23 @@ export class SessionTree {
         <span class="tooltip-label">Status:</span>
         <span style="color: ${statusConfig.color}">${statusConfig.label}</span>
         <span class="tooltip-label">Duration:</span>
-        <span>${session.metadata?.duration || 'N/A'}</span>
+        <span>${session.metadata?.duration || "N/A"}</span>
         <span class="tooltip-label">Tokens:</span>
-        <span>${session.metadata?.tokens || 'N/A'}</span>
-        ${session.agent ? `<span class="tooltip-label">Agent:</span><span>${session.agent}</span>` : ''}
-        ${session.dependencies?.length ? `<span class="tooltip-label">Depends on:</span><span>${session.dependencies.join(', ')}</span>` : ''}
+        <span>${session.metadata?.tokens || "N/A"}</span>
+        ${session.agent ? `<span class="tooltip-label">Agent:</span><span>${session.agent}</span>` : ""}
+        ${session.dependencies?.length ? `<span class="tooltip-label">Depends on:</span><span>${session.dependencies.join(", ")}</span>` : ""}
       </div>
     `;
-    
-    this.tooltip.classList.remove('hidden');
-    
+
+    this.tooltip.classList.remove("hidden");
+
     const x = event.clientX + 15;
     const y = event.clientY + 15;
-    
+
     const rect = this.tooltip.getBoundingClientRect();
     const maxX = window.innerWidth - rect.width - 10;
     const maxY = window.innerHeight - rect.height - 10;
-    
+
     this.tooltip.style.left = `${Math.min(x, maxX)}px`;
     this.tooltip.style.top = `${Math.min(y, maxY)}px`;
   }
@@ -79,20 +80,20 @@ export class SessionTree {
    * Hide tooltip
    */
   _hideTooltip() {
-    this.tooltip.classList.add('hidden');
+    this.tooltip.classList.add("hidden");
   }
 
   /**
    * Setup keyboard shortcuts
    */
   _setupKeyboardShortcuts() {
-    document.addEventListener('keydown', (e) => {
+    document.addEventListener("keydown", (e) => {
       const isModifier = e.metaKey || e.ctrlKey;
       if (!isModifier) return;
 
       const key = e.key.toLowerCase();
 
-      if (key === 't') {
+      if (key === "t") {
         e.preventDefault();
         this.toggleCompact();
         return;
@@ -154,9 +155,11 @@ export class SessionTree {
    * @returns {string}
    */
   _buildConnector(level, hasSiblings) {
-    if (level === 0) return '';
-    
-    const prefixChar = hasSiblings ? TREE_CONNECTORS.sibling : TREE_CONNECTORS.empty;
+    if (level === 0) return "";
+
+    const prefixChar = hasSiblings
+      ? TREE_CONNECTORS.sibling
+      : TREE_CONNECTORS.empty;
     const prefix = prefixChar.repeat(level - 1);
     return prefix + TREE_CONNECTORS.child;
   }
@@ -173,43 +176,47 @@ export class SessionTree {
     const statusConfig = getStatusConfig(session.status);
     const connector = this._buildConnector(level, hasSiblings);
     const isActive = this.activeSessionId === session.id;
-    
-    const item = document.createElement('div');
-    item.className = `session-item ${isParent ? 'is-parent' : ''} ${isActive ? 'is-active' : ''}`;
-    item.style.cursor = this.onSessionClick ? 'pointer' : 'default';
-    
+
+    const item = document.createElement("div");
+    item.className = `session-item ${isParent ? "is-parent" : ""} ${isActive ? "is-active" : ""}`;
+    item.style.cursor = this.onSessionClick ? "pointer" : "default";
+
     item.innerHTML = `
-      ${level > 0 ? `<span class="tree-prefix">${connector}</span>` : ''}
+      ${level > 0 ? `<span class="tree-prefix">${connector}</span>` : ""}
       <div class="content-wrapper">
         <span class="status-icon" style="color: ${statusConfig.color}">${statusConfig.icon}</span>
         <span class="message-text">
           <strong>${session.id}</strong>
           <span style="color: var(--text-muted)">${session.description}</span>
         </span>
-        ${isParent ? '<span class="parent-tag">Parent</span>' : ''}
-        ${session.agent ? `<span class="agent-tag">${session.agent}</span>` : ''}
-        ${session.dependencies?.length ? `<span class="dependency-tag">Depends: ${session.dependencies.join(', ')}</span>` : ''}
-        ${!this.compact && session.metadata ? `<span class="metadata-info">${session.metadata.duration} • ${session.metadata.tokens}</span>` : ''}
+        ${isParent ? '<span class="parent-tag">Parent</span>' : ""}
+        ${session.agent ? `<span class="agent-tag">${session.agent}</span>` : ""}
+        ${session.dependencies?.length ? `<span class="dependency-tag">Depends: ${session.dependencies.join(", ")}</span>` : ""}
+        ${!this.compact && session.metadata ? `<span class="metadata-info">${session.metadata.duration} • ${session.metadata.tokens}</span>` : ""}
       </div>
     `;
-    
-    item.addEventListener('click', () => this._activateSession(session));
-    item.addEventListener('mouseenter', (e) => this._showTooltip(session, e));
-    item.addEventListener('mouseleave', () => this._hideTooltip());
-    
-    const container = document.createElement('div');
+
+    item.addEventListener("click", () => this._activateSession(session));
+    item.addEventListener("mouseenter", (e) => this._showTooltip(session, e));
+    item.addEventListener("mouseleave", () => this._hideTooltip());
+
+    const container = document.createElement("div");
     container.appendChild(item);
-    
+
     if (isParent) {
-      const childrenContainer = document.createElement('div');
-      childrenContainer.className = 'session-children';
+      const childrenContainer = document.createElement("div");
+      childrenContainer.className = "session-children";
       session.children.forEach((child, index) => {
-        const childNode = this._renderNode(child, level + 1, index < session.children.length - 1);
+        const childNode = this._renderNode(
+          child,
+          level + 1,
+          index < session.children.length - 1,
+        );
         childrenContainer.appendChild(childNode);
       });
       container.appendChild(childrenContainer);
     }
-    
+
     return container;
   }
 
@@ -217,11 +224,15 @@ export class SessionTree {
    * Render the tree
    */
   render() {
-    this.container.innerHTML = '';
-    this.container.className = 'session-tree';
-    
+    this.container.innerHTML = "";
+    this.container.className = "session-tree";
+
     this.sessions.forEach((session, index) => {
-      const node = this._renderNode(session, 0, index < this.sessions.length - 1);
+      const node = this._renderNode(
+        session,
+        0,
+        index < this.sessions.length - 1,
+      );
       this.container.appendChild(node);
     });
   }

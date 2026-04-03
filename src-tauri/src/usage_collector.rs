@@ -90,10 +90,7 @@ struct CacheModel {
 }
 
 /// Start the usage collector background task
-pub async fn start(
-    app_handle: tauri::AppHandle,
-    sessions: SessionMap,
-) {
+pub async fn start(app_handle: tauri::AppHandle, sessions: SessionMap) {
     let state = Arc::new(Mutex::new(TokenRateState::default()));
     let mut ticker = interval(Duration::from_secs(POLL_INTERVAL_SECS));
 
@@ -198,9 +195,12 @@ fn calculate_rates(
         };
     }
 
-    let prompt_delta = current.total_prompt_tokens.saturating_sub(previous.total_prompt_tokens);
-    let completion_delta =
-        current.total_completion_tokens.saturating_sub(previous.total_completion_tokens);
+    let prompt_delta = current
+        .total_prompt_tokens
+        .saturating_sub(previous.total_prompt_tokens);
+    let completion_delta = current
+        .total_completion_tokens
+        .saturating_sub(previous.total_completion_tokens);
 
     let mut by_model = HashMap::new();
 
@@ -270,10 +270,7 @@ pub async fn get_latest_snapshot() -> Option<GlobalUsageSnapshot> {
 }
 
 /// Update a specific session with the latest usage data for its model
-pub async fn refresh_session_with_latest(
-    sessions: &SessionMap,
-    session_id: &str,
-) -> Option<()> {
+pub async fn refresh_session_with_latest(sessions: &SessionMap, session_id: &str) -> Option<()> {
     let snapshot = get_latest_snapshot().await?;
     let mut sessions_guard = sessions.lock().await;
     let session = sessions_guard.get_mut(session_id)?;
