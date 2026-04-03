@@ -70,7 +70,7 @@ body {
     justify-content: flex-start;
     width: var(--zone-left-width, 60px);
     flex-shrink: 0;
-    padding-left: 8px;
+    padding-left: var(--mascot-left-inset, 8px);
 }
 
 /* Center zone: notch placeholder (transparent, hardware notch shows through) */
@@ -87,7 +87,7 @@ body {
     gap: 0;
     width: var(--zone-right-width, 140px);
     flex: 0 0 var(--zone-right-width, 140px);
-    padding: 0;
+    padding: 0 16px 0 0;
     min-width: 0;
 }
 
@@ -206,6 +206,62 @@ body {
     margin-bottom: 12px;
 }
 
+.active-list {
+    max-height: none;
+    overflow: visible;
+}
+
+.active-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 11px;
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+}
+
+.active-item:last-child {
+    border-bottom: none;
+}
+
+.active-item.current {
+    background: rgba(255, 255, 255, 0.05);
+    margin: 0 -14px;
+    padding: 5px 14px;
+    border-radius: 6px;
+}
+
+.active-item.empty,
+.history-item.empty {
+    color: rgba(255, 255, 255, 0.3);
+    font-style: italic;
+}
+
+.active-cwd {
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.active-title {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.5);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.active-status {
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 10px;
+    text-transform: lowercase;
+}
+
 .detail-header {
     display: flex;
     justify-content: space-between;
@@ -253,6 +309,19 @@ body {
 .detail-tools {
     color: rgba(255, 255, 255, 0.4);
     font-size: 11px;
+}
+
+.detail-tokens {
+    color: #60a5fa;
+    font-size: 11px;
+    font-weight: 500;
+    margin-top: 4px;
+}
+
+.detail-model {
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+    margin-top: 2px;
 }
 
 .active-summary {
@@ -329,10 +398,10 @@ body {
 
 .history-item {
     display: flex;
-    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
     padding: 4px 0;
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.5);
     border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -341,16 +410,27 @@ body {
 }
 
 .history-cwd {
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+    max-width: 80px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1;
-    margin-right: 8px;
 }
 
-.history-meta {
+.history-title {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.5);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-time {
     flex-shrink: 0;
     color: rgba(255, 255, 255, 0.3);
+    font-size: 10px;
 }
 
 /* === Completion flash === */

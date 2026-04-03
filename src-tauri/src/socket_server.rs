@@ -85,6 +85,23 @@ async fn handle_connection(
         return;
     }
 
+    if let Ok(control) = serde_json::from_str::<serde_json::Value>(buf) {
+        if control.get("type").and_then(|v| v.as_str()) == Some("PermissionRequestHandledByCli") {
+            let session_id = control.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+            let tool_use_id = control.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let perm_id = format!("{}-{}", session_id, tool_use_id);
+
+            let mut pending = pending.lock().await;
+            if pending.remove(&perm_id).is_some() {
+                let _ = app_handle.emit("permission-resolved", &perm_id);
+            }
+            return;
+        }
+    }
+
+    // Debug: Log raw payload to verify token data availability
+    eprintln!("[Orbit Debug] Hook payload: {}", buf);
+
     let payload: HookPayload = match serde_json::from_str(buf) {
         Ok(p) => p,
         Err(e) => {
@@ -111,6 +128,10 @@ async fn handle_connection(
             });
         session.apply_event(&payload);
 
+        if session.title.is_none() {
+            session.refresh_title_from_claude();
+        }
+
         // Emit update to frontend
         let _ = app_handle.emit("session-update", session.clone());
 
@@ -126,6 +147,10 @@ async fn handle_connection(
                 ended_at: session.last_event_at,
                 tool_count: session.tool_count,
                 duration_secs: duration,
+                title: session.title.clone().unwrap_or_default(),
+                tokens_in: session.tokens_in,
+                tokens_out: session.tokens_out,
+                model: session.model.clone(),
             })
         } else {
             None

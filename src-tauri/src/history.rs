@@ -16,6 +16,13 @@ pub struct HistoryEntry {
     pub ended_at: DateTime<Utc>,
     pub tool_count: u32,
     pub duration_secs: i64,
+    pub title: String,
+    #[serde(default)]
+    pub tokens_in: u64,
+    #[serde(default)]
+    pub tokens_out: u64,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 fn history_path() -> PathBuf {
