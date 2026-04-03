@@ -4,7 +4,10 @@
 import { SessionTree } from "./components/SessionTree/index.js";
 import {
   buildSessionTree,
+  formatTokenCount,
+  formatTokenRate,
   getSessionCounts,
+  getSessionTokenStats,
 } from "./utils/sessionTransform.js";
 
 const { listen } = window.__TAURI__.event;
@@ -43,6 +46,7 @@ const detailStatus = document.querySelector(".detail-status");
 const detailTools = document.querySelector(".detail-tools");
 const detailTokens = document.querySelector(".detail-tokens");
 const detailModel = document.querySelector(".detail-model");
+const detail = document.querySelector(".detail");
 const activeList = document.querySelector(".active-list");
 const permissionSection = document.querySelector(".permission-section");
 const permissionTool = document.querySelector(".permission-tool");
@@ -65,10 +69,10 @@ const STATUS_PRIORITY = {
 let collapseAfterTransition = false;
 let collapseFallbackTimer = null;
 
-island.addEventListener("transitionend", (e) => {
+island.addEventListener("transitionend", async (e) => {
   if (e.target === island && e.propertyName === "height") {
     if (collapseAfterTransition) {
-      finishCollapse();
+      await finishCollapse();
     }
     isAnimating = false;
   }
@@ -261,15 +265,17 @@ function updateUI(session) {
     detailStatus.textContent = statusText.textContent;
     // detailTools.textContent = session.tool_count + ' tool calls this session';
 
-    // Token statistics
-    const tps = calculateTokensPerSec(session);
-    if (tps) {
-      detailTokens.textContent = `${tps.output} tok/s · ${tps.total} total`;
-      detailModel.textContent = tps.model || "unknown model";
-    } else {
-      detailTokens.textContent = "—";
-      detailModel.textContent = session.model || "—";
-    }
+    const tokenStats = getSessionTokenStats(session);
+    detailTokens.textContent =
+      `${formatTokenCount(tokenStats.input)} in · ` +
+      `${formatTokenCount(tokenStats.output)} out · ` +
+      `${formatTokenCount(tokenStats.total)} total`;
+
+    const rateLabel =
+      tokenStats.durationSecs > 0
+        ? `${formatTokenRate(tokenStats.averageTotalTps)} avg`
+        : "—";
+    detailModel.textContent = `${rateLabel} · ${session.model || "—"}`;
   }
 
   // Hide permission section if no pending perms for active session
@@ -383,13 +389,18 @@ async function expandIsland() {
   }
 
   // Elevator: expand native window FIRST, then CSS animation fills it
-  await invoke("expand_window");
+  try {
+    await invoke("expand_window");
+  } catch (e) {
+    console.error("Failed to expand window:", e);
+  }
 
   // Wait one frame so the window resize is applied before CSS transition starts
   requestAnimationFrame(() => {
     island.classList.remove("collapsed");
     island.classList.add("expanded");
     island.setAttribute("aria-expanded", "true");
+    scheduleExpandedHeightUpdate();
   });
 
   renderActiveSessions();
@@ -433,9 +444,31 @@ async function finishCollapse() {
   island.classList.remove("expanded");
   island.classList.add("collapsed");
   island.style.height = "";
+  island.style.removeProperty("--expanded-height");
 
   // THEN shrink native window (elevator: door closes after you're inside)
-  await invoke("collapse_window");
+  try {
+    await invoke("collapse_window");
+  } catch (e) {
+    console.error("Failed to collapse window:", e);
+  }
+}
+
+function scheduleExpandedHeightUpdate() {
+  requestAnimationFrame(() => {
+    if (!isExpanded || !detail) return;
+
+    const notchHeight = notchInfo.notch_height || 37;
+    const minExpandedHeight = notchHeight + 152;
+    const maxExpandedHeight = 320;
+    const contentHeight = notchHeight + detail.scrollHeight;
+    const nextHeight = Math.min(
+      maxExpandedHeight,
+      Math.max(minExpandedHeight, contentHeight),
+    );
+
+    island.style.setProperty("--expanded-height", `${nextHeight}px`);
+  });
 }
 
 function renderActiveSessions() {
@@ -450,6 +483,7 @@ function renderActiveSessions() {
     empty.className = "active-item empty";
     empty.textContent = "No active sessions";
     activeList.appendChild(empty);
+    scheduleExpandedHeightUpdate();
     return;
   }
 
@@ -471,6 +505,8 @@ function renderActiveSessions() {
     },
     compact: false,
   });
+
+  scheduleExpandedHeightUpdate();
 }
 
 function getStatusLabel(status) {
@@ -499,12 +535,32 @@ function renderHistory(entries) {
     empty.className = "history-item empty";
     empty.textContent = "No history yet";
     historyList.appendChild(empty);
+    scheduleExpandedHeightUpdate();
     return;
   }
 
-  entries.reverse().forEach((entry) => {
+  // Filter entries from last 3 hours only (recent sessions more likely to be resumed)
+  const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+  const now = Date.now();
+  const recentEntries = entries.filter((entry) => {
+    const endedTime = new Date(entry.ended_at).getTime();
+    return now - endedTime <= THREE_HOURS_MS;
+  });
+
+  if (recentEntries.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "history-item empty";
+    empty.textContent = "No recent sessions (last 3h)";
+    historyList.appendChild(empty);
+    scheduleExpandedHeightUpdate();
+    return;
+  }
+
+  recentEntries.reverse().forEach((entry) => {
     const div = document.createElement("div");
     div.className = "history-item";
+    div.style.cursor = "pointer";
+    div.title = `Click to resume session in ${entry.cwd}`;
 
     const cwdSpan = document.createElement("span");
     cwdSpan.className = "history-cwd";
@@ -522,8 +578,27 @@ function renderHistory(entries) {
     div.appendChild(cwdSpan);
     div.appendChild(titleSpan);
     div.appendChild(timeSpan);
+
+    // Click to resume session in terminal
+    div.addEventListener("click", () => resumeSession(entry.session_id, entry.cwd));
+
     historyList.appendChild(div);
   });
+
+  scheduleExpandedHeightUpdate();
+}
+
+async function resumeSession(sessionId, cwd) {
+  try {
+    await invoke("resume_session", { session_id: sessionId, cwd });
+    // Close the expanded island after triggering resume
+    if (isExpanded) {
+      collapseIsland();
+    }
+  } catch (e) {
+    console.error("Failed to resume session:", e);
+    alert(`Failed to resume session: ${e.message || e}`);
+  }
 }
 
 function formatDuration(secs) {
@@ -531,20 +606,6 @@ function formatDuration(secs) {
   if (secs < 60) return secs + "s";
   if (secs < 3600) return Math.floor(secs / 60) + "m";
   return Math.floor(secs / 3600) + "h " + Math.floor((secs % 3600) / 60) + "m";
-}
-
-function calculateTokensPerSec(session) {
-  if (!session.tokens_out || session.tokens_out === 0) return null;
-
-  const durationSecs =
-    (new Date(session.last_event_at) - new Date(session.started_at)) / 1000;
-  if (durationSecs <= 0) return null;
-
-  return {
-    output: Math.round(session.tokens_out / durationSecs),
-    total: Math.round((session.tokens_in + session.tokens_out) / durationSecs),
-    model: session.model,
-  };
 }
 
 // Connection state tracking (IMPL-07)
@@ -567,3 +628,8 @@ listen("connection-count", (event) => {
 
 // Boot
 init();
+
+// Export functions for HTML inline event handlers (ES6 module scope isolation)
+window.toggleExpand = toggleExpand;
+window.collapseIsland = collapseIsland;
+window.handlePermission = handlePermission;

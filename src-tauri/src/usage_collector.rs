@@ -7,8 +7,6 @@ use tauri::Emitter;
 use tokio::sync::Mutex;
 use tokio::time::interval;
 
-use crate::state::SessionMap;
-
 const CACHE_PATH: &str = "/tmp/.claude_usage_cache";
 const POLL_INTERVAL_SECS: u64 = 2;
 
@@ -90,7 +88,7 @@ struct CacheModel {
 }
 
 /// Start the usage collector background task
-pub async fn start(app_handle: tauri::AppHandle, sessions: SessionMap) {
+pub async fn start(app_handle: tauri::AppHandle) {
     let state = Arc::new(Mutex::new(TokenRateState::default()));
     let mut ticker = interval(Duration::from_secs(POLL_INTERVAL_SECS));
 
@@ -108,8 +106,6 @@ pub async fn start(app_handle: tauri::AppHandle, sessions: SessionMap) {
                     let _ = app_handle.emit("global-usage-update", &snapshot);
                     let _ = app_handle.emit("token-rates", rates);
 
-                    // Try to update active sessions with model-specific usage
-                    update_sessions_with_usage(&sessions, &snapshot).await;
                 }
 
                 state_guard.last_snapshot = Some(snapshot);
@@ -235,61 +231,6 @@ fn calculate_rates(
         total_rate: (prompt_delta + completion_delta) as f64 / elapsed_secs,
         by_model,
     }
-}
-
-fn normalize_model_name(name: &str) -> String {
-    name.trim_start_matches("anthropic/")
-        .trim_start_matches("claude-")
-        .to_string()
-}
-
-/// Update active sessions with usage data for their model
-async fn update_sessions_with_usage(sessions: &SessionMap, snapshot: &GlobalUsageSnapshot) {
-    let mut sessions_guard = sessions.lock().await;
-
-    for (_, session) in sessions_guard.iter_mut() {
-        if let Some(ref session_model) = session.model {
-            let normalized_session = normalize_model_name(session_model);
-
-            if let Some(model_usage) = snapshot.models.iter().find(|m| {
-                let normalized_cache = normalize_model_name(&m.model_name);
-                normalized_cache == normalized_session
-            }) {
-                session.tokens_in = session
-                    .tokens_in
-                    .max(model_usage.prompt_tokens + model_usage.cache_tokens);
-                session.tokens_out = session.tokens_out.max(model_usage.completion_tokens);
-            }
-        }
-    }
-}
-
-/// Get the latest usage snapshot (for SessionEnd final refresh)
-pub async fn get_latest_snapshot() -> Option<GlobalUsageSnapshot> {
-    read_usage_cache().await
-}
-
-/// Update a specific session with the latest usage data for its model
-pub async fn refresh_session_with_latest(sessions: &SessionMap, session_id: &str) -> Option<()> {
-    let snapshot = get_latest_snapshot().await?;
-    let mut sessions_guard = sessions.lock().await;
-    let session = sessions_guard.get_mut(session_id)?;
-
-    if let Some(ref session_model) = session.model {
-        let normalized_session = normalize_model_name(session_model);
-
-        if let Some(model_usage) = snapshot.models.iter().find(|m| {
-            let normalized_cache = normalize_model_name(&m.model_name);
-            normalized_cache == normalized_session
-        }) {
-            session.tokens_in = session
-                .tokens_in
-                .max(model_usage.prompt_tokens + model_usage.cache_tokens);
-            session.tokens_out = session.tokens_out.max(model_usage.completion_tokens);
-        }
-    }
-
-    Some(())
 }
 
 #[cfg(test)]

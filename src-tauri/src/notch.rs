@@ -12,11 +12,11 @@ pub struct NotchGeometry {
 impl NotchGeometry {
     pub const fn fallback() -> Self {
         Self {
-            notch_height: 28.0,
+            notch_height: 40.0,
             screen_width: 1440.0,
             notch_left: 710.0,
             notch_right: 730.0,
-            notch_width: 20.0,
+            notch_width: 100.0,
             left_safe_width: 710.0,
             right_safe_width: 710.0,
         }

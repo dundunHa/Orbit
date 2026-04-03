@@ -23,6 +23,7 @@ pub fn run() {
             commands::expand_window,
             commands::set_expanded_height,
             commands::collapse_window,
+            commands::resume_session,
         ])
         .setup(|app| {
             // Create shared state BEFORE spawning background tasks
@@ -36,22 +37,34 @@ pub fn run() {
             // Position window at notch
             if let Some(window) = app.get_webview_window("main") {
                 let notch = notch::get_notch_geometry();
-                let _ = commands::NOTCH_GEOMETRY.set(notch);
+                if commands::NOTCH_GEOMETRY.set(notch).is_err() {
+                    eprintln!("[Orbit] Failed to set NOTCH_GEOMETRY, already initialized");
+                }
 
                 // Set window level above menu bar so it can overlap the notch area
+                // Also set collection behavior to show on all Spaces (Mission Control desktops)
                 #[cfg(target_os = "macos")]
                 {
-                    use objc2_app_kit::NSView;
+                    use objc2_app_kit::{NSView, NSWindowCollectionBehavior};
                     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-                    if let Ok(wh) = window.window_handle() {
-                        if let RawWindowHandle::AppKit(appkit) = wh.as_raw() {
-                            let ns_view = appkit.ns_view.as_ptr() as *mut NSView;
-                            unsafe {
-                                if let Some(ns_window) = (*ns_view).window() {
-                                    // NSStatusWindowLevel = 25, above NSMainMenuWindowLevel = 24
-                                    ns_window.setLevel(25);
+                    match window.window_handle() {
+                        Ok(wh) => {
+                            if let RawWindowHandle::AppKit(appkit) = wh.as_raw() {
+                                let ns_view = appkit.ns_view.as_ptr() as *mut NSView;
+                                unsafe {
+                                    if let Some(ns_window) = (*ns_view).window() {
+                                        ns_window.setLevel(25);
+                                        ns_window.setCollectionBehavior(
+                                            NSWindowCollectionBehavior::CanJoinAllSpaces,
+                                        );
+                                    } else {
+                                        eprintln!("[Orbit] Failed to get NSWindow from NSView");
+                                    }
                                 }
                             }
+                        }
+                        Err(e) => {
+                            eprintln!("[Orbit] Failed to get window handle: {}", e);
                         }
                     }
                 }
@@ -82,9 +95,8 @@ pub fn run() {
             });
 
             let app_handle = handle.clone();
-            let sessions = app_state.sessions.clone();
             tauri::async_runtime::spawn(async move {
-                usage_collector::start(app_handle, sessions).await;
+                usage_collector::start(app_handle).await;
             });
 
             Ok(())

@@ -56,8 +56,14 @@ export class SessionTree {
         <span style="color: ${statusConfig.color}">${statusConfig.label}</span>
         <span class="tooltip-label">Duration:</span>
         <span>${session.metadata?.duration || "N/A"}</span>
-        <span class="tooltip-label">Tokens:</span>
-        <span>${session.metadata?.tokens || "N/A"}</span>
+        <span class="tooltip-label">Input:</span>
+        <span>${session.metadata?.tokensIn || "0 tok"}</span>
+        <span class="tooltip-label">Output:</span>
+        <span>${session.metadata?.tokensOut || "0 tok"}</span>
+        <span class="tooltip-label">Total:</span>
+        <span>${session.metadata?.tokensTotal || session.metadata?.tokens || "0 tok"}</span>
+        <span class="tooltip-label">Avg rate:</span>
+        <span>${session.metadata?.averageTps || "0.00 tok/s"}</span>
         ${session.agent ? `<span class="tooltip-label">Agent:</span><span>${session.agent}</span>` : ""}
         ${session.dependencies?.length ? `<span class="tooltip-label">Depends on:</span><span>${session.dependencies.join(", ")}</span>` : ""}
       </div>
@@ -225,7 +231,7 @@ export class SessionTree {
    */
   render() {
     this.container.innerHTML = "";
-    this.container.className = "session-tree";
+    this.container.classList.add("session-tree");
 
     this.sessions.forEach((session, index) => {
       const node = this._renderNode(

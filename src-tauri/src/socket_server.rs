@@ -9,7 +9,6 @@ use crate::state::{
     ConnectionCount, HookPayload, PendingPermission, PendingPermissions, PermissionDecision,
     Session, SessionMap,
 };
-use crate::usage_collector;
 
 const SOCKET_PATH: &str = "/tmp/orbit.sock";
 
@@ -140,10 +139,6 @@ async fn handle_connection(
 
         // Emit update to frontend
         let _ = app_handle.emit("session-update", session.clone());
-    }
-
-    if is_session_end {
-        let _ = usage_collector::refresh_session_with_latest(&sessions, &session_id).await;
     }
 
     // Write history outside the lock to avoid blocking tokio worker

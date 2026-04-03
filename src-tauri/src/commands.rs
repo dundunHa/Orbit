@@ -2,8 +2,8 @@ use crate::history;
 use crate::notch::NotchGeometry;
 use crate::state::{PendingPermissions, PermissionDecision, Session, SessionMap};
 
-const LEFT_ZONE_WIDTH: f64 = 50.0;
-const RIGHT_ZONE_WIDTH: f64 = 50.0;
+const LEFT_ZONE_WIDTH: f64 = 45.0;
+const RIGHT_ZONE_WIDTH: f64 = 30.0;
 const MASCOT_LEFT_INSET: f64 = 8.0;
 const MIN_EXPANDED_HEIGHT: f64 = 168.0;
 const MAX_EXPANDED_HEIGHT: f64 = 320.0;
@@ -190,5 +190,74 @@ pub async fn set_expanded_height(window: tauri::WebviewWindow, height: f64) -> R
 #[tauri::command]
 pub async fn collapse_window(window: tauri::WebviewWindow) -> Result<(), String> {
     set_window_frame(&window, current_pill_width(), collapsed_height());
+    Ok(())
+}
+
+fn validate_session_id(session_id: &str) -> Result<(), String> {
+    if session_id.is_empty() {
+        return Err("Session ID cannot be empty".to_string());
+    }
+    if session_id.len() > 128 {
+        return Err("Session ID too long".to_string());
+    }
+    if !session_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        return Err("Session ID contains invalid characters".to_string());
+    }
+    Ok(())
+}
+
+fn escape_for_applescript(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\'', "\\'")
+}
+
+/// Resume a Claude Code session in a new terminal window
+/// Opens the specified working directory and resumes the session
+#[tauri::command]
+pub async fn resume_session(session_id: String, cwd: String) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+
+    let path = std::path::Path::new(&cwd);
+    if !path.exists() {
+        return Err(format!("Working directory does not exist: {}", cwd));
+    }
+
+    let canonical_cwd = path
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
+    let cwd_str = canonical_cwd
+        .to_str()
+        .ok_or("Invalid path encoding")?;
+
+    #[cfg(target_os = "macos")]
+    {
+        let safe_cwd = escape_for_applescript(cwd_str);
+        let safe_session_id = escape_for_applescript(&session_id);
+        let script = format!(
+            r#"tell application "Terminal"
+    do script "cd \"{}\" && claude-code resume --session-id \"{}\""
+    activate
+end tell"#,
+            safe_cwd, safe_session_id
+        );
+
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|e| format!("Failed to execute AppleScript: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("AppleScript failed: {}", stderr));
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        return Err("Session resume is currently only supported on macOS".to_string());
+    }
+
     Ok(())
 }

@@ -29,14 +29,56 @@ function formatDuration(seconds) {
   );
 }
 
+function getSessionDurationSeconds(session) {
+  if (!session.started_at || !session.last_event_at) return 0;
+
+  return Math.max(
+    0,
+    Math.floor(
+      (new Date(session.last_event_at) - new Date(session.started_at)) / 1000,
+    ),
+  );
+}
+
+export function formatTokenCount(tokens) {
+  const value = Math.max(0, Number(tokens) || 0);
+
+  if (value < 1000) return `${value} tok`;
+  if (value < 10000) return `${(value / 1000).toFixed(1)}k tok`;
+  if (value < 1000000) return `${Math.round(value / 1000)}k tok`;
+
+  return `${(value / 1000000).toFixed(1)}M tok`;
+}
+
+export function formatTokenRate(tokensPerSecond) {
+  const value = Math.max(0, Number(tokensPerSecond) || 0);
+
+  if (value >= 100) return `${Math.round(value)} tok/s`;
+  if (value >= 10) return `${value.toFixed(1)} tok/s`;
+
+  return `${value.toFixed(2)} tok/s`;
+}
+
+export function getSessionTokenStats(session) {
+  const input = Math.max(0, Number(session.tokens_in) || 0);
+  const output = Math.max(0, Number(session.tokens_out) || 0);
+  const total = input + output;
+  const durationSecs = getSessionDurationSeconds(session);
+  const averageTotalTps = durationSecs > 0 ? total / durationSecs : 0;
+
+  return {
+    input,
+    output,
+    total,
+    durationSecs,
+    averageTotalTps,
+    hasTokens: total > 0,
+  };
+}
+
 function transformSession(session, level = 0) {
-  const duration =
-    session.started_at && session.last_event_at
-      ? Math.floor(
-          (new Date(session.last_event_at) - new Date(session.started_at)) /
-            1000,
-        )
-      : 0;
+  const duration = getSessionDurationSeconds(session);
+  const tokenStats = getSessionTokenStats(session);
 
   return {
     id: session.id?.slice(-4) || session.id || "unknown",
@@ -46,9 +88,11 @@ function transformSession(session, level = 0) {
     agent: session.agent || null,
     metadata: {
       duration: formatDuration(duration),
-      tokens: session.tokens_out
-        ? `${Math.round((session.tokens_in + session.tokens_out) / 100) / 10}k tokens`
-        : "N/A",
+      tokens: formatTokenCount(tokenStats.total),
+      tokensIn: formatTokenCount(tokenStats.input),
+      tokensOut: formatTokenCount(tokenStats.output),
+      tokensTotal: formatTokenCount(tokenStats.total),
+      averageTps: formatTokenRate(tokenStats.averageTotalTps),
     },
     level,
     children: [],
