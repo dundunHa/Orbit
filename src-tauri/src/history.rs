@@ -22,6 +22,8 @@ pub struct HistoryEntry {
     #[serde(default)]
     pub tokens_out: u64,
     #[serde(default)]
+    pub cost_usd: f64,
+    #[serde(default)]
     pub model: Option<String>,
 }
 

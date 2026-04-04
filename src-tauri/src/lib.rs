@@ -5,7 +5,7 @@ mod history;
 mod notch;
 mod socket_server;
 mod state;
-mod usage_collector;
+
 
 #[cfg(test)]
 mod tests;
@@ -92,11 +92,6 @@ pub fn run() {
             let app_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
                 anomaly::start(app_handle).await;
-            });
-
-            let app_handle = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                usage_collector::start(app_handle).await;
             });
 
             Ok(())

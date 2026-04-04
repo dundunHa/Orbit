@@ -3,14 +3,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 
-/// Token usage information from Claude Code API
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenUsage {
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-    pub model: String,
+/// Token usage data from Claude Code statusline
+#[derive(Debug, Clone, Deserialize)]
+pub struct StatuslineUpdate {
+    pub session_id: String,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    #[serde(default)]
+    pub cost_usd: f64,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +57,8 @@ pub struct Session {
     pub tokens_in: u64,
     #[serde(default)]
     pub tokens_out: u64,
+    #[serde(default)]
+    pub cost_usd: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 }
@@ -95,8 +101,6 @@ pub struct HookPayload {
     pub tty: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
-    #[serde(default)]
-    pub usage: Option<TokenUsage>,
 }
 
 /// Pending permission request waiting for user decision
@@ -151,6 +155,7 @@ impl Session {
             title,
             tokens_in: 0,
             tokens_out: 0,
+            cost_usd: 0.0,
             model: None,
         }
     }
@@ -198,15 +203,19 @@ impl Session {
         })
     }
 
+    /// Apply cumulative token data from statusline
+    pub fn apply_statusline_update(&mut self, update: &StatuslineUpdate) {
+        self.tokens_in = update.tokens_in;
+        self.tokens_out = update.tokens_out;
+        self.cost_usd = update.cost_usd;
+        if let Some(ref model) = update.model {
+            self.model = Some(model.clone());
+        }
+        self.last_event_at = Utc::now();
+    }
+
     pub fn apply_event(&mut self, payload: &HookPayload) {
         self.last_event_at = Utc::now();
-
-        // Extract and accumulate token usage if available
-        if let Some(usage) = &payload.usage {
-            self.tokens_in += usage.input_tokens as u64;
-            self.tokens_out += usage.output_tokens as u64;
-            self.model = Some(usage.model.clone());
-        }
 
         match payload.hook_event_name.as_str() {
             "UserPromptSubmit" => {
@@ -270,44 +279,10 @@ impl Session {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_token_accumulation() {
-        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
-
-        let payload = HookPayload {
+    fn make_hook_payload(event: &str) -> HookPayload {
+        HookPayload {
             session_id: "test".to_string(),
-            hook_event_name: "PostToolUse".to_string(),
-            cwd: "/tmp".to_string(),
-            tool_name: Some("Read".to_string()),
-            tool_input: None,
-            tool_use_id: None,
-            tool_response: None,
-            notification_type: None,
-            message: None,
-            pid: None,
-            tty: None,
-            status: None,
-            usage: Some(TokenUsage {
-                input_tokens: 100,
-                output_tokens: 200,
-                model: "claude-sonnet-4-5".to_string(),
-            }),
-        };
-
-        session.apply_event(&payload);
-
-        assert_eq!(session.tokens_in, 100);
-        assert_eq!(session.tokens_out, 200);
-        assert_eq!(session.model, Some("claude-sonnet-4-5".to_string()));
-    }
-
-    #[test]
-    fn test_optional_token_usage() {
-        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
-
-        let payload = HookPayload {
-            session_id: "test".to_string(),
-            hook_event_name: "Stop".to_string(),
+            hook_event_name: event.to_string(),
             cwd: "/tmp".to_string(),
             tool_name: None,
             tool_input: None,
@@ -318,72 +293,97 @@ mod tests {
             pid: None,
             tty: None,
             status: None,
-            usage: None,
+        }
+    }
+
+    #[test]
+    fn test_statusline_update_replaces_tokens() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        let update = StatuslineUpdate {
+            session_id: "test".to_string(),
+            tokens_in: 5000,
+            tokens_out: 2000,
+            cost_usd: 0.05,
+            model: Some("claude-sonnet-4-20250514".to_string()),
         };
 
+        session.apply_statusline_update(&update);
+
+        assert_eq!(session.tokens_in, 5000);
+        assert_eq!(session.tokens_out, 2000);
+        assert_eq!(session.cost_usd, 0.05);
+        assert_eq!(session.model, Some("claude-sonnet-4-20250514".to_string()));
+    }
+
+    #[test]
+    fn test_statusline_update_overwrites_previous() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        let update1 = StatuslineUpdate {
+            session_id: "test".to_string(),
+            tokens_in: 1000,
+            tokens_out: 500,
+            cost_usd: 0.01,
+            model: Some("claude-sonnet-4-20250514".to_string()),
+        };
+        session.apply_statusline_update(&update1);
+
+        let update2 = StatuslineUpdate {
+            session_id: "test".to_string(),
+            tokens_in: 3000,
+            tokens_out: 1500,
+            cost_usd: 0.03,
+            model: Some("claude-sonnet-4-20250514".to_string()),
+        };
+        session.apply_statusline_update(&update2);
+
+        // Should be the latest values, NOT accumulated
+        assert_eq!(session.tokens_in, 3000);
+        assert_eq!(session.tokens_out, 1500);
+        assert_eq!(session.cost_usd, 0.03);
+    }
+
+    #[test]
+    fn test_hook_events_do_not_affect_tokens() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        let payload = make_hook_payload("PostToolUse");
         session.apply_event(&payload);
 
+        // Hook events should NOT change token counts
         assert_eq!(session.tokens_in, 0);
         assert_eq!(session.tokens_out, 0);
         assert_eq!(session.model, None);
     }
 
     #[test]
-    fn test_token_accumulation_multiple_events() {
+    fn test_session_status_transitions() {
         let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
 
-        let payload1 = HookPayload {
-            session_id: "test".to_string(),
-            hook_event_name: "PostToolUse".to_string(),
-            cwd: "/tmp".to_string(),
-            tool_name: Some("Read".to_string()),
-            tool_input: None,
-            tool_use_id: None,
-            tool_response: None,
-            notification_type: None,
-            message: None,
-            pid: None,
-            tty: None,
-            status: None,
-            usage: Some(TokenUsage {
-                input_tokens: 100,
-                output_tokens: 200,
-                model: "claude-sonnet-4-5".to_string(),
-            }),
-        };
+        let mut payload = make_hook_payload("SessionStart");
+        session.apply_event(&payload);
+        assert!(matches!(session.status, SessionStatus::WaitingForInput));
 
-        let payload2 = HookPayload {
-            session_id: "test".to_string(),
-            hook_event_name: "PostToolUse".to_string(),
-            cwd: "/tmp".to_string(),
-            tool_name: Some("Edit".to_string()),
-            tool_input: None,
-            tool_use_id: None,
-            tool_response: None,
-            notification_type: None,
-            message: None,
-            pid: None,
-            tty: None,
-            status: None,
-            usage: Some(TokenUsage {
-                input_tokens: 50,
-                output_tokens: 150,
-                model: "claude-sonnet-4-5".to_string(),
-            }),
-        };
+        payload = make_hook_payload("UserPromptSubmit");
+        payload.message = Some("test prompt".to_string());
+        session.apply_event(&payload);
+        assert!(matches!(session.status, SessionStatus::Processing));
 
-        session.apply_event(&payload1);
-        session.apply_event(&payload2);
+        payload = make_hook_payload("Stop");
+        session.apply_event(&payload);
+        assert!(matches!(session.status, SessionStatus::WaitingForInput));
 
-        assert_eq!(session.tokens_in, 150);
-        assert_eq!(session.tokens_out, 350);
+        payload = make_hook_payload("SessionEnd");
+        session.apply_event(&payload);
+        assert!(matches!(session.status, SessionStatus::Ended));
     }
 
     #[test]
     fn test_history_backward_compatibility() {
         use crate::history::HistoryEntry;
 
-        // Old history.json format without token fields
+        // Old history.json format without token/cost fields
         let old_json = r#"[{
             "session_id": "test-123",
             "cwd": "/tmp",
@@ -397,9 +397,10 @@ mod tests {
         let entries: Vec<HistoryEntry> = serde_json::from_str(old_json).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id, "test-123");
-        // Token fields should default to 0/None
+        // Token/cost fields should default to 0/None
         assert_eq!(entries[0].tokens_in, 0);
         assert_eq!(entries[0].tokens_out, 0);
+        assert_eq!(entries[0].cost_usd, 0.0);
         assert_eq!(entries[0].model, None);
     }
 }

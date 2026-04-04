@@ -16,7 +16,7 @@ impl NotchGeometry {
             screen_width: 1440.0,
             notch_left: 710.0,
             notch_right: 730.0,
-            notch_width: 100.0,
+            notch_width: 200.0,
             left_safe_width: 710.0,
             right_safe_width: 710.0,
         }

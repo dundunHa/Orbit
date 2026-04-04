@@ -7,7 +7,7 @@ use tokio::sync::oneshot;
 use crate::history;
 use crate::state::{
     ConnectionCount, HookPayload, PendingPermission, PendingPermissions, PermissionDecision,
-    Session, SessionMap,
+    Session, SessionMap, StatuslineUpdate,
 };
 
 const SOCKET_PATH: &str = "/tmp/orbit.sock";
@@ -103,10 +103,18 @@ async fn handle_connection(
             }
             return;
         }
-    }
 
-    // Debug: Log raw payload to verify token data availability
-    eprintln!("[Orbit Debug] Hook payload: {}", buf);
+        if control.get("type").and_then(|v| v.as_str()) == Some("StatuslineUpdate") {
+            if let Ok(update) = serde_json::from_str::<StatuslineUpdate>(buf) {
+                let mut sessions_guard = sessions.lock().await;
+                if let Some(session) = sessions_guard.get_mut(&update.session_id) {
+                    session.apply_statusline_update(&update);
+                    let _ = app_handle.emit("session-update", session.clone());
+                }
+            }
+            return;
+        }
+    }
 
     let payload: HookPayload = match serde_json::from_str(buf) {
         Ok(p) => p,
@@ -158,6 +166,7 @@ async fn handle_connection(
                 title: session.title.clone().unwrap_or_default(),
                 tokens_in: session.tokens_in,
                 tokens_out: session.tokens_out,
+                cost_usd: session.cost_usd,
                 model: session.model.clone(),
             })
         } else {
