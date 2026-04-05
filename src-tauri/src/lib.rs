@@ -6,11 +6,103 @@ mod notch;
 mod socket_server;
 mod state;
 
-
 #[cfg(test)]
 mod tests;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+#[cfg(target_os = "macos")]
+fn register_screen_change_monitor(app_handle: tauri::AppHandle, initial_geometry: notch::NotchGeometry) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let last_geometry = Arc::new(std::sync::Mutex::new(initial_geometry));
+    let running = Arc::new(AtomicBool::new(true));
+
+    let geometry_clone = last_geometry.clone();
+    let running_clone = running.clone();
+    std::thread::spawn(move || {
+        let mut last = *geometry_clone.lock().unwrap();
+        while running_clone.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            let current_geometry = notch::get_notch_geometry();
+            let should_update = geometry_changed_significantly(&current_geometry, &last);
+
+            if should_update {
+                let last_has_notch = last.notch_height > 28.0;
+                let current_has_notch = current_geometry.notch_height > 28.0;
+
+                if last_has_notch != current_has_notch {
+                    println!("[Orbit] Display type changed: has_notch={} -> has_notch={}",
+                        last_has_notch, current_has_notch);
+                } else {
+                    println!("[Orbit] Screen configuration changed, updating geometry...");
+                }
+
+                *geometry_clone.lock().unwrap() = current_geometry;
+                last = current_geometry;
+                commands::update_notch_geometry(current_geometry);
+
+                let handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    update_window_for_screen_change(handle, current_geometry).await;
+                });
+            }
+        }
+    });
+
+    app_handle.manage(running);
+}
+
+#[cfg(target_os = "macos")]
+async fn update_window_for_screen_change(
+    app_handle: tauri::AppHandle,
+    current_geometry: notch::NotchGeometry,
+) {
+    let current_has_notch = current_geometry.notch_height > 28.0;
+
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let pill_width = commands::pill_width_for_geometry(current_geometry);
+        let current_height = commands::current_window_height_pub(&window)
+            .unwrap_or(current_geometry.notch_height);
+
+        commands::set_window_frame_for_geometry_pub(
+            &window,
+            current_geometry,
+            pill_width,
+            current_height,
+        );
+
+        let _ = app_handle.emit(
+            "screen-changed",
+            serde_json::json!({
+                "notch_height": current_geometry.notch_height,
+                "screen_width": current_geometry.screen_width,
+                "notch_left": current_geometry.notch_left,
+                "notch_right": current_geometry.notch_right,
+                "notch_width": current_geometry.notch_width,
+                "left_safe_width": current_geometry.left_safe_width,
+                "right_safe_width": current_geometry.right_safe_width,
+                "has_notch": current_has_notch,
+                "pill_width": pill_width,
+                "left_zone_width": commands::LEFT_ZONE_WIDTH,
+                "right_zone_width": commands::RIGHT_ZONE_WIDTH,
+                "mascot_left_inset": commands::MASCOT_LEFT_INSET,
+            }),
+        );
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn geometry_changed_significantly(a: &notch::NotchGeometry, b: &notch::NotchGeometry) -> bool {
+    const THRESHOLD: f64 = 0.1;
+    (a.screen_width - b.screen_width).abs() > THRESHOLD
+        || (a.notch_height - b.notch_height).abs() > THRESHOLD
+        || (a.notch_left - b.notch_left).abs() > THRESHOLD
+        || (a.notch_right - b.notch_right).abs() > THRESHOLD
+        || (a.notch_width - b.notch_width).abs() > THRESHOLD
+}
 
 pub fn run() {
     tauri::Builder::default()
@@ -37,9 +129,10 @@ pub fn run() {
             // Position window at notch
             if let Some(window) = app.get_webview_window("main") {
                 let notch = notch::get_notch_geometry();
-                if commands::NOTCH_GEOMETRY.set(notch).is_err() {
-                    eprintln!("[Orbit] Failed to set NOTCH_GEOMETRY, already initialized");
-                }
+                commands::update_notch_geometry(notch);
+
+                #[cfg(target_os = "macos")]
+                register_screen_change_monitor(app.handle().clone(), notch);
 
                 // Set window level above menu bar so it can overlap the notch area
                 // Also set collection behavior to show on all Spaces (Mission Control desktops)
@@ -71,12 +164,13 @@ pub fn run() {
 
                 // Position at physical screen top and show.
                 // Width is derived from the configurable left/right zones plus the notch width.
-                commands::set_window_frame_pub(
+                let _ = window.show();
+                commands::set_window_frame_for_geometry_pub(
                     &window,
-                    commands::current_pill_width(),
+                    notch,
+                    commands::pill_width_for_geometry(notch),
                     notch.notch_height,
                 );
-                let _ = window.show();
             }
 
             // Start socket server in background
@@ -98,4 +192,16 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running Orbit");
+}
+
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+
+    #[test]
+    fn unchanged_geometry_does_not_trigger_update() {
+        let geometry = notch::NotchGeometry::fallback();
+
+        assert!(!geometry_changed_significantly(&geometry, &geometry));
+    }
 }

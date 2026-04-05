@@ -21,6 +21,26 @@ let isAnimating = false; // IMPL-06: animation lock
 const pendingPerms = new Map(); // IMPL-05: Map<permId, {sessionId, toolName, toolInput}>
 let sessionTree = null;
 
+listen("screen-changed", (event) => {
+  const info = event.payload;
+  if (!info || typeof info.notch_height !== 'number') {
+    console.error("[Orbit] Invalid screen-changed payload", info);
+    return;
+  }
+  const root = document.documentElement;
+  root.style.setProperty("--notch-height", info.notch_height + "px");
+  root.style.setProperty("--pill-width", info.pill_width + "px");
+  root.style.setProperty("--notch-width", info.notch_width + "px");
+  root.style.setProperty("--zone-left-width", info.left_zone_width + "px");
+  root.style.setProperty("--zone-right-width", info.right_zone_width + "px");
+  root.style.setProperty("--mascot-left-inset", info.mascot_left_inset + "px");
+  notchInfo = info;
+  if (isExpanded) {
+    scheduleExpandedHeightUpdate();
+  }
+  console.log("[Orbit] Screen configuration updated", info);
+});
+
 // Notch geometry (set during init)
 let notchInfo = {
   notch_height: 37,
@@ -69,8 +89,34 @@ const STATUS_PRIORITY = {
 let collapseAfterTransition = false;
 let collapseFallbackTimer = null;
 
+function clearAnimationFallback() {
+  if (collapseFallbackTimer) {
+    clearTimeout(collapseFallbackTimer);
+    collapseFallbackTimer = null;
+  }
+}
+
+function scheduleAnimationFallback(handler) {
+  clearAnimationFallback();
+  collapseFallbackTimer = setTimeout(() => {
+    collapseFallbackTimer = null;
+    handler();
+  }, 450);
+}
+
 island.addEventListener("transitionend", async (e) => {
   if (e.target === island && e.propertyName === "height") {
+    clearAnimationFallback();
+    if (collapseAfterTransition) {
+      await finishCollapse();
+    }
+    isAnimating = false;
+  }
+});
+
+island.addEventListener("transitioncancel", async (e) => {
+  if (e.target === island && e.propertyName === "height") {
+    clearAnimationFallback();
     if (collapseAfterTransition) {
       await finishCollapse();
     }
@@ -383,10 +429,7 @@ async function expandIsland() {
   isAnimating = true;
   isExpanded = true;
   collapseAfterTransition = false;
-  if (collapseFallbackTimer) {
-    clearTimeout(collapseFallbackTimer);
-    collapseFallbackTimer = null;
-  }
+  clearAnimationFallback();
 
   // Elevator: expand native window FIRST, then CSS animation fills it
   try {
@@ -401,6 +444,9 @@ async function expandIsland() {
     island.classList.add("expanded");
     island.setAttribute("aria-expanded", "true");
     scheduleExpandedHeightUpdate();
+    scheduleAnimationFallback(() => {
+      isAnimating = false;
+    });
   });
 
   renderActiveSessions();
@@ -420,25 +466,24 @@ async function collapseIsland() {
   collapseAfterTransition = true;
   island.setAttribute("aria-expanded", "false");
 
-  // Elevator: CSS animation FIRST (keep expanded class for transition + detail visible)
-  // Set target height via inline style; CSS transition on .expanded handles the animation
-  island.style.height = "var(--notch-height, 37px)";
+  const currentHeight = island.getBoundingClientRect().height;
+  island.style.height = `${currentHeight}px`;
 
-  // Fallback: if transitionend doesn't fire within 400ms, force completion
-  collapseFallbackTimer = setTimeout(() => {
+  requestAnimationFrame(() => {
+    island.style.height = `${notchInfo.notch_height || 37}px`;
+  });
+
+  scheduleAnimationFallback(() => {
     if (collapseAfterTransition) {
       finishCollapse();
       isAnimating = false;
     }
-  }, 400);
+  });
 }
 
 async function finishCollapse() {
   collapseAfterTransition = false;
-  if (collapseFallbackTimer) {
-    clearTimeout(collapseFallbackTimer);
-    collapseFallbackTimer = null;
-  }
+  clearAnimationFallback();
 
   // Now swap class and clean up inline style
   island.classList.remove("expanded");
@@ -580,7 +625,9 @@ function renderHistory(entries) {
     div.appendChild(timeSpan);
 
     // Click to resume session in terminal
-    div.addEventListener("click", () => resumeSession(entry.session_id, entry.cwd));
+    div.addEventListener("click", () =>
+      resumeSession(entry.session_id, entry.cwd),
+    );
 
     historyList.appendChild(div);
   });

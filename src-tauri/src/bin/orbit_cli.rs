@@ -852,7 +852,8 @@ mod tests {
     impl TestHome {
         fn new() -> Self {
             let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-            let path = std::env::temp_dir().join(format!("orbit-cli-home-{}", generate_install_id()));
+            let path =
+                std::env::temp_dir().join(format!("orbit-cli-home-{}", generate_install_id()));
             fs::create_dir_all(&path).unwrap();
             let old_home = std::env::var("HOME").ok();
             unsafe {
@@ -1037,9 +1038,11 @@ mod tests {
             .filter(|entry| entry_has_hook_command(entry, "/opt/orbit-cli hook"))
             .count();
         assert_eq!(exact_count, 1);
-        assert!(post_tool_use
-            .iter()
-            .any(|entry| entry_has_hook_command(entry, "/usr/local/bin/orbital-tool hook")));
+        assert!(
+            post_tool_use
+                .iter()
+                .any(|entry| entry_has_hook_command(entry, "/usr/local/bin/orbital-tool hook"))
+        );
     }
 
     #[test]
@@ -1184,7 +1187,10 @@ mod tests {
 
         run_install_for_test(&home, original_settings).unwrap();
         let installed = read_settings(&home.settings_path()).unwrap();
-        assert_eq!(get_statusline_command(&installed).unwrap(), home.wrapper_path().to_string_lossy());
+        assert_eq!(
+            get_statusline_command(&installed).unwrap(),
+            home.wrapper_path().to_string_lossy()
+        );
 
         run_uninstall_for_test(&home, false).unwrap();
         let restored = read_settings(&home.settings_path()).unwrap();
