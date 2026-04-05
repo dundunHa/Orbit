@@ -57,9 +57,9 @@ unsafe fn apply_native_frame(view_addr: usize, x: f64, width: f64, height: f64) 
     unsafe {
         let ns_view = view_addr as *mut NSView;
         if let Some(ns_window) = (*ns_view).window() {
-            let screen = ns_window.screen().or_else(|| {
-                MainThreadMarker::new().and_then(objc2_app_kit::NSScreen::mainScreen)
-            });
+            let screen = ns_window
+                .screen()
+                .or_else(|| MainThreadMarker::new().and_then(objc2_app_kit::NSScreen::mainScreen));
             if let Some(screen) = screen {
                 let sf = screen.frame();
                 let win_rect = NSRect::new(

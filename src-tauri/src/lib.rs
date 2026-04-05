@@ -12,15 +12,19 @@ mod tests;
 use tauri::{Emitter, Manager};
 
 #[cfg(target_os = "macos")]
-fn register_screen_change_monitor(app_handle: tauri::AppHandle, initial_geometry: notch::NotchGeometry) {
-    use std::sync::atomic::{AtomicBool, Ordering};
+fn register_screen_change_monitor(
+    app_handle: tauri::AppHandle,
+    initial_geometry: notch::NotchGeometry,
+) {
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     let last_geometry = Arc::new(std::sync::Mutex::new(initial_geometry));
     let running = Arc::new(AtomicBool::new(true));
 
     let geometry_clone = last_geometry.clone();
     let running_clone = running.clone();
+    let app_handle_clone = app_handle.clone();
     std::thread::spawn(move || {
         let mut last = *geometry_clone.lock().unwrap();
         while running_clone.load(Ordering::Relaxed) {
@@ -34,8 +38,10 @@ fn register_screen_change_monitor(app_handle: tauri::AppHandle, initial_geometry
                 let current_has_notch = current_geometry.notch_height > 28.0;
 
                 if last_has_notch != current_has_notch {
-                    println!("[Orbit] Display type changed: has_notch={} -> has_notch={}",
-                        last_has_notch, current_has_notch);
+                    println!(
+                        "[Orbit] Display type changed: has_notch={} -> has_notch={}",
+                        last_has_notch, current_has_notch
+                    );
                 } else {
                     println!("[Orbit] Screen configuration changed, updating geometry...");
                 }
@@ -44,7 +50,7 @@ fn register_screen_change_monitor(app_handle: tauri::AppHandle, initial_geometry
                 last = current_geometry;
                 commands::update_notch_geometry(current_geometry);
 
-                let handle = app_handle.clone();
+                let handle = app_handle_clone.clone();
                 tauri::async_runtime::spawn(async move {
                     update_window_for_screen_change(handle, current_geometry).await;
                 });
@@ -64,8 +70,8 @@ async fn update_window_for_screen_change(
 
     if let Some(window) = app_handle.get_webview_window("main") {
         let pill_width = commands::pill_width_for_geometry(current_geometry);
-        let current_height = commands::current_window_height_pub(&window)
-            .unwrap_or(current_geometry.notch_height);
+        let current_height =
+            commands::current_window_height_pub(&window).unwrap_or(current_geometry.notch_height);
 
         commands::set_window_frame_for_geometry_pub(
             &window,
