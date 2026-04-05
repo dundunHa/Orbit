@@ -47,6 +47,17 @@
       <div class="detail-tokens"></div>
       <div class="detail-model"></div>
 
+      <div class="onboarding-section" style="display:none">
+        <div class="section-title">Setup</div>
+        <div class="onboarding-status-row">
+          <div class="onboarding-status-dot status-dot"></div>
+          <div class="onboarding-status-text"></div>
+        </div>
+        <div class="onboarding-actions">
+          <button class="btn-retry" type="button" aria-label="Retry Orbit setup" onclick="event.stopPropagation(); handleOnboardingRetry()">重试</button>
+        </div>
+      </div>
+
       <div class="active-section">
         <div class="section-title">Active</div>
         <div class="active-list"></div>

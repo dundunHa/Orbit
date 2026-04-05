@@ -20,6 +20,8 @@ let isExpanded = false;
 let isAnimating = false; // IMPL-06: animation lock
 const pendingPerms = new Map(); // IMPL-05: Map<permId, {sessionId, toolName, toolInput}>
 let sessionTree = null;
+let onboardingState = null;
+let onboardingRetryPending = false;
 
 listen("screen-changed", (event) => {
   const info = event.payload;
@@ -66,6 +68,10 @@ const detailStatus = document.querySelector(".detail-status");
 const detailTools = document.querySelector(".detail-tools");
 const detailTokens = document.querySelector(".detail-tokens");
 const detailModel = document.querySelector(".detail-model");
+const onboardingSection = document.querySelector(".onboarding-section");
+const onboardingStatusDot = document.querySelector(".onboarding-status-dot");
+const onboardingStatusText = document.querySelector(".onboarding-status-text");
+const onboardingRetryButton = document.querySelector(".btn-retry");
 const detail = document.querySelector(".detail");
 const activeList = document.querySelector(".active-list");
 const permissionSection = document.querySelector(".permission-section");
@@ -73,6 +79,49 @@ const permissionTool = document.querySelector(".permission-tool");
 const historyList = document.querySelector(".history-list");
 const mascot = document.querySelector(".mascot");
 const DEFAULT_PROVIDER = "claude-code";
+
+const ONBOARDING_STATUS_MAP = {
+  Welcome: {
+    dotClass: "processing",
+    mascotStatusType: "Processing",
+    fallbackText: "Welcome to Orbit",
+  },
+  Checking: {
+    dotClass: "processing",
+    mascotStatusType: "Processing",
+    fallbackText: "Checking Claude Code configuration...",
+  },
+  Installing: {
+    dotClass: "running-tool",
+    mascotStatusType: "RunningTool",
+    fallbackText: "Installing Orbit hooks...",
+  },
+  Connected: {
+    dotClass: "idle",
+    mascotStatusType: "WaitingForInput",
+    fallbackText: "Connected to Claude Code",
+  },
+  ConflictDetected: {
+    dotClass: "anomaly",
+    mascotStatusType: "Anomaly",
+    fallbackText: "Configuration conflict detected",
+  },
+  PermissionDenied: {
+    dotClass: "waiting-approval",
+    mascotStatusType: "WaitingForApproval",
+    fallbackText: "Permission required",
+  },
+  DriftDetected: {
+    dotClass: "anomaly",
+    mascotStatusType: "Anomaly",
+    fallbackText: "Configuration drift detected",
+  },
+  Error: {
+    dotClass: "error",
+    mascotStatusType: "Anomaly",
+    fallbackText: "Orbit setup failed",
+  },
+};
 
 // Status priority for selecting which session to display
 const STATUS_PRIORITY = {
@@ -147,15 +196,20 @@ async function init() {
     notchInfo.mascot_left_inset + "px",
   );
 
-  // First-run onboarding
+  // Keep the first-run bounce, but let backend onboarding own the status text.
   if (!localStorage.getItem("orbit-onboarded")) {
     localStorage.setItem("orbit-onboarded", "1");
     mascot.classList.add("onboarding");
-    statusText.textContent = "Hi! I'm Orbit";
     setTimeout(() => {
       mascot.classList.remove("onboarding");
-      statusText.textContent = "Waiting...";
     }, 2000);
+  }
+
+  try {
+    const currentOnboarding = await invoke("get_onboarding_state");
+    setOnboardingState(currentOnboarding);
+  } catch (e) {
+    console.error("Failed to load onboarding state:", e);
   }
 
   try {
@@ -184,10 +238,8 @@ function selectActiveSession() {
     }
   }
 
-  if (best) {
-    activeSessionId = best.id;
-    updateUI(best);
-  }
+  activeSessionId = best ? best.id : null;
+  refreshUI();
 }
 
 // Listen for session updates from Rust backend
@@ -213,6 +265,10 @@ listen("session-update", (event) => {
   if (isExpanded) {
     renderActiveSessions();
   }
+});
+
+listen("onboarding-state-changed", (event) => {
+  setOnboardingState(event.payload);
 });
 
 // Listen for permission requests
@@ -260,6 +316,142 @@ listen("permission-resolved", (event) => {
     }
   }
 });
+
+function getActiveSession() {
+  return activeSessionId ? sessions[activeSessionId] || null : null;
+}
+
+function hasLiveSessions() {
+  return Object.values(sessions).some((session) => session.status.type !== "Ended");
+}
+
+function getOnboardingView(state) {
+  if (!state || !state.type) {
+    return null;
+  }
+
+  const config = ONBOARDING_STATUS_MAP[state.type] || ONBOARDING_STATUS_MAP.Error;
+  return {
+    dotClass: config.dotClass,
+    mascotStatusType: config.mascotStatusType,
+    text: state.status_text || config.fallbackText,
+    canRetry: Boolean(state.can_retry),
+  };
+}
+
+function applyPillStatus({ dotClass, mascotStatusType, text }) {
+  statusDot.className = "status-dot";
+  if (dotClass) {
+    statusDot.classList.add(dotClass);
+  }
+  setMascotVariant(null, mascotStatusType || "WaitingForInput");
+  statusText.textContent = text;
+}
+
+function shouldShowOnboardingPill() {
+  if (!onboardingState || !onboardingState.type) {
+    return false;
+  }
+
+  if (onboardingState.type === "Connected") {
+    return !hasLiveSessions();
+  }
+
+  return true;
+}
+
+function renderOnboardingPill() {
+  const view = getOnboardingView(onboardingState);
+  if (!view) {
+    return;
+  }
+
+  applyPillStatus(view);
+}
+
+function renderFallbackPill() {
+  if (!isConnected) {
+    applyPillStatus({
+      dotClass: "disconnected",
+      mascotStatusType: "WaitingForInput",
+      text: "No connections",
+    });
+    return;
+  }
+
+  applyPillStatus({
+    dotClass: "idle",
+    mascotStatusType: "WaitingForInput",
+    text: "Waiting...",
+  });
+}
+
+function clearSessionDetail() {
+  if (!isExpanded) {
+    return;
+  }
+
+  sessionCwd.textContent = "";
+  detailStatus.textContent = shouldShowOnboardingPill()
+    ? getOnboardingView(onboardingState)?.text || "Waiting..."
+    : "Waiting...";
+  detailTools.textContent = "";
+  detailTokens.textContent = "";
+  detailModel.textContent = "";
+}
+
+function renderOnboardingSection() {
+  if (!onboardingSection || !onboardingStatusDot || !onboardingStatusText) {
+    return;
+  }
+
+  if (!onboardingState || onboardingState.type === "Connected") {
+    onboardingSection.style.display = "none";
+    return;
+  }
+
+  const view = getOnboardingView(onboardingState);
+  onboardingSection.style.display = "block";
+  onboardingStatusDot.className = "onboarding-status-dot status-dot";
+  if (view?.dotClass) {
+    onboardingStatusDot.classList.add(view.dotClass);
+  }
+  onboardingStatusText.textContent = view?.text || "Orbit setup requires attention";
+
+  if (onboardingRetryButton) {
+    const showRetry = Boolean(view?.canRetry);
+    onboardingRetryButton.style.display = showRetry ? "block" : "none";
+    onboardingRetryButton.disabled = onboardingRetryPending;
+    onboardingRetryButton.textContent = onboardingRetryPending ? "重试中..." : "重试";
+  }
+
+  if (isExpanded) {
+    scheduleExpandedHeightUpdate();
+  }
+}
+
+function refreshUI() {
+  const activeSession = getActiveSession();
+
+  if (activeSession) {
+    updateUI(activeSession);
+  } else {
+    clearSessionDetail();
+    renderFallbackPill();
+  }
+
+  if (shouldShowOnboardingPill()) {
+    renderOnboardingPill();
+  }
+
+  renderOnboardingSection();
+}
+
+function setOnboardingState(nextState) {
+  onboardingState = nextState;
+  onboardingRetryPending = false;
+  refreshUI();
+}
 
 function updateUI(session) {
   if (!session) return;
@@ -412,6 +604,20 @@ async function handlePermission(decision) {
   if (pendingPerms.size > 0) {
     const [nextId, next] = pendingPerms.entries().next().value;
     showPermission(next.toolName, next.toolInput, nextId);
+  }
+}
+
+
+async function handleOnboardingRetry() {
+  onboardingRetryPending = true;
+  renderOnboardingSection();
+
+  try {
+    await invoke("retry_onboarding_install");
+  } catch (e) {
+    onboardingRetryPending = false;
+    renderOnboardingSection();
+    console.error("Failed to retry onboarding:", e);
   }
 }
 
@@ -661,16 +867,7 @@ let isConnected = false;
 listen("connection-count", (event) => {
   const count = event.payload;
   isConnected = count > 0;
-  if (!isConnected && !isExpanded) {
-    const hasActiveSessions = Object.values(sessions).some(
-      (s) => s.status.type !== "Ended",
-    );
-    if (!hasActiveSessions) {
-      statusDot.className = "status-dot disconnected";
-      setMascotVariant(null, "WaitingForInput");
-      statusText.textContent = "No connections";
-    }
-  }
+  refreshUI();
 });
 
 // Boot
@@ -680,3 +877,4 @@ init();
 window.toggleExpand = toggleExpand;
 window.collapseIsland = collapseIsland;
 window.handlePermission = handlePermission;
+window.handleOnboardingRetry = handleOnboardingRetry;

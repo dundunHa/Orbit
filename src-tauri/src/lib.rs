@@ -1,10 +1,13 @@
 mod adapter;
 mod anomaly;
+mod app;
 mod commands;
 mod history;
+pub mod installer;
 mod notch;
 mod socket_server;
 mod state;
+mod tray;
 
 #[cfg(test)]
 mod tests;
@@ -117,10 +120,14 @@ pub fn run() {
             commands::get_sessions,
             commands::get_history,
             commands::get_notch_info,
+            commands::get_onboarding_state,
             commands::permission_decision,
+            commands::open_system_settings,
+            commands::copy_permission_cli_command,
             commands::expand_window,
             commands::set_expanded_height,
             commands::collapse_window,
+            commands::retry_onboarding_install,
             commands::resume_session,
         ])
         .setup(|app| {
@@ -129,6 +136,14 @@ pub fn run() {
             app.manage(app_state.sessions.clone());
             app.manage(app_state.pending_permissions.clone());
             app.manage(app_state.connection_count.clone());
+
+            let orbit_cli_path = app::permission_dialog::resolve_orbit_cli_path();
+            let onboarding = app::onboarding::OnboardingManager::new(orbit_cli_path);
+            onboarding.start_background_check_with_emitter(app.handle().clone());
+            app::conflict_dialog::start_monitor(onboarding.clone(), app.handle().clone());
+            app::permission_dialog::start_monitor(app.handle().clone(), onboarding.clone());
+            app.manage(onboarding.clone());
+            tray::init(&app.handle(), onboarding)?;
 
             let handle = app.handle().clone();
 
