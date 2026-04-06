@@ -360,6 +360,8 @@ impl Session {
                 };
             }
             "Stop" | "SubagentStop" => {
+                // LLM generation stopped (reply completed, interrupted by user Ctrl+C, or subagent finished)
+                // Status dot becomes GREEN (idle) - session continues, waiting for next input
                 self.status = SessionStatus::WaitingForInput;
             }
             "SessionStart" => {
@@ -367,6 +369,8 @@ impl Session {
                 self.refresh_title_from_claude();
             }
             "SessionEnd" => {
+                // Entire session ended (user closed terminal, exited Claude Code)
+                // Status dot becomes GRAY (ended) - session is archived to history, cannot continue
                 self.status = SessionStatus::Ended;
             }
             "Notification" => match payload.notification_type.as_deref() {

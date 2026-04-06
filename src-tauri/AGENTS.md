@@ -122,3 +122,41 @@ cargo run --bin orbit-cli    # Run CLI
 - Minimize `unsafe` blocks
 - Concentrate in `notch.rs` for objc2 interop
 - Document safety invariants in comments
+
+## Session States & Hook Events
+
+### SessionStatus Variants
+
+| State | Trigger | Status Dot | Description |
+|-------|---------|------------|-------------|
+| `WaitingForInput` | Session start, Stop hook, idle | **GREEN** | Ready for user input |
+| `Processing` | UserPromptSubmit | **BLUE** (pulsing) | LLM generating response |
+| `RunningTool` | PreToolUse | **PURPLE** (pulsing) | Tool execution in progress |
+| `WaitingForApproval` | PermissionRequest | **ORANGE** (pulsing) | Waiting for user approval |
+| `Anomaly` | Idle timeout | **YELLOW** (blinking) | Session appears stuck |
+| `Ended` | SessionEnd hook | **GRAY** | Session terminated, archived |
+| `Compacting` | PreCompact | **BLUE** (pulsing) | Context compression |
+
+### Key Hook Events
+
+**Stop / SubagentStop**
+- Trigger: LLM reply complete, user pressed Ctrl+C, subagent finished
+- Result: Status → `WaitingForInput` (GREEN dot)
+- Session continues, can receive more messages
+
+**SessionEnd**
+- Trigger: User closed terminal, exited Claude Code
+- Result: Status → `Ended` (GRAY dot)
+- Session archived to history, cannot continue
+
+### Visual Status Reference
+
+```
+🟢 Green (idle)       = Waiting for input
+🔵 Blue (pulsing)     = Processing/Thinking
+🟣 Purple (pulsing)   = Running tool
+🟠 Orange (pulsing)   = Waiting for approval
+🟡 Yellow (blinking)  = Anomaly/Stuck
+⚪ Gray               = Session ended
+🔴 Red (blinking)     = Error/Disconnected
+```

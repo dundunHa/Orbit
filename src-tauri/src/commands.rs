@@ -76,6 +76,7 @@ unsafe fn apply_native_frame(view_addr: usize, x: f64, width: f64, height: f64) 
 /// Dispatch a closure to the macOS main thread via GCD.
 #[cfg(target_os = "macos")]
 fn dispatch_on_main(f: impl FnOnce() + Send + 'static) {
+
     use std::ffi::c_void;
     unsafe extern "C" {
         static _dispatch_main_q: c_void;
@@ -99,6 +100,44 @@ fn dispatch_on_main(f: impl FnOnce() + Send + 'static) {
             trampoline,
         );
     }
+}
+
+/// Dispatch a closure to the macOS main thread synchronously via GCD, returning its value.
+/// If already on the main thread, calls `f` directly to avoid deadlock.
+#[cfg(target_os = "macos")]
+fn dispatch_sync_main<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    use std::ffi::c_void;
+    use std::sync::mpsc;
+    unsafe extern "C" {
+        static _dispatch_main_q: c_void;
+        fn dispatch_sync_f(
+            queue: *const c_void,
+            context: *mut c_void,
+            work: unsafe extern "C" fn(*mut c_void),
+        );
+        fn pthread_main_np() -> i32;
+    }
+    if unsafe { pthread_main_np() } != 0 {
+        return f();
+    }
+    let (tx, rx) = mpsc::sync_channel::<T>(1);
+    let boxed: Box<Box<dyn FnOnce()>> = Box::new(Box::new(move || {
+        let _ = tx.send(f());
+    }));
+    unsafe extern "C" fn trampoline(ctx: *mut c_void) {
+        unsafe {
+            let f = Box::from_raw(ctx as *mut Box<dyn FnOnce()>);
+            f();
+        }
+    }
+    unsafe {
+        dispatch_sync_f(
+            &_dispatch_main_q as *const c_void,
+            Box::into_raw(boxed) as *mut c_void,
+            trampoline,
+        );
+    }
+    rx.recv().expect("dispatch_sync_main: main thread failed to respond")
 }
 
 pub fn set_window_frame_for_geometry_pub(
@@ -126,7 +165,9 @@ fn current_window_height(window: &tauri::WebviewWindow) -> Option<f64> {
             && let RawWindowHandle::AppKit(appkit) = wh.as_raw()
         {
             let view_addr = appkit.ns_view.as_ptr() as usize;
-            return unsafe { current_native_window_height(view_addr) };
+            // AppKit must be accessed on the main thread; dispatch_sync_main ensures this
+            // regardless of which thread the Tauri command handler or async task is running on.
+            return dispatch_sync_main(move || unsafe { current_native_window_height(view_addr) });
         }
         None
     }
@@ -272,7 +313,17 @@ mod tests {
 
     #[test]
     fn updates_cached_geometry() {
+        // RAII guard: restores the global geometry even if the test panics.
+        struct Restore(NotchGeometry);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                update_notch_geometry(self.0);
+            }
+        }
+
         let original = current_notch_geometry();
+        let _restore = Restore(original);
+
         let updated = NotchGeometry {
             screen_width: original.screen_width + 120.0,
             notch_left: original.notch_left + 30.0,
@@ -283,8 +334,7 @@ mod tests {
 
         assert_eq!(current_notch_geometry().screen_width, updated.screen_width);
         assert_eq!(current_notch_geometry().notch_left, updated.notch_left);
-
-        update_notch_geometry(original);
+        // _restore drops here, restoring original
     }
 }
 
@@ -316,6 +366,33 @@ fn escape_for_applescript(s: &str) -> String {
         .replace('\'', "\\'")
 }
 
+/// Build a shell single-quoted path that is safe inside an AppleScript double-quoted string.
+/// Two-level escaping:
+/// - Shell layer: wrap in `'...'`; single quotes become `'"'"'` (no backslash required).
+/// - AppleScript layer: `\` → `\\`, `"` → `\"` (the only chars AppleScript interprets in "...").
+///
+/// Result can be embedded directly in `do script "cd {} && ..."` where the surrounding
+/// AppleScript double-quotes are already in the format string. Shell `$`, backticks, and
+/// other metacharacters are all literal inside single-quoted shell strings.
+#[cfg(target_os = "macos")]
+fn escape_cwd_for_terminal(s: &str) -> String {
+    let mut result = String::from("'");
+    for c in s.chars() {
+        match c {
+            // Shell: end-single-quote, double-quoted literal single-quote, re-open single-quote.
+            // The `"` chars need AppleScript escaping → `\"`.
+            '\'' => result.push_str("'\\\"'\\\"'"),
+            // AppleScript: \\ → \ (literal backslash in single-quoted shell string)
+            '\\' => result.push_str("\\\\"),
+            // AppleScript: \" → " (literal double-quote in single-quoted shell string)
+            '"' => result.push_str("\\\""),
+            other => result.push(other),
+        }
+    }
+    result.push('\'');
+    result
+}
+
 /// Resume a Claude Code session in a new terminal window
 /// Opens the specified working directory and resumes the session
 #[tauri::command]
@@ -334,11 +411,15 @@ pub async fn resume_session(session_id: String, cwd: String) -> Result<(), Strin
 
     #[cfg(target_os = "macos")]
     {
-        let safe_cwd = escape_for_applescript(cwd_str);
+        // safe_cwd is a shell single-quoted path (safe against $, `, etc.)
+        // that is also escaped for embedding in an AppleScript double-quoted string.
+        let safe_cwd = escape_cwd_for_terminal(cwd_str);
+        // session_id is validated to [a-zA-Z0-9_-]; AppleScript escaping is a no-op here
+        // but kept for defence in depth.
         let safe_session_id = escape_for_applescript(&session_id);
         let script = format!(
             r#"tell application "Terminal"
-    do script "cd \"{}\" && claude-code resume --session-id \"{}\""
+    do script "cd {} && claude-code resume --session-id \"{}\""
     activate
 end tell"#,
             safe_cwd, safe_session_id

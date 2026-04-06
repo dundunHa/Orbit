@@ -3,6 +3,7 @@ use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::sync::oneshot;
+use log::{debug, info, error};
 
 use crate::history;
 use crate::state::{
@@ -30,13 +31,18 @@ pub async fn start(
     conn_count: ConnectionCount,
     today_stats: TodayStats,
 ) {
+    info!("[Orbit] Starting socket server on {}", SOCKET_PATH);
+
     // Remove stale socket
     let _ = std::fs::remove_file(SOCKET_PATH);
 
     let listener = match UnixListener::bind(SOCKET_PATH) {
-        Ok(l) => l,
+        Ok(l) => {
+            info!("[Orbit] Socket server listening on {}", SOCKET_PATH);
+            l
+        }
         Err(e) => {
-            eprintln!("Failed to bind socket: {e}");
+            error!("[Orbit] Failed to bind socket: {e}");
             return;
         }
     };
@@ -99,6 +105,8 @@ async fn handle_connection(
         return;
     }
 
+    debug!("[Orbit] Raw socket payload: {}", buf);
+
     if let Ok(control) = serde_json::from_str::<serde_json::Value>(buf) {
         if control.get("type").and_then(|v| v.as_str()) == Some("PermissionRequestHandledByCli") {
             let session_id = control
@@ -111,6 +119,8 @@ async fn handle_connection(
                 .unwrap_or("unknown");
             let perm_id = format!("{}-{}", session_id, tool_use_id);
 
+            info!("[Orbit] Permission handled by CLI: {}", perm_id);
+
             let mut pending = pending.lock().await;
             if pending.remove(&perm_id).is_some() {
                 let _ = app_handle.emit("permission-resolved", &perm_id);
@@ -120,6 +130,10 @@ async fn handle_connection(
 
         if control.get("type").and_then(|v| v.as_str()) == Some("StatuslineUpdate") {
             if let Ok(update) = serde_json::from_str::<StatuslineUpdate>(buf) {
+                debug!(
+                    "[Orbit] StatuslineUpdate: session={}, tokens_in={}, tokens_out={}, cost=${}",
+                    update.session_id, update.tokens_in, update.tokens_out, update.cost_usd
+                );
                 let mut sessions_guard = sessions.lock().await;
                 if let Some(session) = sessions_guard.get_mut(&update.session_id) {
                     session.apply_statusline_update(&update);
@@ -131,10 +145,16 @@ async fn handle_connection(
         }
     }
 
-    let payload: HookPayload = match serde_json::from_str(buf) {
-        Ok(p) => p,
+    let payload: HookPayload = match serde_json::from_str::<HookPayload>(buf) {
+        Ok(p) => {
+            info!(
+                "[Orbit] Hook event received: {} (session: {})",
+                p.hook_event_name, p.session_id
+            );
+            p
+        }
         Err(e) => {
-            eprintln!("Failed to parse payload: {e}");
+            error!("[Orbit] Failed to parse hook payload: {e}");
             return;
         }
     };
@@ -143,7 +163,15 @@ async fn handle_connection(
     let is_permission_prompt = payload.hook_event_name == "Notification"
         && payload.notification_type.as_deref() == Some("permission_prompt");
     let is_session_end = payload.hook_event_name == "SessionEnd";
+    let is_stop = payload.hook_event_name == "Stop" || payload.hook_event_name == "SubagentStop";
     let session_id = payload.session_id.clone();
+
+    if is_session_end {
+        info!("[Orbit] Session ending: {} (SessionEnd hook received)", session_id);
+    }
+    if is_stop {
+        info!("[Orbit] LLM generation stopped: {} (Stop/SubagentStop hook received)", session_id);
+    }
 
     // Update session state
     {
@@ -310,6 +338,144 @@ fn refresh_today_stats(
     stats.tokens_in = total_in;
     stats.tokens_out = total_out;
     stats.update_rate(total_out);
-    // Persist baselines to disk for crash recovery
     stats.save_to_disk();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{HookPayload, Session, SessionStatus};
+
+    fn create_hook_payload(event: &str, session_id: &str) -> HookPayload {
+        HookPayload {
+            session_id: session_id.to_string(),
+            hook_event_name: event.to_string(),
+            cwd: "/tmp".to_string(),
+            tool_name: None,
+            tool_input: None,
+            tool_use_id: None,
+            tool_response: None,
+            notification_type: None,
+            message: None,
+            pid: None,
+            tty: None,
+            status: None,
+        }
+    }
+
+    #[test]
+    fn test_hook_payload_session_end_parsing() {
+        let json = r#"{
+            "session_id": "test-session-123",
+            "hook_event_name": "SessionEnd",
+            "cwd": "/home/user/project"
+        }"#;
+
+        let payload: HookPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.session_id, "test-session-123");
+        assert_eq!(payload.hook_event_name, "SessionEnd");
+        assert_eq!(payload.cwd, "/home/user/project");
+    }
+
+    #[test]
+    fn test_hook_payload_stop_parsing() {
+        let json = r#"{
+            "session_id": "test-session-456",
+            "hook_event_name": "Stop",
+            "cwd": "/tmp"
+        }"#;
+
+        let payload: HookPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "Stop");
+    }
+
+    #[test]
+    fn test_hook_payload_subagent_stop_parsing() {
+        let json = r#"{
+            "session_id": "test-session-789",
+            "hook_event_name": "SubagentStop",
+            "cwd": "/workspace"
+        }"#;
+
+        let payload: HookPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.hook_event_name, "SubagentStop");
+    }
+
+    #[test]
+    fn test_hook_payload_statusline_update_parsing() {
+        let json = r#"{
+            "type": "StatuslineUpdate",
+            "session_id": "test-session-abc",
+            "tokens_in": 1500,
+            "tokens_out": 800,
+            "cost_usd": 0.02,
+            "model": "claude-sonnet-4-20250514"
+        }"#;
+
+        let update: StatuslineUpdate = serde_json::from_str(json).unwrap();
+        assert_eq!(update.session_id, "test-session-abc");
+        assert_eq!(update.tokens_in, 1500);
+        assert_eq!(update.tokens_out, 800);
+        assert_eq!(update.cost_usd, 0.02);
+        assert_eq!(update.model, Some("claude-sonnet-4-20250514".to_string()));
+    }
+
+    #[test]
+    fn test_session_applies_session_end_event() {
+        let mut session = Session::new("test-123".to_string(), "/tmp".to_string(), None, None);
+        let payload = create_hook_payload("SessionEnd", "test-123");
+
+        session.apply_event(&payload);
+
+        assert!(matches!(session.status, SessionStatus::Ended));
+    }
+
+    #[test]
+    fn test_session_applies_stop_event() {
+        let mut session = Session::new("test-456".to_string(), "/tmp".to_string(), None, None);
+        
+        session.apply_event(&create_hook_payload("UserPromptSubmit", "test-456"));
+        assert!(matches!(session.status, SessionStatus::Processing));
+
+        session.apply_event(&create_hook_payload("Stop", "test-456"));
+        assert!(matches!(session.status, SessionStatus::WaitingForInput));
+    }
+
+    #[test]
+    fn test_session_applies_subagent_stop_event() {
+        let mut session = Session::new("test-789".to_string(), "/tmp".to_string(), None, None);
+        
+        session.apply_event(&create_hook_payload("UserPromptSubmit", "test-789"));
+        assert!(matches!(session.status, SessionStatus::Processing));
+
+        session.apply_event(&create_hook_payload("SubagentStop", "test-789"));
+        assert!(matches!(session.status, SessionStatus::WaitingForInput));
+    }
+
+    #[test]
+    fn test_statusline_update_default_model() {
+        let json = r#"{
+            "session_id": "test-session",
+            "tokens_in": 100,
+            "tokens_out": 200,
+            "cost_usd": 0.01
+        }"#;
+
+        let update: StatuslineUpdate = serde_json::from_str(json).unwrap();
+        assert_eq!(update.model, None);
+        assert_eq!(update.tokens_in, 100);
+    }
+
+    #[test]
+    fn test_permission_request_handled_by_cli_parsing() {
+        let json = r#"{
+            "type": "PermissionRequestHandledByCli",
+            "session_id": "session-xyz",
+            "tool_use_id": "toolu_abc123"
+        }"#;
+
+        let control: serde_json::Value = serde_json::from_str(json).unwrap();
+        assert_eq!(control.get("type").and_then(|v| v.as_str()), Some("PermissionRequestHandledByCli"));
+        assert_eq!(control.get("session_id").and_then(|v| v.as_str()), Some("session-xyz"));
+    }
 }
