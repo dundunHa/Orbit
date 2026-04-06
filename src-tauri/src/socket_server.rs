@@ -310,4 +310,6 @@ fn refresh_today_stats(
     stats.tokens_in = total_in;
     stats.tokens_out = total_out;
     stats.update_rate(total_out);
+    // Persist baselines to disk for crash recovery
+    stats.save_to_disk();
 }

@@ -134,8 +134,9 @@ pub fn run() {
             app.manage(app_state.pending_permissions.clone());
             app.manage(app_state.connection_count.clone());
 
-            let today_stats: state::TodayStats =
-                std::sync::Arc::new(parking_lot::Mutex::new(state::TodayTokenStats::default()));
+            let today_stats: state::TodayStats = std::sync::Arc::new(parking_lot::Mutex::new(
+                state::TodayTokenStats::load_from_disk(),
+            ));
             app.manage(today_stats.clone());
 
             let orbit_cli_path = installer::resolve_orbit_cli_path();

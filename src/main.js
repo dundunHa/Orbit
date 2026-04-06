@@ -362,6 +362,8 @@ listen("permission-timeout", (event) => {
 listen("permission-resolved", (event) => {
   const permId = event.payload;
   pendingPerms.delete(permId);
+  // Clear synthetic expand intent to prevent auto-reexpand after collapse
+  wantExpanded = false;
   if (permissionSection.dataset.permId === permId) {
     if (pendingPerms.size > 0) {
       const [nextId, next] = pendingPerms.entries().next().value;

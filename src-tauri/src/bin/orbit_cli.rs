@@ -51,6 +51,7 @@ fn cmd_hook() {
         .ok()
         .and_then(|val| {
             val.get("hook_event_name")
+                .or_else(|| val.get("hookEventName"))
                 .and_then(|v| v.as_str())
                 .map(|s| s == "PermissionRequest")
         })

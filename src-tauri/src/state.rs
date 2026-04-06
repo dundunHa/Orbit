@@ -130,7 +130,7 @@ pub type PendingPermissions = Arc<Mutex<HashMap<String, PendingPermission>>>;
 pub type ConnectionCount = Arc<std::sync::atomic::AtomicU32>;
 
 /// Aggregate token stats for today, readable from sync contexts (tray menu).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodayTokenStats {
     pub date: u32, // YYYYMMDD
     pub tokens_in: u64,
@@ -199,6 +199,31 @@ impl TodayTokenStats {
             total_out.saturating_sub(baseline.1),
         )
     }
+
+    /// Load token baselines from disk, returning default if file doesn't exist or is corrupted.
+    pub fn load_from_disk() -> Self {
+        let path = baselines_path();
+        match std::fs::read_to_string(&path) {
+            Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
+            Err(_) => Self::default(),
+        }
+    }
+
+    /// Save token baselines to disk, ignoring errors.
+    pub fn save_to_disk(&self) {
+        let path = baselines_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+}
+
+fn baselines_path() -> std::path::PathBuf {
+    let home = dirs_next::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    home.join(".orbit").join("token-baselines.json")
 }
 
 fn today_key() -> u32 {
