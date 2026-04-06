@@ -121,8 +121,6 @@ pub fn run() {
             commands::get_notch_info,
             commands::get_onboarding_state,
             commands::permission_decision,
-            commands::open_system_settings,
-            commands::copy_permission_cli_command,
             commands::expand_window,
             commands::set_expanded_height,
             commands::collapse_window,
@@ -140,11 +138,10 @@ pub fn run() {
                 std::sync::Arc::new(parking_lot::Mutex::new(state::TodayTokenStats::default()));
             app.manage(today_stats.clone());
 
-            let orbit_cli_path = app::permission_dialog::resolve_orbit_cli_path();
+            let orbit_cli_path = installer::resolve_orbit_cli_path();
             let onboarding = app::onboarding::OnboardingManager::new(orbit_cli_path);
             onboarding.start_background_check_with_emitter(app.handle().clone());
-            app::conflict_dialog::start_monitor(onboarding.clone(), app.handle().clone());
-            app::permission_dialog::start_monitor(app.handle().clone(), onboarding.clone());
+            app::conflict_monitor::start_monitor(onboarding.clone(), app.handle().clone());
             app.manage(onboarding.clone());
             tray::init(app.handle(), today_stats.clone())?;
 

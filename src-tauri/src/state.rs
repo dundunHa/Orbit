@@ -79,19 +79,25 @@ struct HistoryJsonlEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookPayload {
+    #[serde(alias = "sessionId")]
     pub session_id: String,
+    #[serde(alias = "hookEventName")]
     pub hook_event_name: String,
     #[serde(default)]
     pub cwd: String,
     #[serde(default)]
+    #[serde(alias = "toolName")]
     pub tool_name: Option<String>,
     #[serde(default)]
+    #[serde(alias = "toolInput")]
     pub tool_input: Option<Value>,
     #[serde(default)]
+    #[serde(alias = "toolUseId")]
     pub tool_use_id: Option<String>,
     #[serde(default)]
     pub tool_response: Option<Value>,
     #[serde(default)]
+    #[serde(alias = "notificationType")]
     pub notification_type: Option<String>,
     #[serde(default)]
     pub message: Option<String>,
@@ -133,6 +139,9 @@ pub struct TodayTokenStats {
     pub out_rate: f64,
     last_rate_sample_ts: Option<DateTime<Utc>>,
     last_rate_sample_out: u64,
+    /// Per-session token baselines captured at start of day (or first seen today).
+    /// Used to compute today-only deltas for sessions that span midnight.
+    session_baselines: std::collections::HashMap<String, (u64, u64)>,
 }
 
 impl Default for TodayTokenStats {
@@ -144,6 +153,7 @@ impl Default for TodayTokenStats {
             out_rate: 0.0,
             last_rate_sample_ts: None,
             last_rate_sample_out: 0,
+            session_baselines: std::collections::HashMap::new(),
         }
     }
 }
@@ -172,6 +182,22 @@ impl TodayTokenStats {
         if self.date != today {
             *self = Self::default();
         }
+    }
+
+    pub fn session_today_delta(
+        &mut self,
+        session_id: &str,
+        total_in: u64,
+        total_out: u64,
+    ) -> (u64, u64) {
+        let baseline = self
+            .session_baselines
+            .entry(session_id.to_string())
+            .or_insert((total_in, total_out));
+        (
+            total_in.saturating_sub(baseline.0),
+            total_out.saturating_sub(baseline.1),
+        )
     }
 }
 
@@ -318,11 +344,22 @@ impl Session {
             "SessionEnd" => {
                 self.status = SessionStatus::Ended;
             }
-            "Notification" => {
-                if payload.notification_type.as_deref() == Some("idle_prompt") {
+            "Notification" => match payload.notification_type.as_deref() {
+                Some("idle_prompt") => {
                     self.status = SessionStatus::WaitingForInput;
                 }
-            }
+                Some("permission_prompt") => {
+                    self.status = SessionStatus::WaitingForApproval {
+                        tool_name: "Permission".to_string(),
+                        tool_input: payload.tool_input.clone().unwrap_or_else(|| {
+                            serde_json::json!({
+                                "message": payload.message.clone().unwrap_or_default()
+                            })
+                        }),
+                    };
+                }
+                _ => {}
+            },
             "PreCompact" => {
                 self.status = SessionStatus::Compacting;
             }
@@ -433,6 +470,54 @@ mod tests {
         payload = make_hook_payload("SessionEnd");
         session.apply_event(&payload);
         assert!(matches!(session.status, SessionStatus::Ended));
+    }
+
+    #[test]
+    fn test_notification_permission_prompt_sets_waiting_for_approval() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        let mut payload = make_hook_payload("Notification");
+        payload.notification_type = Some("permission_prompt".to_string());
+        payload.message = Some("Claude needs your permission to use Bash".to_string());
+
+        session.apply_event(&payload);
+
+        assert!(matches!(
+            session.status,
+            SessionStatus::WaitingForApproval { .. }
+        ));
+    }
+
+    #[test]
+    fn test_hook_payload_supports_camel_case_aliases() {
+        let payload: HookPayload = serde_json::from_str(
+            r#"{
+                "sessionId": "test-session",
+                "hookEventName": "PermissionRequest",
+                "cwd": "/tmp",
+                "toolName": "Bash",
+                "toolInput": {"command": "pwd"},
+                "toolUseId": "toolu_123",
+                "notificationType": "permission_prompt"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(payload.session_id, "test-session");
+        assert_eq!(payload.hook_event_name, "PermissionRequest");
+        assert_eq!(payload.tool_name.as_deref(), Some("Bash"));
+        assert_eq!(
+            payload
+                .tool_input
+                .as_ref()
+                .and_then(|value| value.get("command"))
+                .and_then(|value| value.as_str()),
+            Some("pwd")
+        );
+        assert_eq!(payload.tool_use_id.as_deref(), Some("toolu_123"));
+        assert_eq!(
+            payload.notification_type.as_deref(),
+            Some("permission_prompt")
+        );
     }
 
     #[test]

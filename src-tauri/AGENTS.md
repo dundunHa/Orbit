@@ -21,11 +21,10 @@ src-tauri/src/
 ├── notch.rs            # macOS notch geometry
 ├── tray.rs             # System tray icon/menu
 ├── anomaly.rs          # Anomaly detection
-├── app/                # Tauri windows/dialogs
+├── app/                # Tauri windows/monitors
 │   ├── mod.rs
 │   ├── onboarding.rs
-│   ├── permission_dialog.rs
-│   ├── conflict_dialog.rs
+│   ├── conflict_monitor.rs
 │   └── settings.rs
 ├── bin/                # Additional binaries
 │   └── orbit_cli.rs    # CLI tool

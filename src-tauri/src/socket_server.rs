@@ -12,6 +12,17 @@ use crate::state::{
 
 const SOCKET_PATH: &str = "/tmp/orbit.sock";
 
+fn permission_request_id(payload: &HookPayload) -> String {
+    if let Some(tool_use_id) = payload.tool_use_id.as_deref()
+        && !tool_use_id.is_empty()
+    {
+        return format!("{}-{}", payload.session_id, tool_use_id);
+    }
+
+    let ts = chrono::Utc::now().timestamp_millis();
+    format!("{}-permission-{}", payload.session_id, ts)
+}
+
 pub async fn start(
     app_handle: tauri::AppHandle,
     sessions: SessionMap,
@@ -129,6 +140,8 @@ async fn handle_connection(
     };
 
     let is_permission_request = payload.hook_event_name == "PermissionRequest";
+    let is_permission_prompt = payload.hook_event_name == "Notification"
+        && payload.notification_type.as_deref() == Some("permission_prompt");
     let is_session_end = payload.hook_event_name == "SessionEnd";
     let session_id = payload.session_id.clone();
 
@@ -151,6 +164,16 @@ async fn handle_connection(
 
         // Emit update to frontend
         let _ = app_handle.emit("session-update", session.clone());
+    }
+
+    if is_permission_prompt {
+        let _ = app_handle.emit(
+            "permission-prompt",
+            serde_json::json!({
+                "session_id": payload.session_id,
+                "message": payload.message,
+            }),
+        );
     }
 
     // Write history outside the lock to avoid blocking tokio worker
@@ -188,11 +211,7 @@ async fn handle_connection(
     if is_permission_request {
         let (tx, rx) = oneshot::channel::<PermissionDecision>();
 
-        let perm_id = format!(
-            "{}-{}",
-            payload.session_id,
-            payload.tool_use_id.as_deref().unwrap_or("unknown")
-        );
+        let perm_id = permission_request_id(&payload);
 
         let tool_name = payload.tool_name.clone().unwrap_or_default();
         let tool_input = payload
@@ -277,16 +296,16 @@ fn refresh_today_stats(
     let mut stats = today_stats.lock();
     stats.reset_if_new_day();
 
-    // Only sum sessions that had activity today (local time)
     let today = chrono::Local::now().date_naive();
-    let (total_in, total_out) = sessions.values().fold((0u64, 0u64), |(i, o), s| {
+    let (mut total_in, mut total_out) = (0u64, 0u64);
+    for s in sessions.values() {
         let session_date = s.last_event_at.with_timezone(&chrono::Local).date_naive();
         if session_date == today {
-            (i + s.tokens_in, o + s.tokens_out)
-        } else {
-            (i, o)
+            let (delta_in, delta_out) = stats.session_today_delta(&s.id, s.tokens_in, s.tokens_out);
+            total_in += delta_in;
+            total_out += delta_out;
         }
-    });
+    }
 
     stats.tokens_in = total_in;
     stats.tokens_out = total_out;

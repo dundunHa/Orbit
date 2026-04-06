@@ -25,7 +25,8 @@ let onboardingState = null;
 let onboardingRetryPending = false;
 let collapseDebounceTimer = null;
 let wantExpanded = false; // 鼠标期望状态，动画结束后据此对账
-const COLLAPSE_DELAY = 300; // ms, hover 离开后延迟收起防抖
+const COLLAPSE_DELAY = 200; // ms, hover 离开后延迟收起防抖
+let cachedHistory = null; // 预取的 history，expand 时直接渲染避免 IPC 延迟
 
 listen("screen-changed", (event) => {
   const info = event.payload;
@@ -154,7 +155,20 @@ function scheduleAnimationFallback(handler) {
   collapseFallbackTimer = setTimeout(() => {
     collapseFallbackTimer = null;
     handler();
-  }, 450);
+  }, 350);
+}
+
+// 统一的展开请求入口：即便当前正处于收起/展开动画，也保留这次展开意图
+// 交给 transition 结束后的 reconcileExpandState 继续完成。
+function requestExpand() {
+  if (collapseDebounceTimer) {
+    clearTimeout(collapseDebounceTimer);
+    collapseDebounceTimer = null;
+  }
+  wantExpanded = true;
+  if (!isExpanded && !isAnimating) {
+    expandIsland();
+  }
 }
 
 // 动画结束后根据 wantExpanded 期望状态对账，确保不丢事件
@@ -241,6 +255,21 @@ async function init() {
   } catch (e) {
     console.error("Failed to load sessions:", e);
   }
+
+  refreshHistoryCache();
+}
+
+function refreshHistoryCache() {
+  invoke("get_history")
+    .then((history) => {
+      cachedHistory = history;
+      if (isExpanded) {
+        renderHistory(cachedHistory);
+      }
+    })
+    .catch((e) => {
+      console.error("Failed to prefetch history:", e);
+    });
 }
 
 function selectActiveSession() {
@@ -280,6 +309,14 @@ listen("session-update", (event) => {
     setTimeout(() => island.classList.remove("flash-complete"), 600);
   }
 
+  if (session.status.type === "WaitingForApproval") {
+    requestExpand();
+  }
+
+  if (session.status.type === "Ended") {
+    refreshHistoryCache();
+  }
+
   selectActiveSession();
 
   if (isExpanded) {
@@ -300,9 +337,11 @@ listen("permission-request", (event) => {
     toolInput: tool_input,
   });
   showPermission(tool_name, tool_input, perm_id);
-  if (!isExpanded) {
-    expandIsland();
-  }
+  requestExpand();
+});
+
+listen("permission-prompt", () => {
+  requestExpand();
 });
 
 // Listen for permission timeout — clean up stale UI
@@ -643,14 +682,7 @@ async function handleOnboardingRetry() {
 
 // Hover interaction: mouseenter to expand, mouseleave to collapse with debounce
 island.addEventListener("mouseenter", () => {
-  if (collapseDebounceTimer) {
-    clearTimeout(collapseDebounceTimer);
-    collapseDebounceTimer = null;
-  }
-  wantExpanded = true;
-  if (!isExpanded && !isAnimating) {
-    expandIsland();
-  }
+  requestExpand();
 });
 
 island.addEventListener("mouseleave", () => {
@@ -692,13 +724,8 @@ async function expandIsland() {
   });
 
   renderActiveSessions();
-
-  try {
-    const history = await invoke("get_history");
-    renderHistory(history);
-  } catch (e) {
-    console.error("Failed to load history:", e);
-  }
+  renderHistory(cachedHistory);
+  refreshHistoryCache();
 }
 
 async function collapseIsland() {

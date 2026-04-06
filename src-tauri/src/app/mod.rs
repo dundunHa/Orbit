@@ -1,5 +1,4 @@
-pub mod conflict_dialog;
+pub mod conflict_monitor;
 pub mod onboarding;
-pub mod permission_dialog;
 #[allow(dead_code)]
 pub mod settings;

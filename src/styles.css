@@ -33,8 +33,8 @@ body {
   width: var(--pill-width, 480px);
   height: var(--notch-height, 37px);
   transition:
-    width 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-    height 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    width 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .island.collapsed .detail {
@@ -47,8 +47,8 @@ body {
   height: var(--expanded-height, 320px);
   border-radius: 0 0 22px 22px;
   transition:
-    width 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-    height 0.35s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
+    width 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.28s cubic-bezier(0.22, 1, 0.36, 1) 0.02s;
 }
 
 .island.expanded .pill {

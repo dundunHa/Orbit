@@ -1,5 +1,4 @@
 use crate::app::onboarding::{OnboardingManager, OnboardingStatePayload};
-use crate::app::permission_dialog;
 use crate::history;
 use crate::notch::NotchGeometry;
 use crate::state::{PendingPermissions, PermissionDecision, Session, SessionMap};
@@ -231,68 +230,6 @@ pub async fn permission_decision(
         let _ = perm.responder.send(PermissionDecision { decision, reason });
     }
     Ok(())
-}
-
-#[tauri::command]
-pub async fn open_system_settings() -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let status = std::process::Command::new("open")
-            .args(["-b", "com.apple.SystemSettings"])
-            .status()
-            .map_err(|e| format!("Failed to open System Settings: {}", e))?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err("Failed to open System Settings".to_string())
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        Err("Opening System Settings is only supported on macOS".to_string())
-    }
-}
-
-#[tauri::command]
-pub async fn copy_permission_cli_command() -> Result<String, String> {
-    use std::io::Write as _;
-    use std::process::Stdio;
-
-    let command = permission_dialog::install_command();
-
-    #[cfg(target_os = "macos")]
-    {
-        let mut child = std::process::Command::new("pbcopy")
-            .stdin(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to launch pbcopy: {}", e))?;
-
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "Failed to access pbcopy stdin".to_string())?;
-        stdin
-            .write_all(command.as_bytes())
-            .map_err(|e| format!("Failed to copy install command: {}", e))?;
-        drop(stdin);
-
-        let status = child
-            .wait()
-            .map_err(|e| format!("Failed to wait for pbcopy: {}", e))?;
-
-        if status.success() {
-            Ok(command)
-        } else {
-            Err("pbcopy exited with a non-zero status".to_string())
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        Err("Copying the install command is only supported on macOS".to_string())
-    }
 }
 
 #[tauri::command]

@@ -17,11 +17,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub const SOCKET_PATH: &str = "/tmp/orbit.sock";
 const STATUSLINE_STATE_FILE: &str = "statusline-state.json";
 const STATUSLINE_WRAPPER_FILE: &str = "statusline-wrapper.sh";
+const FALLBACK_ORBIT_CLI_PATH: &str = "/Applications/Orbit.app/Contents/MacOS/orbit-cli";
 
 /// Hook events that Orbit registers with Claude Code
-pub const HOOK_EVENTS: [&str; 10] = [
+pub const HOOK_EVENTS: [&str; 11] = [
     "PreToolUse",
     "PostToolUse",
+    "PostToolUseFailure",
     "Stop",
     "SessionStart",
     "SessionEnd",
@@ -364,7 +366,11 @@ pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
         if let Err(e) = write_statusline_state(&state_path, &prepared.state) {
             let _ = write_settings(&settings_path, &current_settings);
             let _ = remove_file_if_exists(&prepared.wrapper_path);
-            let _ = remove_file_if_exists(&state_path);
+            if let Some(ref st) = old_state {
+                let _ = write_statusline_state(&state_path, st);
+            } else {
+                let _ = remove_file_if_exists(&state_path);
+            }
             return Err(if e.contains("Permission") {
                 InstallError::PermissionDenied
             } else {
@@ -523,13 +529,10 @@ fn prepare_install_inner(
     match classify_statusline(&settings, &managed_command) {
         StatusLineConfig::Absent | StatusLineConfig::StandardCommand { .. } => {}
         StatusLineConfig::Unsupported => {
-            if !force {
-                return Err(
-                    "statusLine has unsupported configuration (not a command type); refusing to overwrite. Use force install to override"
-                        .to_string(),
-                );
-            }
-            // force: caller is responsible for backup; proceed with takeover
+            return Err(
+                "statusLine has unsupported configuration (not a command type); refusing to overwrite because the wrapper cannot pass through non-command configs"
+                    .to_string(),
+            );
         }
         StatusLineConfig::OrbitOrphaned => {
             if !force {
@@ -987,6 +990,25 @@ pub fn resolve_current_exe_path() -> Result<String, String> {
     Ok(abs.to_string_lossy().to_string())
 }
 
+pub fn resolve_orbit_cli_path() -> String {
+    std::env::current_exe()
+        .map(|exe| orbit_cli_sibling_path(exe).to_string_lossy().to_string())
+        .unwrap_or_else(|_| FALLBACK_ORBIT_CLI_PATH.to_string())
+}
+
+pub fn install_command() -> String {
+    build_install_command(&resolve_orbit_cli_path())
+}
+
+fn orbit_cli_sibling_path(mut current_exe: PathBuf) -> PathBuf {
+    current_exe.set_file_name("orbit-cli");
+    current_exe
+}
+
+fn build_install_command(orbit_cli_path: &str) -> String {
+    format!("\"{}\" install", orbit_cli_path.replace('"', "\\\""))
+}
+
 /// Shell-quote a string for safe inclusion in scripts
 pub fn shell_single_quote(s: &str) -> String {
     if s.is_empty() {
@@ -1024,6 +1046,7 @@ pub fn get_claude_settings_path() -> Result<PathBuf, String> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::PathBuf;
     use std::sync::{Mutex, MutexGuard};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -1439,7 +1462,7 @@ mod tests {
     }
 
     #[test]
-    fn install_accepts_non_standard_statusline_on_real_filesystem() {
+    fn install_rejects_non_standard_statusline_on_real_filesystem() {
         let home = TestHome::new();
         let settings = json!({
             "statusLine": {
@@ -1448,20 +1471,10 @@ mod tests {
             }
         });
 
-        run_install_for_test(&home, settings).unwrap();
-        assert!(home.wrapper_path().exists());
-        assert!(home.state_path().exists());
-
-        let installed = read_settings(&home.settings_path()).unwrap();
-        assert_eq!(
-            get_statusline_command(&installed).unwrap(),
-            home.wrapper_path().to_string_lossy()
-        );
-
-        // State should capture the original unsupported statusLine
-        let state = read_statusline_state(&home.state_path()).unwrap().unwrap();
-        let original = state.original_statusline.unwrap();
-        assert_eq!(original, json!({"type": "builtin", "name": "unsupported"}));
+        let err = run_install_for_test(&home, settings).unwrap_err();
+        assert!(err.contains("unsupported configuration"));
+        assert!(!home.wrapper_path().exists());
+        assert!(!home.state_path().exists());
     }
 
     #[test]
@@ -1575,5 +1588,19 @@ mod tests {
 
         let state = check_install_state("/opt/orbit-cli").unwrap();
         assert_eq!(state, InstallState::DriftDetected);
+    }
+
+    #[test]
+    fn install_command_quotes_path() {
+        assert_eq!(
+            build_install_command("/Applications/Orbit App/Contents/MacOS/orbit-cli"),
+            "\"/Applications/Orbit App/Contents/MacOS/orbit-cli\" install"
+        );
+    }
+
+    #[test]
+    fn orbit_cli_sibling_rewrites_binary_name() {
+        let rewritten = orbit_cli_sibling_path(PathBuf::from("/tmp/target/debug/orbit"));
+        assert_eq!(rewritten, PathBuf::from("/tmp/target/debug/orbit-cli"));
     }
 }

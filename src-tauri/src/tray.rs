@@ -1,10 +1,10 @@
 use crate::state::TodayStats;
 use std::{thread, time::Duration};
 use tauri::{
+    AppHandle, Manager, Runtime,
     image::Image,
     menu::{MenuBuilder, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, Runtime,
 };
 
 const TRAY_ID: &str = "orbit-tray";
@@ -70,10 +70,12 @@ fn spawn_token_sync<R: tauri::Runtime>(
     today_stats: TodayStats,
 ) {
     let _ = app;
-    thread::spawn(move || loop {
-        thread::sleep(TOKEN_REFRESH_INTERVAL);
-        let text = token_stats_text(&today_stats);
-        let _ = token_stats_item.set_text(text);
+    thread::spawn(move || {
+        loop {
+            thread::sleep(TOKEN_REFRESH_INTERVAL);
+            let text = token_stats_text(&today_stats);
+            let _ = token_stats_item.set_text(text);
+        }
     });
 }
 

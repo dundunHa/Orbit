@@ -4,7 +4,7 @@
 //! Designed for "silent & seamless" UX - background auto-install with tray indicators.
 
 use crate::installer::{
-    self, check_install_state, silent_force_install, silent_install, InstallError, InstallState,
+    self, InstallError, InstallState, check_install_state, silent_force_install, silent_install,
 };
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -375,7 +375,7 @@ impl OnboardingManager {
         std::thread::spawn(move || {
             transition_state(&state, OnboardingState::Installing, app_handle.as_ref());
 
-            match silent_install(&orbit_cli_path) {
+            match silent_force_install(&orbit_cli_path) {
                 Ok(()) => {
                     transition_state(&state, OnboardingState::Connected, app_handle.as_ref());
                 }
@@ -383,13 +383,6 @@ impl OnboardingManager {
                     transition_state(
                         &state,
                         OnboardingState::PermissionDenied,
-                        app_handle.as_ref(),
-                    );
-                }
-                Err(InstallError::Conflict(tool)) => {
-                    transition_state(
-                        &state,
-                        OnboardingState::ConflictDetected(tool),
                         app_handle.as_ref(),
                     );
                 }

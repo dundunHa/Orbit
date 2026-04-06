@@ -3,8 +3,8 @@
 use super::onboarding::{OnboardingManager, OnboardingState};
 use std::thread;
 use tauri::{
-    menu::{MenuId, MenuItem, Submenu, SubmenuBuilder},
     AppHandle, Manager, Runtime,
+    menu::{MenuId, MenuItem, Submenu, SubmenuBuilder},
 };
 
 const SETTINGS_SUBMENU_ID: &str = "tray-settings";
