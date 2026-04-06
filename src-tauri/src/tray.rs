@@ -1,119 +1,119 @@
-//! System tray integration for Orbit.
-//!
-//! Keeps the tray menu and title aligned with the current onboarding state.
-
-use crate::app::{
-    onboarding::{OnboardingManager, OnboardingState},
-    settings,
-};
+use crate::state::TodayStats;
 use std::{thread, time::Duration};
 use tauri::{
-    AppHandle, Manager, Runtime,
+    image::Image,
     menu::{MenuBuilder, MenuItem},
-    tray::{TrayIcon, TrayIconBuilder},
+    tray::TrayIconBuilder,
+    AppHandle, Manager, Runtime,
 };
 
 const TRAY_ID: &str = "orbit-tray";
-const STATUS_MENU_ID: &str = "tray-status";
-const OPEN_MENU_ID: &str = "tray-open-main";
+const TOKEN_STATS_MENU_ID: &str = "tray-token-stats";
+const TOGGLE_WINDOW_MENU_ID: &str = "tray-toggle-window";
 const QUIT_MENU_ID: &str = "tray-quit";
-const TRAY_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const TOKEN_REFRESH_INTERVAL: Duration = Duration::from_secs(3);
 
-pub fn init<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    onboarding: OnboardingManager,
-) -> tauri::Result<()> {
-    let initial_state = onboarding.state();
-    let status_item = MenuItem::with_id(
+pub fn init<R: tauri::Runtime>(app: &AppHandle<R>, today_stats: TodayStats) -> tauri::Result<()> {
+    let token_stats_item = MenuItem::with_id(
         app,
-        STATUS_MENU_ID,
-        status_menu_text(&initial_state),
+        TOKEN_STATS_MENU_ID,
+        token_stats_text(&today_stats),
         false,
         None::<&str>,
     )?;
-    let open_item = MenuItem::with_id(app, OPEN_MENU_ID, "打开主窗口", true, None::<&str>)?;
-    let settings_submenu = settings::build_submenu(app)?;
+    let toggle_window_item = MenuItem::with_id(
+        app,
+        TOGGLE_WINDOW_MENU_ID,
+        "显示/隐藏 Orbit",
+        true,
+        None::<&str>,
+    )?;
     let quit_item = MenuItem::with_id(app, QUIT_MENU_ID, "退出", true, None::<&str>)?;
 
     let menu = MenuBuilder::new(app)
-        .item(&status_item)
+        .item(&token_stats_item)
         .separator()
-        .item(&open_item)
-        .item(&settings_submenu)
+        .item(&toggle_window_item)
         .item(&quit_item)
         .build()?;
 
+    let icon = load_tray_icon();
+
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .tooltip(initial_state.tray_status().tooltip())
-        .title(initial_state.tray_status().emoji())
+        .tooltip("Orbit")
         .icon_as_template(true)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
-            if settings::handle_menu_event(app, event.id()) {
-                return;
-            }
-
-            if event.id() == OPEN_MENU_ID {
-                show_main_window(app);
+            if event.id() == TOGGLE_WINDOW_MENU_ID {
+                toggle_main_window(app);
             } else if event.id() == QUIT_MENU_ID {
                 app.exit(0);
             }
         });
 
-    if let Some(icon) = app.default_window_icon().cloned() {
+    if let Some(icon) = icon {
+        builder = builder.icon(icon);
+    } else if let Some(icon) = app.default_window_icon().cloned() {
         builder = builder.icon(icon);
     }
 
-    let tray = builder.build(app)?;
-    apply_state(&tray, &status_item, &initial_state);
-    spawn_state_sync(app.clone(), onboarding, status_item);
+    builder.build(app)?;
+    spawn_token_sync(app.clone(), token_stats_item, today_stats);
 
     Ok(())
 }
 
-fn spawn_state_sync<R: tauri::Runtime>(
+fn spawn_token_sync<R: tauri::Runtime>(
     app: AppHandle<R>,
-    onboarding: OnboardingManager,
-    status_item: MenuItem<R>,
+    token_stats_item: MenuItem<R>,
+    today_stats: TodayStats,
 ) {
-    thread::spawn(move || {
-        let mut last_state = onboarding.state();
-
-        loop {
-            let current_state = onboarding.state();
-            if current_state != last_state {
-                if let Some(tray) = app.tray_by_id(TRAY_ID) {
-                    apply_state(&tray, &status_item, &current_state);
-                }
-                last_state = current_state;
-            }
-
-            thread::sleep(TRAY_POLL_INTERVAL);
-        }
+    let _ = app;
+    thread::spawn(move || loop {
+        thread::sleep(TOKEN_REFRESH_INTERVAL);
+        let text = token_stats_text(&today_stats);
+        let _ = token_stats_item.set_text(text);
     });
 }
 
-fn apply_state<R: tauri::Runtime>(
-    tray: &TrayIcon<R>,
-    status_item: &MenuItem<R>,
-    state: &OnboardingState,
-) {
-    let tray_status = state.tray_status();
-
-    let _ = tray.set_tooltip(Some(tray_status.tooltip()));
-    let _ = tray.set_title(Some(tray_status.emoji()));
-    let _ = status_item.set_text(status_menu_text(state));
+fn load_tray_icon() -> Option<Image<'static>> {
+    let bytes = include_bytes!("../icons/tray-icon@2x.png");
+    Image::from_bytes(bytes).ok()
 }
 
-fn status_menu_text(state: &OnboardingState) -> String {
-    format!("{} {}", state.tray_status().emoji(), state.status_text())
+fn token_stats_text(today_stats: &TodayStats) -> String {
+    let stats = today_stats.lock();
+    let rate_str = if stats.out_rate > 0.1 {
+        format!(" ({:.1} tok/s)", stats.out_rate)
+    } else {
+        String::new()
+    };
+    format!(
+        "today: ↓{} ↑{}{}",
+        format_tokens(stats.tokens_in),
+        format_tokens(stats.tokens_out),
+        rate_str
+    )
 }
 
-fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+fn format_tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{:.1}K", n as f64 / 1_000.0)
+    } else {
+        n.to_string()
+    }
+}
+
+fn toggle_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
     }
 }

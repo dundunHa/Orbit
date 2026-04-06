@@ -7,7 +7,7 @@ use tokio::sync::oneshot;
 use crate::history;
 use crate::state::{
     ConnectionCount, HookPayload, PendingPermission, PendingPermissions, PermissionDecision,
-    Session, SessionMap, StatuslineUpdate,
+    Session, SessionMap, StatuslineUpdate, TodayStats,
 };
 
 const SOCKET_PATH: &str = "/tmp/orbit.sock";
@@ -17,6 +17,7 @@ pub async fn start(
     sessions: SessionMap,
     pending: PendingPermissions,
     conn_count: ConnectionCount,
+    today_stats: TodayStats,
 ) {
     // Remove stale socket
     let _ = std::fs::remove_file(SOCKET_PATH);
@@ -36,13 +37,14 @@ pub async fn start(
                 let pending = pending.clone();
                 let handle = app_handle.clone();
                 let conn_count = conn_count.clone();
+                let today_stats = today_stats.clone();
 
                 // Increment connection count
                 let count = conn_count.fetch_add(1, Ordering::Relaxed) + 1;
                 let _ = handle.emit("connection-count", count);
 
                 tauri::async_runtime::spawn(async move {
-                    handle_connection(stream, sessions, pending, &handle).await;
+                    handle_connection(stream, sessions, pending, &handle, &today_stats).await;
 
                     // Decrement connection count when done (guard against underflow)
                     let prev = conn_count.load(Ordering::Relaxed);
@@ -70,6 +72,7 @@ async fn handle_connection(
     sessions: SessionMap,
     pending: PendingPermissions,
     app_handle: &tauri::AppHandle,
+    today_stats: &TodayStats,
 ) {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -111,6 +114,7 @@ async fn handle_connection(
                     session.apply_statusline_update(&update);
                     let _ = app_handle.emit("session-update", session.clone());
                 }
+                refresh_today_stats(&sessions_guard, today_stats);
             }
             return;
         }
@@ -264,4 +268,27 @@ async fn handle_connection(
             }
         }
     }
+}
+
+fn refresh_today_stats(
+    sessions: &std::collections::HashMap<String, Session>,
+    today_stats: &TodayStats,
+) {
+    let mut stats = today_stats.lock();
+    stats.reset_if_new_day();
+
+    // Only sum sessions that had activity today (local time)
+    let today = chrono::Local::now().date_naive();
+    let (total_in, total_out) = sessions.values().fold((0u64, 0u64), |(i, o), s| {
+        let session_date = s.last_event_at.with_timezone(&chrono::Local).date_naive();
+        if session_date == today {
+            (i + s.tokens_in, o + s.tokens_out)
+        } else {
+            (i, o)
+        }
+    });
+
+    stats.tokens_in = total_in;
+    stats.tokens_out = total_out;
+    stats.update_rate(total_out);
 }

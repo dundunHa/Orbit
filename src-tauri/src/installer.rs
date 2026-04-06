@@ -281,7 +281,7 @@ pub fn silent_install(orbit_cli_path: &str) -> Result<(), InstallError> {
             });
         }
 
-        let state_path = get_statusline_state_path().map_err(|e| InstallError::Other(e))?;
+        let state_path = get_statusline_state_path().map_err(InstallError::Other)?;
         if let Err(e) = write_statusline_state(&state_path, &prepared.state) {
             let _ = write_settings(&settings_path, &current_settings);
             let _ = remove_file_if_exists(&prepared.wrapper_path);
@@ -295,6 +295,108 @@ pub fn silent_install(orbit_cli_path: &str) -> Result<(), InstallError> {
 
         Ok(())
     })
+}
+
+/// Force-install Orbit, resolving drift and orphaned states.
+///
+/// Backs up the current settings.json, then cleans old state and installs
+/// fresh. The backup is written to `~/.orbit/backups/` and is the caller's
+/// safety net for manual restore. The state file captures whatever statusLine
+/// existed at the moment of takeover, so uninstall restores to that point.
+pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
+    let hook_command = format!("{} hook", orbit_cli_path);
+
+    let settings_path = get_claude_settings_path()
+        .map_err(|e| InstallError::Other(format!("Failed to get settings path: {}", e)))?;
+
+    with_file_lock(&settings_path, || {
+        let current_settings = read_settings(&settings_path)
+            .map_err(|e| InstallError::Other(format!("Failed to read settings: {}", e)))?;
+        ensure_settings_object(&current_settings)
+            .map_err(|e| InstallError::Other(format!("Invalid settings: {}", e)))?;
+
+        // Backup before any mutation
+        backup_settings(&current_settings)?;
+
+        // Save old state for rollback, then clean so prepare_install_force starts fresh
+        let state_path = get_statusline_state_path().map_err(InstallError::Other)?;
+        let old_state = read_statusline_state(&state_path)
+            .map_err(|e| InstallError::Other(format!("Failed to read state: {}", e)))?;
+        let _ = remove_file_if_exists(&state_path);
+
+        let prepared =
+            prepare_install_force(current_settings.clone(), orbit_cli_path, &hook_command)
+                .map_err(|e| {
+                    // Restore old state on failure
+                    if let Some(ref st) = old_state {
+                        let _ = write_statusline_state(&state_path, st);
+                    }
+                    if e.contains("Permission") {
+                        InstallError::PermissionDenied
+                    } else {
+                        InstallError::Other(e)
+                    }
+                })?;
+
+        if let Err(e) = write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script) {
+            if let Some(ref st) = old_state {
+                let _ = write_statusline_state(&state_path, st);
+            }
+            return Err(if e.contains("Permission") {
+                InstallError::PermissionDenied
+            } else {
+                InstallError::Other(e)
+            });
+        }
+
+        if let Err(e) = write_settings(&settings_path, &prepared.settings) {
+            let _ = remove_file_if_exists(&prepared.wrapper_path);
+            if let Some(ref st) = old_state {
+                let _ = write_statusline_state(&state_path, st);
+            }
+            return Err(if e.contains("Permission") {
+                InstallError::PermissionDenied
+            } else {
+                InstallError::Other(e)
+            });
+        }
+
+        if let Err(e) = write_statusline_state(&state_path, &prepared.state) {
+            let _ = write_settings(&settings_path, &current_settings);
+            let _ = remove_file_if_exists(&prepared.wrapper_path);
+            let _ = remove_file_if_exists(&state_path);
+            return Err(if e.contains("Permission") {
+                InstallError::PermissionDenied
+            } else {
+                InstallError::Other(e)
+            });
+        }
+
+        Ok(())
+    })
+}
+
+fn backup_settings(settings: &Value) -> Result<(), InstallError> {
+    let backup_dir = get_orbit_dir()
+        .map_err(InstallError::Other)?
+        .join("backups");
+    let backup_path = backup_dir.join(format!(
+        "claude-settings-{}-{}.json",
+        Utc::now().format("%Y%m%dT%H%M%SZ"),
+        generate_install_id()
+    ));
+
+    let content = serde_json::to_string_pretty(settings)
+        .map_err(|e| InstallError::Other(format!("Failed to serialize settings backup: {}", e)))?;
+    atomic_write(&backup_path, content.as_bytes()).map_err(|e| {
+        if e.contains("Permission") || e.contains("permission") {
+            InstallError::PermissionDenied
+        } else {
+            InstallError::Other(e)
+        }
+    })?;
+
+    Ok(())
 }
 
 /// Attempt silent uninstallation
@@ -315,8 +417,7 @@ pub fn silent_uninstall(force: bool) -> Result<(), InstallError> {
             Value::Object(Default::default())
         };
 
-        let prepared =
-            prepare_uninstall(current_settings, force).map_err(|e| InstallError::Other(e))?;
+        let prepared = prepare_uninstall(current_settings, force).map_err(InstallError::Other)?;
 
         if matches!(prepared.mode, UninstallMode::PreserveDrift) {
             return Ok(());
@@ -326,17 +427,16 @@ pub fn silent_uninstall(force: bool) -> Result<(), InstallError> {
         remove_orbit_hooks(
             &mut settings_to_write,
             &collect_hook_commands_for_cleanup(prepared.state.as_ref())
-                .map_err(|e| InstallError::Other(e))?,
+                .map_err(InstallError::Other)?,
         )
-        .map_err(|e| InstallError::Other(e))?;
+        .map_err(InstallError::Other)?;
 
         if settings_exists {
-            write_settings(&settings_path, &settings_to_write)
-                .map_err(|e| InstallError::Other(e))?;
+            write_settings(&settings_path, &settings_to_write).map_err(InstallError::Other)?;
         }
 
         for path in &prepared.files_to_remove {
-            remove_file_if_exists(path).map_err(|e| InstallError::Other(e))?;
+            remove_file_if_exists(path).map_err(InstallError::Other)?;
         }
 
         Ok(())
@@ -344,10 +444,34 @@ pub fn silent_uninstall(force: bool) -> Result<(), InstallError> {
 }
 
 /// Prepare installation data without writing anything
+///
+/// When `force` is true, drift and orphaned-wrapper states are resolved by
+/// discarding the old state and re-capturing the current statusLine as the
+/// new original. This keeps the restore chain accurate: uninstall always
+/// returns to whatever was configured right before the most recent takeover.
 pub fn prepare_install(
+    settings: Value,
+    orbit_cli_path: &str,
+    hook_command: &str,
+) -> Result<PreparedInstall, String> {
+    prepare_install_inner(settings, orbit_cli_path, hook_command, false)
+}
+
+/// Force variant of prepare_install that resolves drift and orphaned states
+/// by discarding old state and re-capturing the current statusLine.
+pub fn prepare_install_force(
+    settings: Value,
+    orbit_cli_path: &str,
+    hook_command: &str,
+) -> Result<PreparedInstall, String> {
+    prepare_install_inner(settings, orbit_cli_path, hook_command, true)
+}
+
+fn prepare_install_inner(
     mut settings: Value,
     orbit_cli_path: &str,
     hook_command: &str,
+    force: bool,
 ) -> Result<PreparedInstall, String> {
     ensure_settings_object(&settings)?;
 
@@ -360,48 +484,61 @@ pub fn prepare_install(
     if let Some(state) = read_statusline_state(&state_path)? {
         if current_command.as_deref() == Some(state.managed_command.as_str()) {
             if !wrapper_path.exists() {
-                return Err(
-                    "statusLine points to Orbit wrapper, but wrapper file is missing; run `orbit-cli uninstall --force` first"
-                        .to_string(),
-                );
-            }
+                if !force {
+                    return Err(
+                        "statusLine points to Orbit wrapper, but wrapper file is missing; run `orbit-cli uninstall --force` first"
+                            .to_string(),
+                    );
+                }
+                // force: fall through to fresh install below
+            } else {
+                // Idempotent install
+                let mut state = state;
+                if state.hook_command.is_none() {
+                    state.hook_command = Some(hook_command.to_string());
+                }
 
-            // Idempotent install
-            let mut state = state;
-            if state.hook_command.is_none() {
-                state.hook_command = Some(hook_command.to_string());
+                let mut idempotent_settings = settings;
+                add_orbit_hooks(&mut idempotent_settings, hook_command)?;
+                return Ok(PreparedInstall {
+                    settings: idempotent_settings,
+                    state,
+                    wrapper_path,
+                    wrapper_script: render_wrapper_script(
+                        orbit_cli_path,
+                        current_command.as_deref(),
+                    ),
+                });
             }
-
-            let mut idempotent_settings = settings;
-            add_orbit_hooks(&mut idempotent_settings, hook_command)?;
-            return Ok(PreparedInstall {
-                settings: idempotent_settings,
-                state,
-                wrapper_path,
-                wrapper_script: render_wrapper_script(orbit_cli_path, current_command.as_deref()),
-            });
+        } else if !force {
+            return Err(
+                "statusLine drift detected (current != managed); refusing to overwrite existing user config"
+                    .to_string(),
+            );
         }
-
-        return Err(
-            "statusLine drift detected (current != managed); refusing to overwrite existing user config"
-                .to_string(),
-        );
+        // force + drift: discard old state, re-capture current statusLine below
     }
 
     // Classify current statusLine
     match classify_statusline(&settings, &managed_command) {
         StatusLineConfig::Absent | StatusLineConfig::StandardCommand { .. } => {}
         StatusLineConfig::Unsupported => {
-            return Err(
-                "existing statusLine is not a supported {type:\"command\",command:\"...\"} object; refusing to take over"
-                    .to_string(),
-            )
+            if !force {
+                return Err(
+                    "statusLine has unsupported configuration (not a command type); refusing to overwrite. Use force install to override"
+                        .to_string(),
+                );
+            }
+            // force: caller is responsible for backup; proceed with takeover
         }
         StatusLineConfig::OrbitOrphaned => {
-            return Err(
-                "settings.json points to Orbit wrapper but no install state exists; run `orbit-cli uninstall --force` first"
-                    .to_string(),
-            )
+            if !force {
+                return Err(
+                    "settings.json points to Orbit wrapper but no install state exists; run `orbit-cli uninstall --force` first"
+                        .to_string(),
+                );
+            }
+            // force: fall through to fresh install
         }
     }
 
@@ -965,6 +1102,34 @@ mod tests {
         .map_err(|e: InstallError| e.to_string())
     }
 
+    fn run_force_install_for_test(home: &TestHome, initial_settings: Value) -> Result<(), String> {
+        let settings_path = home.settings_path();
+        if let Some(parent) = settings_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        write_settings(&settings_path, &initial_settings)?;
+
+        let orbit_cli = "/opt/orbit-cli".to_string();
+        let hook_command = format!("{} hook", orbit_cli);
+
+        with_file_lock(&settings_path, || {
+            let current_settings = read_settings(&settings_path)?;
+            ensure_settings_object(&current_settings)?;
+
+            let state_path = home.state_path();
+            let _ = remove_file_if_exists(&state_path);
+
+            let prepared =
+                prepare_install_force(current_settings.clone(), &orbit_cli, &hook_command)?;
+
+            write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script)?;
+            write_settings(&settings_path, &prepared.settings)?;
+            write_statusline_state(&state_path, &prepared.state)?;
+            Ok(())
+        })
+        .map_err(|e: InstallError| e.to_string())
+    }
+
     fn run_uninstall_for_test(home: &TestHome, force: bool) -> Result<(), String> {
         let settings_path = home.settings_path();
         with_file_lock(&settings_path, || {
@@ -1274,7 +1439,7 @@ mod tests {
     }
 
     #[test]
-    fn install_rejects_non_standard_statusline_on_real_filesystem() {
+    fn install_accepts_non_standard_statusline_on_real_filesystem() {
         let home = TestHome::new();
         let settings = json!({
             "statusLine": {
@@ -1283,15 +1448,102 @@ mod tests {
             }
         });
 
-        let err = run_install_for_test(&home, settings).unwrap_err();
-        assert!(err.contains("refusing to take over"));
-        assert!(!home.wrapper_path().exists());
-        assert!(!home.state_path().exists());
+        run_install_for_test(&home, settings).unwrap();
+        assert!(home.wrapper_path().exists());
+        assert!(home.state_path().exists());
+
+        let installed = read_settings(&home.settings_path()).unwrap();
+        assert_eq!(
+            get_statusline_command(&installed).unwrap(),
+            home.wrapper_path().to_string_lossy()
+        );
+
+        // State should capture the original unsupported statusLine
+        let state = read_statusline_state(&home.state_path()).unwrap().unwrap();
+        let original = state.original_statusline.unwrap();
+        assert_eq!(original, json!({"type": "builtin", "name": "unsupported"}));
+    }
+
+    #[test]
+    fn force_install_resolves_drift_on_real_filesystem() {
+        let home = TestHome::new();
+
+        // First: normal install
+        run_install_for_test(&home, json!({})).unwrap();
+        assert!(home.wrapper_path().exists());
+
+        // Simulate drift: user changes statusLine
+        let drifted = json!({
+            "statusLine": {
+                "type": "command",
+                "command": "/usr/local/bin/user-tool"
+            }
+        });
+        write_settings(&home.settings_path(), &drifted).unwrap();
+
+        // Normal install should fail (drift)
+        let err = run_install_for_test(&home, drifted.clone()).unwrap_err();
+        assert!(err.contains("drift"));
+
+        // Force install should succeed
+        run_force_install_for_test(&home, drifted).unwrap();
+        let after = read_settings(&home.settings_path()).unwrap();
+        assert_eq!(
+            get_statusline_command(&after).unwrap(),
+            home.wrapper_path().to_string_lossy()
+        );
+
+        // State should capture the drifted statusLine (not the original absent one)
+        let state = read_statusline_state(&home.state_path()).unwrap().unwrap();
+        let original = state.original_statusline.unwrap();
+        assert_eq!(
+            original,
+            json!({"type": "command", "command": "/usr/local/bin/user-tool"})
+        );
+    }
+
+    #[test]
+    fn force_install_then_uninstall_restores_to_takeover_point() {
+        let home = TestHome::new();
+
+        // Install with an existing statusLine
+        let original = json!({
+            "statusLine": {
+                "type": "command",
+                "command": "/usr/local/bin/tool-a"
+            }
+        });
+        run_install_for_test(&home, original).unwrap();
+
+        // Simulate drift to tool-b
+        let drifted = json!({
+            "statusLine": {
+                "type": "command",
+                "command": "/usr/local/bin/tool-b"
+            }
+        });
+        write_settings(&home.settings_path(), &drifted).unwrap();
+
+        // Force reinstall: should capture tool-b as the restore point
+        run_force_install_for_test(&home, drifted).unwrap();
+
+        // Uninstall should restore to tool-b (not tool-a)
+        run_uninstall_for_test(&home, false).unwrap();
+        let restored = read_settings(&home.settings_path()).unwrap();
+        assert_eq!(
+            restored,
+            json!({
+                "statusLine": {
+                    "type": "command",
+                    "command": "/usr/local/bin/tool-b"
+                }
+            })
+        );
     }
 
     #[test]
     fn check_install_state_detects_not_installed() {
-        let home = TestHome::new();
+        let _home = TestHome::new();
         let state = check_install_state("/opt/orbit-cli").unwrap();
         assert_eq!(state, InstallState::NotInstalled);
     }

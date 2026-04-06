@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use std::sync::LazyLock;
 
 pub const LEFT_ZONE_WIDTH: f64 = 45.0;
-pub const RIGHT_ZONE_WIDTH: f64 = 45.0;
+pub const RIGHT_ZONE_WIDTH: f64 = 105.0;
 pub const MASCOT_LEFT_INSET: f64 = 8.0;
 const MIN_EXPANDED_HEIGHT: f64 = 168.0;
 const MAX_EXPANDED_HEIGHT: f64 = 320.0;
@@ -123,11 +123,11 @@ fn current_window_height(window: &tauri::WebviewWindow) -> Option<f64> {
     #[cfg(target_os = "macos")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-        if let Ok(wh) = window.window_handle() {
-            if let RawWindowHandle::AppKit(appkit) = wh.as_raw() {
-                let view_addr = appkit.ns_view.as_ptr() as usize;
-                return unsafe { current_native_window_height(view_addr) };
-            }
+        if let Ok(wh) = window.window_handle()
+            && let RawWindowHandle::AppKit(appkit) = wh.as_raw()
+        {
+            let view_addr = appkit.ns_view.as_ptr() as usize;
+            return unsafe { current_native_window_height(view_addr) };
         }
         None
     }
@@ -159,25 +159,25 @@ fn set_window_frame_for_geometry(
     #[cfg(target_os = "macos")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-        if let Ok(wh) = window.window_handle() {
-            if let RawWindowHandle::AppKit(appkit) = wh.as_raw() {
-                let view_addr = appkit.ns_view.as_ptr() as usize;
+        if let Ok(wh) = window.window_handle()
+            && let RawWindowHandle::AppKit(appkit) = wh.as_raw()
+        {
+            let view_addr = appkit.ns_view.as_ptr() as usize;
 
-                unsafe extern "C" {
-                    fn pthread_main_np() -> i32;
-                }
+            unsafe extern "C" {
+                fn pthread_main_np() -> i32;
+            }
 
-                if unsafe { pthread_main_np() } != 0 {
-                    // Already on main thread (e.g. during setup), call directly
-                    unsafe {
-                        apply_native_frame(view_addr, x, width, height);
-                    }
-                } else {
-                    // Tauri commands run on tokio threads; dispatch to main
-                    dispatch_on_main(move || unsafe {
-                        apply_native_frame(view_addr, x, width, height);
-                    });
+            if unsafe { pthread_main_np() } != 0 {
+                // Already on main thread (e.g. during setup), call directly
+                unsafe {
+                    apply_native_frame(view_addr, x, width, height);
                 }
+            } else {
+                // Tauri commands run on tokio threads; dispatch to main
+                dispatch_on_main(move || unsafe {
+                    apply_native_frame(view_addr, x, width, height);
+                });
             }
         }
     }

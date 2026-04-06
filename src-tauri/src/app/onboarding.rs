@@ -3,8 +3,9 @@
 //! Handles automatic installation of Orbit hooks on GUI startup.
 //! Designed for "silent & seamless" UX - background auto-install with tray indicators.
 
-use super::conflict_dialog;
-use crate::installer::{self, InstallError, InstallState, check_install_state, silent_install};
+use crate::installer::{
+    self, check_install_state, silent_force_install, silent_install, InstallError, InstallState,
+};
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 #[cfg(test)]
@@ -181,7 +182,7 @@ impl TrayStatus {
         }
     }
 
-    /// Get tooltip text for tray icon
+    #[allow(dead_code)]
     pub fn tooltip(&self) -> &'static str {
         match self {
             TrayStatus::Connecting => "Orbit - Connecting...",
@@ -293,15 +294,33 @@ impl OnboardingManager {
                         }
                     }
                 }
-                Ok(InstallState::DriftDetected) => {
+                Ok(InstallState::DriftDetected) | Ok(InstallState::OtherTool(_)) => {
                     transition_state(&state, OnboardingState::DriftDetected, app_handle.as_ref());
-                }
-                Ok(InstallState::OtherTool(tool)) => {
-                    transition_state(
-                        &state,
-                        OnboardingState::ConflictDetected(tool),
-                        app_handle.as_ref(),
-                    );
+                    transition_state(&state, OnboardingState::Installing, app_handle.as_ref());
+
+                    match silent_force_install(&orbit_cli_path) {
+                        Ok(()) => {
+                            transition_state(
+                                &state,
+                                OnboardingState::Connected,
+                                app_handle.as_ref(),
+                            );
+                        }
+                        Err(InstallError::PermissionDenied) => {
+                            transition_state(
+                                &state,
+                                OnboardingState::PermissionDenied,
+                                app_handle.as_ref(),
+                            );
+                        }
+                        Err(e) => {
+                            transition_state(
+                                &state,
+                                OnboardingState::Error(e.to_string()),
+                                app_handle.as_ref(),
+                            );
+                        }
+                    }
                 }
                 Ok(InstallState::Orphaned) => {
                     transition_state(&state, OnboardingState::Installing, app_handle.as_ref());
@@ -343,15 +362,6 @@ impl OnboardingManager {
 
     pub fn set_state(&self, next: OnboardingState) {
         transition_state(&self.state, next, None);
-    }
-
-    pub fn set_state_with_emitter(&self, next: OnboardingState, app_handle: AppHandle) {
-        transition_state(&self.state, next, Some(&app_handle));
-    }
-
-    /// Retry installation (for use after user grants permission)
-    pub fn retry_install(&self) {
-        self.retry_install_inner(None);
     }
 
     pub fn retry_install_with_emitter(&self, app_handle: AppHandle) {
@@ -399,37 +409,25 @@ impl OnboardingManager {
         installer::silent_uninstall(force).map_err(|e| e.to_string())
     }
 
-    /// Switch to Orbit with backup (for conflict resolution)
-    pub fn switch_to_orbit_with_backup(&self) {
-        self.switch_to_orbit_with_backup_inner(None);
+    pub fn force_install_with_emitter(&self, app_handle: AppHandle) {
+        self.force_install_inner(Some(app_handle));
     }
 
-    pub fn switch_to_orbit_with_backup_with_emitter(&self, app_handle: AppHandle) {
-        self.switch_to_orbit_with_backup_inner(Some(app_handle));
-    }
-
-    fn switch_to_orbit_with_backup_inner(&self, app_handle: Option<AppHandle>) {
+    fn force_install_inner(&self, app_handle: Option<AppHandle>) {
         let state = Arc::clone(&self.state);
         let orbit_cli_path = self.orbit_cli_path.clone();
 
         std::thread::spawn(move || {
             transition_state(&state, OnboardingState::Installing, app_handle.as_ref());
 
-            match conflict_dialog::backup_and_switch_to_orbit(&orbit_cli_path) {
-                Ok(_) => {
+            match silent_force_install(&orbit_cli_path) {
+                Ok(()) => {
                     transition_state(&state, OnboardingState::Connected, app_handle.as_ref());
                 }
                 Err(InstallError::PermissionDenied) => {
                     transition_state(
                         &state,
                         OnboardingState::PermissionDenied,
-                        app_handle.as_ref(),
-                    );
-                }
-                Err(InstallError::Conflict(tool)) => {
-                    transition_state(
-                        &state,
-                        OnboardingState::ConflictDetected(tool),
                         app_handle.as_ref(),
                     );
                 }

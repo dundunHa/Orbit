@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="island" class="island collapsed" role="status" aria-live="polite" aria-label="Orbit AI assistant status" aria-expanded="false" onclick="toggleExpand()">
+  <div id="island" class="island collapsed" role="status" aria-live="polite" aria-label="Orbit AI assistant status" aria-expanded="false">
     <!-- Collapsed pill view — three-zone layout -->
     <div class="pill">
       <div class="pill-left">
@@ -31,7 +31,7 @@
       <div class="pill-center"></div>
       <div class="pill-right">
         <div class="status-dot"></div>
-        <span class="status-text" aria-live="assertive">Waiting...</span>
+        <!--<span class="status-text" aria-live="assertive">Waiting...</span>-->
       </div>
     </div>
 
@@ -48,18 +48,18 @@
       <div class="detail-model"></div>
 
       <div class="onboarding-section" style="display:none">
-        <div class="section-title">Setup</div>
+        <div class="section-title" data-i18n="section.setup">Setup</div>
         <div class="onboarding-status-row">
           <div class="onboarding-status-dot status-dot"></div>
           <div class="onboarding-status-text"></div>
         </div>
         <div class="onboarding-actions">
-          <button class="btn-retry" type="button" aria-label="Retry Orbit setup" onclick="event.stopPropagation(); handleOnboardingRetry()">重试</button>
+          <button class="btn-retry" type="button" aria-label="Retry Orbit setup" onclick="event.stopPropagation(); handleOnboardingRetry()" data-i18n="onboarding.retry">Retry</button>
         </div>
       </div>
 
       <div class="active-section">
-        <div class="section-title">Active</div>
+        <div class="section-title" data-i18n="section.active">Active</div>
         <div class="active-list"></div>
       </div>
 
@@ -67,14 +67,14 @@
       <div class="permission-section" style="display:none">
         <div class="permission-tool"></div>
         <div class="permission-actions">
-          <button class="btn-allow" aria-label="Allow this action" onclick="event.stopPropagation(); handlePermission('allow')">Allow</button>
-          <button class="btn-deny" aria-label="Deny this action" onclick="event.stopPropagation(); handlePermission('deny')">Deny</button>
+          <button class="btn-allow" aria-label="Allow this action" onclick="event.stopPropagation(); handlePermission('allow')" data-i18n="permission.allow">Allow</button>
+          <button class="btn-deny" aria-label="Deny this action" onclick="event.stopPropagation(); handlePermission('deny')" data-i18n="permission.deny">Deny</button>
         </div>
       </div>
 
       <!-- History -->
       <div class="history-section">
-        <div class="section-title">Recent</div>
+        <div class="section-title" data-i18n="section.recent">Recent</div>
         <div class="history-list"></div>
       </div>
     </div>

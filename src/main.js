@@ -9,6 +9,7 @@ import {
   getSessionCounts,
   getSessionTokenStats,
 } from "./utils/sessionTransform.js";
+import { t, getLocale } from "./utils/i18n.js";
 
 const { listen } = window.__TAURI__.event;
 const { invoke } = window.__TAURI__.core;
@@ -22,6 +23,9 @@ const pendingPerms = new Map(); // IMPL-05: Map<permId, {sessionId, toolName, to
 let sessionTree = null;
 let onboardingState = null;
 let onboardingRetryPending = false;
+let collapseDebounceTimer = null;
+let wantExpanded = false; // 鼠标期望状态，动画结束后据此对账
+const COLLAPSE_DELAY = 300; // ms, hover 离开后延迟收起防抖
 
 listen("screen-changed", (event) => {
   const info = event.payload;
@@ -84,42 +88,42 @@ const ONBOARDING_STATUS_MAP = {
   Welcome: {
     dotClass: "processing",
     mascotStatusType: "Processing",
-    fallbackText: "Welcome to Orbit",
+    fallbackTextKey: "onboarding.welcome",
   },
   Checking: {
     dotClass: "processing",
     mascotStatusType: "Processing",
-    fallbackText: "Checking Claude Code configuration...",
+    fallbackTextKey: "onboarding.checking",
   },
   Installing: {
     dotClass: "running-tool",
     mascotStatusType: "RunningTool",
-    fallbackText: "Installing Orbit hooks...",
+    fallbackTextKey: "onboarding.installing",
   },
   Connected: {
     dotClass: "idle",
     mascotStatusType: "WaitingForInput",
-    fallbackText: "Connected to Claude Code",
+    fallbackTextKey: "onboarding.connected",
   },
   ConflictDetected: {
     dotClass: "anomaly",
     mascotStatusType: "Anomaly",
-    fallbackText: "Configuration conflict detected",
+    fallbackTextKey: "onboarding.conflict",
   },
   PermissionDenied: {
     dotClass: "waiting-approval",
     mascotStatusType: "WaitingForApproval",
-    fallbackText: "Permission required",
+    fallbackTextKey: "onboarding.permissionDenied",
   },
   DriftDetected: {
     dotClass: "anomaly",
     mascotStatusType: "Anomaly",
-    fallbackText: "Configuration drift detected",
+    fallbackTextKey: "onboarding.drift",
   },
   Error: {
     dotClass: "error",
     mascotStatusType: "Anomaly",
-    fallbackText: "Orbit setup failed",
+    fallbackTextKey: "onboarding.error",
   },
 };
 
@@ -153,13 +157,23 @@ function scheduleAnimationFallback(handler) {
   }, 450);
 }
 
+// 动画结束后根据 wantExpanded 期望状态对账，确保不丢事件
+function reconcileExpandState() {
+  isAnimating = false;
+  if (!wantExpanded && isExpanded) {
+    collapseIsland();
+  } else if (wantExpanded && !isExpanded) {
+    expandIsland();
+  }
+}
+
 island.addEventListener("transitionend", async (e) => {
   if (e.target === island && e.propertyName === "height") {
     clearAnimationFallback();
     if (collapseAfterTransition) {
       await finishCollapse();
     }
-    isAnimating = false;
+    reconcileExpandState();
   }
 });
 
@@ -169,12 +183,18 @@ island.addEventListener("transitioncancel", async (e) => {
     if (collapseAfterTransition) {
       await finishCollapse();
     }
-    isAnimating = false;
+    reconcileExpandState();
   }
 });
 
 // Initialize: load notch info, set layout, load sessions
 async function init() {
+  // Apply i18n to static HTML elements
+  document.documentElement.lang = getLocale();
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.dataset.i18n);
+  });
+
   try {
     notchInfo = await invoke("get_notch_info");
   } catch (e) {
@@ -334,7 +354,7 @@ function getOnboardingView(state) {
   return {
     dotClass: config.dotClass,
     mascotStatusType: config.mascotStatusType,
-    text: state.status_text || config.fallbackText,
+    text: state.status_text || t(config.fallbackTextKey),
     canRetry: Boolean(state.can_retry),
   };
 }
@@ -374,7 +394,7 @@ function renderFallbackPill() {
     applyPillStatus({
       dotClass: "disconnected",
       mascotStatusType: "WaitingForInput",
-      text: "No connections",
+      text: t("status.noConnections"),
     });
     return;
   }
@@ -382,7 +402,7 @@ function renderFallbackPill() {
   applyPillStatus({
     dotClass: "idle",
     mascotStatusType: "WaitingForInput",
-    text: "Waiting...",
+    text: t("status.waiting"),
   });
 }
 
@@ -393,8 +413,8 @@ function clearSessionDetail() {
 
   sessionCwd.textContent = "";
   detailStatus.textContent = shouldShowOnboardingPill()
-    ? getOnboardingView(onboardingState)?.text || "Waiting..."
-    : "Waiting...";
+    ? getOnboardingView(onboardingState)?.text || t("status.waiting")
+    : t("status.waiting");
   detailTools.textContent = "";
   detailTokens.textContent = "";
   detailModel.textContent = "";
@@ -416,13 +436,13 @@ function renderOnboardingSection() {
   if (view?.dotClass) {
     onboardingStatusDot.classList.add(view.dotClass);
   }
-  onboardingStatusText.textContent = view?.text || "Orbit setup requires attention";
+  onboardingStatusText.textContent = view?.text || t("onboarding.requiresAttention");
 
   if (onboardingRetryButton) {
     const showRetry = Boolean(view?.canRetry);
     onboardingRetryButton.style.display = showRetry ? "block" : "none";
     onboardingRetryButton.disabled = onboardingRetryPending;
-    onboardingRetryButton.textContent = onboardingRetryPending ? "重试中..." : "重试";
+    onboardingRetryButton.textContent = onboardingRetryPending ? t("onboarding.retrying") : t("onboarding.retry");
   }
 
   if (isExpanded) {
@@ -467,7 +487,7 @@ function updateUI(session) {
   switch (statusType) {
     case "Processing":
       statusDot.classList.add("processing");
-      statusText.textContent = "Thinking...";
+      statusText.textContent = t("status.thinking");
       break;
     case "RunningTool":
       statusDot.classList.add("running-tool");
@@ -475,24 +495,24 @@ function updateUI(session) {
       break;
     case "WaitingForApproval":
       statusDot.classList.add("waiting-approval");
-      statusText.textContent = "Approve?";
+      statusText.textContent = t("status.approve");
       break;
     case "Anomaly":
       statusDot.classList.add("anomaly");
-      statusText.textContent = "Stuck? (" + status.idle_seconds + "s)";
+      statusText.textContent = t("status.stuck", { seconds: status.idle_seconds });
       break;
     case "Compacting":
       statusDot.classList.add("processing");
-      statusText.textContent = "Compacting...";
+      statusText.textContent = t("status.compacting");
       break;
     case "Ended":
       statusDot.classList.add("ended");
-      statusText.textContent = "Ended";
+      statusText.textContent = t("status.ended");
       break;
     case "WaitingForInput":
     default:
       statusDot.classList.add("idle");
-      statusText.textContent = "Idle";
+      statusText.textContent = t("status.idle");
       break;
   }
 
@@ -556,21 +576,21 @@ function formatTool(toolName, description) {
   if (description) return description;
   switch (toolName) {
     case "Bash":
-      return "$ Running...";
+      return t("tool.bash");
     case "Read":
-      return "Reading...";
+      return t("tool.read");
     case "Edit":
-      return "Editing...";
+      return t("tool.edit");
     case "Write":
-      return "Writing...";
+      return t("tool.write");
     case "Grep":
-      return "Searching...";
+      return t("tool.grep");
     case "Glob":
-      return "Finding...";
+      return t("tool.glob");
     case "Agent":
-      return "Agent...";
+      return t("tool.agent");
     default:
-      return (toolName || "") + "...";
+      return t("tool.fallback", { name: toolName || "" });
   }
 }
 
@@ -621,14 +641,30 @@ async function handleOnboardingRetry() {
   }
 }
 
-function toggleExpand() {
-  if (isAnimating) return; // IMPL-06: prevent rapid clicks
-  if (isExpanded) {
-    collapseIsland();
-  } else {
+// Hover interaction: mouseenter to expand, mouseleave to collapse with debounce
+island.addEventListener("mouseenter", () => {
+  if (collapseDebounceTimer) {
+    clearTimeout(collapseDebounceTimer);
+    collapseDebounceTimer = null;
+  }
+  wantExpanded = true;
+  if (!isExpanded && !isAnimating) {
     expandIsland();
   }
-}
+});
+
+island.addEventListener("mouseleave", () => {
+  if (collapseDebounceTimer) {
+    clearTimeout(collapseDebounceTimer);
+  }
+  collapseDebounceTimer = setTimeout(() => {
+    collapseDebounceTimer = null;
+    wantExpanded = false;
+    if (isExpanded && !isAnimating) {
+      collapseIsland();
+    }
+  }, COLLAPSE_DELAY);
+});
 
 async function expandIsland() {
   if (isAnimating) return;
@@ -651,7 +687,7 @@ async function expandIsland() {
     island.setAttribute("aria-expanded", "true");
     scheduleExpandedHeightUpdate();
     scheduleAnimationFallback(() => {
-      isAnimating = false;
+      reconcileExpandState();
     });
   });
 
@@ -679,11 +715,11 @@ async function collapseIsland() {
     island.style.height = `${notchInfo.notch_height || 37}px`;
   });
 
-  scheduleAnimationFallback(() => {
+  scheduleAnimationFallback(async () => {
     if (collapseAfterTransition) {
-      finishCollapse();
-      isAnimating = false;
+      await finishCollapse();
     }
+    reconcileExpandState();
   });
 }
 
@@ -732,7 +768,7 @@ function renderActiveSessions() {
   if (treeData.length === 0) {
     const empty = document.createElement("div");
     empty.className = "active-item empty";
-    empty.textContent = "No active sessions";
+    empty.textContent = t("session.noActive");
     activeList.appendChild(empty);
     scheduleExpandedHeightUpdate();
     return;
@@ -763,17 +799,17 @@ function renderActiveSessions() {
 function getStatusLabel(status) {
   switch (status.type) {
     case "Processing":
-      return "thinking";
+      return t("sessionStatus.thinking");
     case "RunningTool":
-      return "running";
+      return t("sessionStatus.running");
     case "WaitingForApproval":
-      return "approve?";
+      return t("sessionStatus.approve");
     case "Anomaly":
-      return "stuck";
+      return t("sessionStatus.stuck");
     case "Compacting":
-      return "compacting";
+      return t("sessionStatus.compacting");
     case "WaitingForInput":
-      return "idle";
+      return t("sessionStatus.idle");
     default:
       return status.type.toLowerCase();
   }
@@ -784,7 +820,7 @@ function renderHistory(entries) {
   if (!entries || entries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "history-item empty";
-    empty.textContent = "No history yet";
+    empty.textContent = t("session.noHistory");
     historyList.appendChild(empty);
     scheduleExpandedHeightUpdate();
     return;
@@ -801,7 +837,7 @@ function renderHistory(entries) {
   if (recentEntries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "history-item empty";
-    empty.textContent = "No recent sessions (last 3h)";
+    empty.textContent = t("session.noRecent");
     historyList.appendChild(empty);
     scheduleExpandedHeightUpdate();
     return;
@@ -820,7 +856,7 @@ function renderHistory(entries) {
 
     const titleSpan = document.createElement("span");
     titleSpan.className = "history-title";
-    titleSpan.textContent = entry.title || "Untitled";
+    titleSpan.textContent = entry.title || t("session.untitled");
 
     const timeSpan = document.createElement("span");
     timeSpan.className = "history-time";
@@ -874,7 +910,6 @@ listen("connection-count", (event) => {
 init();
 
 // Export functions for HTML inline event handlers (ES6 module scope isolation)
-window.toggleExpand = toggleExpand;
 window.collapseIsland = collapseIsland;
 window.handlePermission = handlePermission;
 window.handleOnboardingRetry = handleOnboardingRetry;

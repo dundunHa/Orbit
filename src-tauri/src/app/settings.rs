@@ -3,8 +3,8 @@
 use super::onboarding::{OnboardingManager, OnboardingState};
 use std::thread;
 use tauri::{
-    AppHandle, Manager, Runtime,
     menu::{MenuId, MenuItem, Submenu, SubmenuBuilder},
+    AppHandle, Manager, Runtime,
 };
 
 const SETTINGS_SUBMENU_ID: &str = "tray-settings";
@@ -12,7 +12,8 @@ const UNINSTALL_MENU_ID: &str = "tray-settings-uninstall";
 const RECHECK_MENU_ID: &str = "tray-settings-recheck";
 
 pub fn build_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
-    let uninstall_item = MenuItem::with_id(app, UNINSTALL_MENU_ID, "卸载Orbit", true, None::<&str>)?;
+    let uninstall_item =
+        MenuItem::with_id(app, UNINSTALL_MENU_ID, "卸载Orbit", true, None::<&str>)?;
     let recheck_item = MenuItem::with_id(app, RECHECK_MENU_ID, "重新检查连接", true, None::<&str>)?;
 
     SubmenuBuilder::with_id(app, SETTINGS_SUBMENU_ID, "设置")

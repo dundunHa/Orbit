@@ -9,11 +9,13 @@ help:
 	@echo "  make ffmt - Format frontend code (Prettier + ESLint fix)"
 	@echo "  make fmt  - Format backend code (rustfmt + Clippy fix)"
 
-# Backend formatting (rustfmt + Clippy fix)
+# Backend formatting (rustfmt + Clippy fix + warn check)
 fmt:
 	@echo "→ Formatting backend code..."
 	cd src-tauri && cargo fmt
 	@cd src-tauri && cargo clippy --all-targets --all-features --fix --allow-staged 2>/dev/null || true
+	@echo "→ Checking for remaining warnings..."
+	cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
 	@echo "✓ Backend formatting complete"
 
 # Frontend formatting (Prettier + ESLint fix)

@@ -1,4 +1,3 @@
-mod adapter;
 mod anomaly;
 mod app;
 mod commands;
@@ -137,13 +136,17 @@ pub fn run() {
             app.manage(app_state.pending_permissions.clone());
             app.manage(app_state.connection_count.clone());
 
+            let today_stats: state::TodayStats =
+                std::sync::Arc::new(parking_lot::Mutex::new(state::TodayTokenStats::default()));
+            app.manage(today_stats.clone());
+
             let orbit_cli_path = app::permission_dialog::resolve_orbit_cli_path();
             let onboarding = app::onboarding::OnboardingManager::new(orbit_cli_path);
             onboarding.start_background_check_with_emitter(app.handle().clone());
             app::conflict_dialog::start_monitor(onboarding.clone(), app.handle().clone());
             app::permission_dialog::start_monitor(app.handle().clone(), onboarding.clone());
             app.manage(onboarding.clone());
-            tray::init(&app.handle(), onboarding)?;
+            tray::init(app.handle(), today_stats.clone())?;
 
             let handle = app.handle().clone();
 
@@ -198,9 +201,11 @@ pub fn run() {
             let sessions = app_state.sessions.clone();
             let pending = app_state.pending_permissions.clone();
             let conn_count = app_state.connection_count.clone();
+            let today_stats_clone = today_stats.clone();
             let app_handle = handle.clone();
             tauri::async_runtime::spawn(async move {
-                socket_server::start(app_handle, sessions, pending, conn_count).await;
+                socket_server::start(app_handle, sessions, pending, conn_count, today_stats_clone)
+                    .await;
             });
 
             // Start anomaly detector

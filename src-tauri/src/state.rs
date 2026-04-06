@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Local, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -123,6 +123,65 @@ pub type SessionMap = Arc<Mutex<HashMap<String, Session>>>;
 pub type PendingPermissions = Arc<Mutex<HashMap<String, PendingPermission>>>;
 pub type ConnectionCount = Arc<std::sync::atomic::AtomicU32>;
 
+/// Aggregate token stats for today, readable from sync contexts (tray menu).
+#[derive(Debug, Clone)]
+pub struct TodayTokenStats {
+    pub date: u32, // YYYYMMDD
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    /// Tokens/sec, EMA-smoothed for stable tray display
+    pub out_rate: f64,
+    last_rate_sample_ts: Option<DateTime<Utc>>,
+    last_rate_sample_out: u64,
+}
+
+impl Default for TodayTokenStats {
+    fn default() -> Self {
+        Self {
+            date: today_key(),
+            tokens_in: 0,
+            tokens_out: 0,
+            out_rate: 0.0,
+            last_rate_sample_ts: None,
+            last_rate_sample_out: 0,
+        }
+    }
+}
+
+impl TodayTokenStats {
+    pub fn update_rate(&mut self, current_total_out: u64) {
+        let now = Utc::now();
+        if let Some(last_ts) = self.last_rate_sample_ts {
+            let elapsed = (now - last_ts).num_milliseconds() as f64 / 1000.0;
+            if elapsed > 0.5 {
+                let delta = current_total_out.saturating_sub(self.last_rate_sample_out);
+                let instant_rate = delta as f64 / elapsed;
+                // EMA smoothing
+                self.out_rate = self.out_rate * 0.7 + instant_rate * 0.3;
+                self.last_rate_sample_ts = Some(now);
+                self.last_rate_sample_out = current_total_out;
+            }
+        } else {
+            self.last_rate_sample_ts = Some(now);
+            self.last_rate_sample_out = current_total_out;
+        }
+    }
+
+    pub fn reset_if_new_day(&mut self) {
+        let today = today_key();
+        if self.date != today {
+            *self = Self::default();
+        }
+    }
+}
+
+fn today_key() -> u32 {
+    let now = Local::now();
+    now.year() as u32 * 10000 + now.month() * 100 + now.day()
+}
+
+pub type TodayStats = Arc<parking_lot::Mutex<TodayTokenStats>>;
+
 pub struct AppState {
     pub sessions: SessionMap,
     pub pending_permissions: PendingPermissions,
@@ -166,14 +225,12 @@ impl Session {
         let sessions_dir = home.join(".claude").join("sessions");
         if let Ok(entries) = std::fs::read_dir(&sessions_dir) {
             for entry in entries.flatten() {
-                if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                    if let Ok(session_data) = serde_json::from_str::<ClaudeSessionFile>(&content) {
-                        if session_data.session_id == session_id {
-                            if !session_data.name.is_empty() {
-                                return Some(session_data.name);
-                            }
-                        }
-                    }
+                if let Ok(content) = std::fs::read_to_string(entry.path())
+                    && let Ok(session_data) = serde_json::from_str::<ClaudeSessionFile>(&content)
+                    && session_data.session_id == session_id
+                    && !session_data.name.is_empty()
+                {
+                    return Some(session_data.name);
                 }
             }
         }
@@ -181,13 +238,13 @@ impl Session {
         let history_path = home.join(".claude").join("history.jsonl");
         if let Ok(content) = std::fs::read_to_string(&history_path) {
             for line in content.lines() {
-                if let Ok(entry) = serde_json::from_str::<HistoryJsonlEntry>(line) {
-                    if entry.session_id == session_id {
-                        let display = entry.display.trim();
-                        if !display.is_empty() && !display.starts_with('/') {
-                            let title = display.chars().take(40).collect::<String>();
-                            return Some(title);
-                        }
+                if let Ok(entry) = serde_json::from_str::<HistoryJsonlEntry>(line)
+                    && entry.session_id == session_id
+                {
+                    let display = entry.display.trim();
+                    if !display.is_empty() && !display.starts_with('/') {
+                        let title = display.chars().take(40).collect::<String>();
+                        return Some(title);
                     }
                 }
             }
@@ -197,9 +254,8 @@ impl Session {
     }
 
     pub fn refresh_title_from_claude(&mut self) -> Option<String> {
-        Self::fetch_title_from_claude_sessions(&self.id).map(|title| {
+        Self::fetch_title_from_claude_sessions(&self.id).inspect(|title| {
             self.title = Some(title.clone());
-            title
         })
     }
 
@@ -220,15 +276,15 @@ impl Session {
         match payload.hook_event_name.as_str() {
             "UserPromptSubmit" => {
                 self.status = SessionStatus::Processing;
-                if self.title.is_none() {
-                    if let Some(msg) = &payload.message {
-                        let title = if msg.len() > 40 {
-                            format!("{}...", &msg[..37])
-                        } else {
-                            msg.clone()
-                        };
-                        self.title = Some(title);
-                    }
+                if self.title.is_none()
+                    && let Some(msg) = &payload.message
+                {
+                    let title = if msg.len() > 40 {
+                        format!("{}...", &msg[..37])
+                    } else {
+                        msg.clone()
+                    };
+                    self.title = Some(title);
                 }
             }
             "PreToolUse" => {
