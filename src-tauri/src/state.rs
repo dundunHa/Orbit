@@ -43,6 +43,10 @@ pub enum SessionStatus {
 pub struct Session {
     pub id: String,
     pub cwd: String,
+    #[serde(default)]
+    pub has_spawned_subagent: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
     pub status: SessionStatus,
     pub started_at: DateTime<Utc>,
     pub last_event_at: DateTime<Utc>,
@@ -275,6 +279,8 @@ impl Session {
         Self {
             id,
             cwd,
+            has_spawned_subagent: false,
+            parent_session_id: None,
             status: SessionStatus::WaitingForInput,
             started_at: now,
             last_event_at: now,
@@ -359,6 +365,9 @@ impl Session {
             }
             "PreToolUse" => {
                 self.tool_count += 1;
+                if payload.tool_name.as_deref() == Some("Task") {
+                    self.has_spawned_subagent = true;
+                }
                 self.status = SessionStatus::RunningTool {
                     tool_name: payload.tool_name.clone().unwrap_or_default(),
                     description: payload

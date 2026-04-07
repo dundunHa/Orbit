@@ -94,12 +94,15 @@ function transformSession(session, level = 0) {
       tokensTotal: formatTokenCount(tokenStats.total),
       averageTps: formatTokenRate(tokenStats.averageTotalTps),
     },
+    started_at: session.started_at || null,
     level,
     children: [],
   };
 }
 
 export function buildSessionTree(sessions, activeSessionId) {
+  void activeSessionId;
+
   const sessionArray = Object.values(sessions);
   const activeSessions = sessionArray.filter((s) => s.status?.type !== "Ended");
 
@@ -107,26 +110,91 @@ export function buildSessionTree(sessions, activeSessionId) {
     return [];
   }
 
-  activeSessions.sort((a, b) => {
+  const sortByPriority = (a, b) => {
     const prioA = STATUS_PRIORITY[a.status?.type] || 0;
     const prioB = STATUS_PRIORITY[b.status?.type] || 0;
     if (prioA !== prioB) return prioB - prioA;
     return new Date(b.last_event_at || 0) - new Date(a.last_event_at || 0);
-  });
+  };
 
-  const rootSessions = [];
-  const mainSession =
-    activeSessions.find((s) => s.id === activeSessionId) || activeSessions[0];
+  const sortByStartedAtAsc = (a, b) => {
+    const startedA = new Date(a.started_at || 0).getTime();
+    const startedB = new Date(b.started_at || 0).getTime();
+    if (startedA !== startedB) return startedA - startedB;
+
+    return new Date(a.last_event_at || 0) - new Date(b.last_event_at || 0);
+  };
+
+  const hasParentSessionData = activeSessions.some((s) => s.parent_session_id);
+
+  if (hasParentSessionData) {
+    const sessionById = new Map(activeSessions.map((s) => [s.id, s]));
+    const childrenByParentId = new Map();
+    const rootCandidates = [];
+
+    for (const session of activeSessions) {
+      const parentId = session.parent_session_id;
+
+      if (
+        parentId &&
+        parentId !== session.id &&
+        sessionById.has(parentId)
+      ) {
+        if (!childrenByParentId.has(parentId)) {
+          childrenByParentId.set(parentId, []);
+        }
+        childrenByParentId.get(parentId).push(session);
+      } else {
+        rootCandidates.push(session);
+      }
+    }
+
+    rootCandidates.sort(sortByStartedAtAsc);
+    const builtNodeIds = new Set();
+
+    const buildNode = (session, level = 0, ancestry = new Set()) => {
+      const node = transformSession(session, level);
+      builtNodeIds.add(session.id);
+
+      if (ancestry.has(session.id)) {
+        return node;
+      }
+
+      const nextAncestry = new Set(ancestry);
+      nextAncestry.add(session.id);
+
+      const children = (childrenByParentId.get(session.id) || [])
+        .slice()
+        .sort(sortByPriority);
+
+      node.children = children.map((child) =>
+        buildNode(child, level + 1, nextAncestry),
+      );
+      return node;
+    };
+
+    const roots = rootCandidates.map((session) => buildNode(session, 0));
+
+    const unbuilt = activeSessions
+      .filter((session) => !builtNodeIds.has(session.id))
+      .sort(sortByStartedAtAsc)
+      .map((session) => buildNode(session, 0));
+
+    return roots.concat(unbuilt);
+  }
+
+  const sortedByStart = activeSessions.slice().sort(sortByStartedAtAsc);
+  const mainSession = sortedByStart[0];
   const mainNode = transformSession(mainSession, 0);
 
-  const otherSessions = activeSessions.filter((s) => s.id !== mainSession.id);
+  const otherSessions = activeSessions
+    .filter((s) => s.id !== mainSession.id)
+    .sort(sortByPriority);
   if (otherSessions.length > 0) {
     mainNode.children = otherSessions.map((s) => transformSession(s, 1));
   }
 
-  rootSessions.push(mainNode);
-
-  return rootSessions;
+  return [mainNode];
 }
 
 export function getSessionCounts(sessions) {

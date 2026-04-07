@@ -90,6 +90,7 @@ async fn test_full_session_lifecycle_with_statusline_tokens() {
 
         HistoryEntry {
             session_id: session.id.clone(),
+            parent_session_id: session.parent_session_id.clone(),
             cwd: session.cwd.clone(),
             started_at: session.started_at,
             ended_at: session.last_event_at,

@@ -11,6 +11,9 @@ static HISTORY_LOCK: Mutex<()> = Mutex::new(());
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub session_id: String,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
     pub cwd: String,
     pub started_at: DateTime<Utc>,
     pub ended_at: DateTime<Utc>,
