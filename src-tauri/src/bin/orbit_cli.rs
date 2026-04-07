@@ -1,7 +1,7 @@
 //! Orbit CLI binary
 //!
-//! This is the command-line interface for Orbit. The core installation logic
-//! has been extracted to the `installer` module for reuse by the GUI.
+//! This helper binary bridges Claude Code hooks and statusline payloads into Orbit.
+//! Install and uninstall flows live in the GUI via the shared installer module.
 
 use serde_json::Value;
 use std::io::{self, Read, Write};
@@ -9,7 +9,12 @@ use std::os::unix::net::UnixStream;
 
 use orbit::installer;
 
-const SOCKET_PATH: &str = "/tmp/orbit.sock";
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HookResponseMode {
+    None,
+    PermissionRequest,
+    Elicitation,
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -17,18 +22,14 @@ fn main() {
     if args.len() < 2 {
         eprintln!("Usage: orbit-cli <command>");
         eprintln!("Commands:");
-        eprintln!("  hook       Forward hook event from stdin to Orbit app");
-        eprintln!("  statusline Forward statusline event from stdin to Orbit app");
-        eprintln!("  install    Configure Claude Code hooks for Orbit");
-        eprintln!("  uninstall  Remove Orbit hooks from Claude Code settings");
+        eprintln!("  hook       Internal helper: forward hook event from stdin to Orbit");
+        eprintln!("  statusline Internal helper: forward statusline event from stdin to Orbit");
         std::process::exit(1);
     }
 
     match args[1].as_str() {
         "hook" => cmd_hook(),
         "statusline" => cmd_statusline(),
-        "install" => cmd_install(),
-        "uninstall" => cmd_uninstall(args.iter().any(|arg| arg == "--force")),
         _ => {
             eprintln!("Unknown command: {}", args[1]);
             std::process::exit(1);
@@ -37,6 +38,7 @@ fn main() {
 }
 
 fn cmd_hook() {
+    let socket_path = installer::socket_path();
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
         std::process::exit(1);
@@ -47,45 +49,10 @@ fn cmd_hook() {
         std::process::exit(0);
     }
 
-    let is_permission_request = serde_json::from_str::<Value>(input)
-        .ok()
-        .and_then(|val| {
-            val.get("hook_event_name")
-                .or_else(|| val.get("hookEventName"))
-                .and_then(|v| v.as_str())
-                .map(|s| s == "PermissionRequest")
-        })
-        .unwrap_or(false);
-
-    match UnixStream::connect(SOCKET_PATH) {
+    match UnixStream::connect(&socket_path) {
         Ok(mut stream) => {
-            let payload = format!("{}\n", input);
-            if stream.write_all(payload.as_bytes()).is_err() {
-                std::process::exit(0);
-            }
-
-            if is_permission_request {
-                // Block and wait for the server to return the permission decision.
-                // The socket server will emit the permission-request event to the
-                // frontend, wait for the user's decision, then write the JSON
-                // response back on this connection.
-                let mut response = String::new();
-                match stream.read_to_string(&mut response) {
-                    Ok(_) if !response.trim().is_empty() => {
-                        print!("{}", response.trim());
-                    }
-                    _ => {
-                        // Connection closed or read error — fall back to "ask"
-                        // so Claude Code shows its own approval prompt.
-                        let fallback = serde_json::json!({
-                            "hookSpecificOutput": {
-                                "hookEventName": "PermissionRequest",
-                                "decision": { "behavior": "ask" }
-                            }
-                        });
-                        print!("{}", fallback);
-                    }
-                }
+            if let Some(response) = forward_hook_payload(input, &mut stream) {
+                print!("{}", response);
             }
         }
         Err(_) => {
@@ -94,7 +61,59 @@ fn cmd_hook() {
     }
 }
 
+fn forward_hook_payload<S: Read + Write>(input: &str, stream: &mut S) -> Option<String> {
+    let payload = format!("{}\n", input);
+    if stream.write_all(payload.as_bytes()).is_err() {
+        return None;
+    }
+
+    match expected_hook_response(input) {
+        HookResponseMode::None => None,
+        HookResponseMode::PermissionRequest | HookResponseMode::Elicitation => {
+            let mut response = String::new();
+            match stream.read_to_string(&mut response) {
+                Ok(_) if !response.trim().is_empty() => Some(response.trim().to_string()),
+                _ if matches!(
+                    expected_hook_response(input),
+                    HookResponseMode::PermissionRequest
+                ) =>
+                {
+                    Some(permission_request_fallback())
+                }
+                _ => None,
+            }
+        }
+    }
+}
+
+fn expected_hook_response(input: &str) -> HookResponseMode {
+    serde_json::from_str::<Value>(input)
+        .ok()
+        .and_then(|val| {
+            val.get("hook_event_name")
+                .or_else(|| val.get("hookEventName"))
+                .and_then(|v| v.as_str())
+                .map(|s| match s {
+                    "PermissionRequest" => HookResponseMode::PermissionRequest,
+                    "Elicitation" => HookResponseMode::Elicitation,
+                    _ => HookResponseMode::None,
+                })
+        })
+        .unwrap_or(HookResponseMode::None)
+}
+
+fn permission_request_fallback() -> String {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PermissionRequest",
+            "decision": { "behavior": "ask" }
+        }
+    })
+    .to_string()
+}
+
 fn cmd_statusline() {
+    let socket_path = installer::socket_path();
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
         std::process::exit(0);
@@ -105,8 +124,21 @@ fn cmd_statusline() {
         std::process::exit(0);
     }
 
-    let Ok(val) = serde_json::from_str::<Value>(input) else {
+    let Some(msg) = build_statusline_message(input) else {
         std::process::exit(0)
+    };
+
+    if let Ok(mut stream) = UnixStream::connect(&socket_path) {
+        let payload = format!("{}\n", msg);
+        let _ = stream.write_all(payload.as_bytes());
+    }
+
+    std::process::exit(0);
+}
+
+fn build_statusline_message(input: &str) -> Option<String> {
+    let Ok(val) = serde_json::from_str::<Value>(input) else {
+        return None;
     };
 
     let session_id = val
@@ -131,159 +163,146 @@ fn cmd_statusline() {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let msg = serde_json::json!({
-        "type": "StatuslineUpdate",
-        "session_id": session_id,
-        "tokens_in": tokens_in,
-        "tokens_out": tokens_out,
-        "cost_usd": cost_usd,
-        "model": model
-    });
-
-    if let Ok(mut stream) = UnixStream::connect(SOCKET_PATH) {
-        let payload = format!("{}\n", msg);
-        let _ = stream.write_all(payload.as_bytes());
-    }
-
-    std::process::exit(0);
+    Some(
+        serde_json::json!({
+            "type": "StatuslineUpdate",
+            "session_id": session_id,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd": cost_usd,
+            "model": model
+        })
+        .to_string(),
+    )
 }
 
-fn cmd_install() {
-    let settings_path = match installer::get_claude_settings_path() {
-        Ok(path) => path,
-        Err(e) => {
-            eprintln!("Failed to locate Claude settings path: {e}");
-            std::process::exit(1)
-        }
-    };
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+    use std::thread;
 
-    let orbit_cli = match installer::resolve_current_exe_path() {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Failed to resolve orbit-cli path: {e}");
-            std::process::exit(1)
-        }
-    };
+    #[test]
+    fn forward_hook_payload_writes_plain_hook_events() {
+        let payload = r#"{"session_id":"session-1","hook_event_name":"SessionStart","cwd":"/tmp"}"#;
+        let (mut client, server) = UnixStream::pair().unwrap();
 
-    let hook_command = format!("{} hook", orbit_cli);
-    println!("Installing Orbit hooks...");
+        let server_thread = thread::spawn(move || {
+            let mut line = String::new();
+            let mut reader = BufReader::new(server);
+            reader.read_line(&mut line).unwrap();
+            line
+        });
 
-    let result = installer::with_file_lock(&settings_path, || {
-        let current_settings =
-            installer::read_settings(&settings_path).map_err(installer::InstallError::Other)?;
-        installer::ensure_settings_object(&current_settings)
-            .map_err(installer::InstallError::Other)?;
+        let response = forward_hook_payload(payload, &mut client);
+        let received = server_thread.join().unwrap();
 
-        let prepared =
-            installer::prepare_install(current_settings.clone(), &orbit_cli, &hook_command)
-                .map_err(installer::InstallError::Other)?;
-
-        installer::write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script)
-            .map_err(installer::InstallError::Other)?;
-
-        if let Err(e) = installer::write_settings(&settings_path, &prepared.settings) {
-            let _ = installer::remove_file_if_exists(&prepared.wrapper_path);
-            return Err(installer::InstallError::Other(e));
-        }
-
-        let state_path =
-            installer::get_statusline_state_path().map_err(installer::InstallError::Other)?;
-        if let Err(e) = installer::write_statusline_state(&state_path, &prepared.state) {
-            let _ = installer::write_settings(&settings_path, &current_settings);
-            let _ = installer::remove_file_if_exists(&prepared.wrapper_path);
-            let _ = installer::remove_file_if_exists(&state_path);
-            return Err(installer::InstallError::Other(e));
-        }
-
-        Ok(())
-    });
-
-    match result {
-        Ok(()) => {
-            println!("Done! Hooks registered in {}", settings_path.display());
-            println!("Events: {}", installer::HOOK_EVENTS.join(", "));
-            println!("\nStart Orbit app, then use Claude Code as normal.");
-        }
-        Err(installer::InstallError::PermissionDenied) => {
-            eprintln!("Failed to install Orbit: Permission denied");
-            eprintln!("Try running with elevated permissions or use the GUI installer.");
-            std::process::exit(1);
-        }
-        Err(e) => {
-            eprintln!("Failed to install Orbit: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-fn cmd_uninstall(force: bool) {
-    let settings_path = match installer::get_claude_settings_path() {
-        Ok(path) => path,
-        Err(e) => {
-            eprintln!("Failed to locate Claude settings path: {e}");
-            std::process::exit(1)
-        }
-    };
-
-    let settings_exists = settings_path.exists();
-    if !settings_exists {
-        println!("No settings file found at {}", settings_path.display());
+        assert!(response.is_none());
+        assert_eq!(received.trim(), payload);
     }
 
-    let result = installer::with_file_lock(&settings_path, || {
-        let current_settings = if settings_exists {
-            let settings =
-                installer::read_settings(&settings_path).map_err(installer::InstallError::Other)?;
-            installer::ensure_settings_object(&settings).map_err(installer::InstallError::Other)?;
-            settings
-        } else {
-            Value::Object(Default::default())
-        };
+    #[test]
+    fn forward_hook_payload_returns_permission_response() {
+        let payload =
+            r#"{"session_id":"session-2","hook_event_name":"PermissionRequest","cwd":"/tmp"}"#;
+        let expected = r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#;
+        let (mut client, mut server) = UnixStream::pair().unwrap();
 
-        let prepared = installer::prepare_uninstall(current_settings, force)
-            .map_err(installer::InstallError::Other)?;
-
-        if matches!(prepared.mode, installer::UninstallMode::PreserveDrift) {
-            return Ok(prepared);
-        }
-
-        let mut settings_to_write = prepared.settings.clone();
-        let hook_commands = installer::collect_hook_commands_for_cleanup(prepared.state.as_ref())
-            .map_err(installer::InstallError::Other)?;
-        installer::remove_orbit_hooks(&mut settings_to_write, &hook_commands)
-            .map_err(installer::InstallError::Other)?;
-
-        if settings_exists {
-            installer::write_settings(&settings_path, &settings_to_write)
-                .map_err(installer::InstallError::Other)?;
-        }
-
-        for path in &prepared.files_to_remove {
-            installer::remove_file_if_exists(path).map_err(installer::InstallError::Other)?;
-        }
-
-        Ok(prepared)
-    });
-
-    match result {
-        Ok(prepared) => {
-            if matches!(prepared.mode, installer::UninstallMode::PreserveDrift) {
-                println!("Warning: statusLine was modified by user.");
-                println!("Original config preserved.");
-                println!("Run `orbit-cli uninstall --force` to forcibly clean up Orbit files.");
-                return;
+        let server_thread = thread::spawn(move || {
+            let mut line = String::new();
+            {
+                let mut reader = BufReader::new(server.try_clone().unwrap());
+                reader.read_line(&mut line).unwrap();
             }
-            if settings_exists {
-                println!("Orbit hooks removed from {}", settings_path.display());
+            server.write_all(expected.as_bytes()).unwrap();
+            line
+        });
+
+        let response = forward_hook_payload(payload, &mut client);
+        let received = server_thread.join().unwrap();
+
+        assert_eq!(response.as_deref(), Some(expected));
+        assert_eq!(received.trim(), payload);
+    }
+
+    #[test]
+    fn forward_hook_payload_returns_elicitation_response() {
+        let payload = r#"{"session_id":"session-elicit","hook_event_name":"Elicitation","cwd":"/tmp","mcp_server_name":"compound","message":"Pick one","mode":"form"}"#;
+        let expected = r#"{"hookSpecificOutput":{"hookEventName":"Elicitation","action":"accept","content":{"choice":"plan_a"}}}"#;
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+
+        let server_thread = thread::spawn(move || {
+            let mut line = String::new();
+            {
+                let mut reader = BufReader::new(server.try_clone().unwrap());
+                reader.read_line(&mut line).unwrap();
             }
-        }
-        Err(installer::InstallError::PermissionDenied) => {
-            eprintln!("Failed to uninstall Orbit: Permission denied");
-            std::process::exit(1);
-        }
-        Err(e) => {
-            eprintln!("Failed to uninstall Orbit: {e}");
-            std::process::exit(1);
-        }
+            server.write_all(expected.as_bytes()).unwrap();
+            line
+        });
+
+        let response = forward_hook_payload(payload, &mut client);
+        let received = server_thread.join().unwrap();
+
+        assert_eq!(response.as_deref(), Some(expected));
+        assert_eq!(received.trim(), payload);
+    }
+
+    #[test]
+    fn forward_hook_payload_falls_back_to_ask_when_no_response_arrives() {
+        let payload =
+            r#"{"session_id":"session-3","hook_event_name":"PermissionRequest","cwd":"/tmp"}"#;
+        let (mut client, server) = UnixStream::pair().unwrap();
+
+        let server_thread = thread::spawn(move || {
+            let mut line = String::new();
+            let mut reader = BufReader::new(server);
+            reader.read_line(&mut line).unwrap();
+            line
+        });
+
+        let response = forward_hook_payload(payload, &mut client);
+        let received = server_thread.join().unwrap();
+
+        assert_eq!(received.trim(), payload);
+        assert_eq!(
+            response.as_deref(),
+            Some(permission_request_fallback().as_str())
+        );
+    }
+
+    #[test]
+    fn forward_hook_payload_lets_elicitation_fall_through_when_no_response_arrives() {
+        let payload = r#"{"session_id":"session-elicit-2","hook_event_name":"Elicitation","cwd":"/tmp","mcp_server_name":"compound","message":"Pick one","mode":"form"}"#;
+        let (mut client, server) = UnixStream::pair().unwrap();
+
+        let server_thread = thread::spawn(move || {
+            let mut line = String::new();
+            let mut reader = BufReader::new(server);
+            reader.read_line(&mut line).unwrap();
+            line
+        });
+
+        let response = forward_hook_payload(payload, &mut client);
+        let received = server_thread.join().unwrap();
+
+        assert_eq!(received.trim(), payload);
+        assert!(response.is_none());
+    }
+
+    #[test]
+    fn build_statusline_message_transforms_claude_payload() {
+        let payload = r#"{"session_id":"session-4","context_window":{"total_input_tokens":123,"total_output_tokens":456},"cost":{"total_cost_usd":0.78},"model":{"id":"claude-sonnet-4-20250514"}}"#;
+
+        let msg = build_statusline_message(payload).unwrap();
+        let forwarded: Value = serde_json::from_str(&msg).unwrap();
+
+        assert_eq!(forwarded["type"], "StatuslineUpdate");
+        assert_eq!(forwarded["session_id"], "session-4");
+        assert_eq!(forwarded["tokens_in"], 123);
+        assert_eq!(forwarded["tokens_out"], 456);
+        assert_eq!(forwarded["cost_usd"], 0.78);
+        assert_eq!(forwarded["model"], "claude-sonnet-4-20250514");
     }
 }

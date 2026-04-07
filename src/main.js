@@ -19,7 +19,7 @@ let sessions = {}; // All sessions keyed by session_id
 let activeSessionId = null;
 let isExpanded = false;
 let isAnimating = false; // IMPL-06: animation lock
-const pendingPerms = new Map(); // IMPL-05: Map<permId, {sessionId, toolName, toolInput}>
+const pendingInteractions = new Map(); // Map<requestId, interactionRequest>
 let sessionTree = null;
 let onboardingState = null;
 let onboardingRetryPending = false;
@@ -81,6 +81,8 @@ const detail = document.querySelector(".detail");
 const activeList = document.querySelector(".active-list");
 const permissionSection = document.querySelector(".permission-section");
 const permissionTool = document.querySelector(".permission-tool");
+const permissionMessage = document.querySelector(".permission-message");
+const permissionActions = document.querySelector(".permission-actions");
 const historyList = document.querySelector(".history-list");
 const mascot = document.querySelector(".mascot");
 const DEFAULT_PROVIDER = "claude-code";
@@ -328,15 +330,11 @@ listen("onboarding-state-changed", (event) => {
   setOnboardingState(event.payload);
 });
 
-// Listen for permission requests
-listen("permission-request", (event) => {
-  const { perm_id, session_id, tool_name, tool_input } = event.payload;
-  pendingPerms.set(perm_id, {
-    sessionId: session_id,
-    toolName: tool_name,
-    toolInput: tool_input,
-  });
-  showPermission(tool_name, tool_input, perm_id);
+// Listen for user interaction requests
+listen("interaction-request", (event) => {
+  const request = normalizeInteractionRequest(event.payload);
+  pendingInteractions.set(request.requestId, request);
+  showInteraction(request.requestId, request);
   requestExpand();
 });
 
@@ -344,33 +342,31 @@ listen("permission-prompt", () => {
   requestExpand();
 });
 
-// Listen for permission timeout — clean up stale UI
-listen("permission-timeout", (event) => {
-  const permId = event.payload;
-  pendingPerms.delete(permId);
-  if (permissionSection.dataset.permId === permId) {
-    if (pendingPerms.size > 0) {
-      const [nextId, next] = pendingPerms.entries().next().value;
-      showPermission(next.toolName, next.toolInput, nextId);
+// Listen for interaction timeout — clean up stale UI
+listen("interaction-timeout", (event) => {
+  const requestId = event.payload;
+  pendingInteractions.delete(requestId);
+  if (permissionSection.dataset.requestId === requestId) {
+    if (pendingInteractions.size > 0) {
+      const [nextId, next] = pendingInteractions.entries().next().value;
+      showInteraction(nextId, next);
     } else {
-      permissionSection.style.display = "none";
-      delete permissionSection.dataset.permId;
+      hideInteractionSection();
     }
   }
 });
 
-listen("permission-resolved", (event) => {
-  const permId = event.payload;
-  pendingPerms.delete(permId);
+listen("interaction-resolved", (event) => {
+  const requestId = event.payload;
+  pendingInteractions.delete(requestId);
   // Clear synthetic expand intent to prevent auto-reexpand after collapse
   wantExpanded = false;
-  if (permissionSection.dataset.permId === permId) {
-    if (pendingPerms.size > 0) {
-      const [nextId, next] = pendingPerms.entries().next().value;
-      showPermission(next.toolName, next.toolInput, nextId);
+  if (permissionSection.dataset.requestId === requestId) {
+    if (pendingInteractions.size > 0) {
+      const [nextId, next] = pendingInteractions.entries().next().value;
+      showInteraction(nextId, next);
     } else {
-      permissionSection.style.display = "none";
-      delete permissionSection.dataset.permId;
+      hideInteractionSection();
       if (isExpanded) {
         collapseIsland();
       }
@@ -520,6 +516,10 @@ function updateUI(session) {
   const status = session.status;
   const statusType = status.type;
   const activeToolName = statusType === "RunningTool" ? status.tool_name : null;
+  const pendingInteraction =
+    statusType === "WaitingForApproval"
+      ? getPendingInteractionForSession(session.id)
+      : null;
 
   // Update dot color
   statusDot.className = "status-dot";
@@ -536,7 +536,10 @@ function updateUI(session) {
       break;
     case "WaitingForApproval":
       statusDot.classList.add("waiting-approval");
-      statusText.textContent = t("status.approve");
+      statusText.textContent =
+        pendingInteraction?.kind === "elicitation"
+          ? t("status.respond")
+          : t("status.approve");
       break;
     case "Anomaly":
       statusDot.classList.add("anomaly");
@@ -579,13 +582,13 @@ function updateUI(session) {
 
   // Hide permission section if no pending perms for active session
   if (statusType !== "WaitingForApproval") {
-    for (const [pid, p] of pendingPerms) {
+    for (const [pid, p] of pendingInteractions) {
       if (p.sessionId === session.id) {
-        pendingPerms.delete(pid);
+        pendingInteractions.delete(pid);
       }
     }
-    if (pendingPerms.size === 0) {
-      permissionSection.style.display = "none";
+    if (pendingInteractions.size === 0) {
+      hideInteractionSection();
     }
   }
 }
@@ -635,9 +638,7 @@ function formatTool(toolName, description) {
   }
 }
 
-function showPermission(toolName, toolInput, permId) {
-  permissionSection.style.display = "block";
-  permissionSection.dataset.permId = permId;
+function describeTool(toolName, toolInput) {
   let desc = toolName || "Unknown";
   if (toolInput && typeof toolInput === "object") {
     if (toolInput.command) {
@@ -647,27 +648,200 @@ function showPermission(toolName, toolInput, permId) {
       desc = toolName + ": " + file;
     }
   }
-  permissionTool.textContent = desc;
+  return desc;
 }
 
-async function handlePermission(decision) {
-  const permId = permissionSection.dataset.permId;
-  if (!permId) return;
+function extractElicitationOptions(schema) {
+  if (!schema || typeof schema !== "object" || schema.type !== "object") {
+    return null;
+  }
+
+  const properties = schema.properties;
+  if (!properties || typeof properties !== "object") {
+    return null;
+  }
+
+  const entries = Object.entries(properties);
+  if (entries.length !== 1) {
+    return null;
+  }
+
+  const [fieldKey, fieldSchema] = entries[0];
+  if (!fieldSchema || typeof fieldSchema !== "object") {
+    return null;
+  }
+
+  const variants = fieldSchema.oneOf || fieldSchema.anyOf;
+  if (Array.isArray(variants) && variants.length > 0) {
+    const options = variants
+      .map((variant) => {
+        if (!variant || typeof variant !== "object") return null;
+        const value =
+          variant.const ?? variant.enum?.[0] ?? variant.value ?? variant.default;
+        if (value === undefined) return null;
+        return {
+          label: variant.title || String(value),
+          value,
+        };
+      })
+      .filter(Boolean);
+
+    if (options.length > 0) {
+      return { fieldKey, options };
+    }
+  }
+
+  if (Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0) {
+    return {
+      fieldKey,
+      options: fieldSchema.enum.map((value) => ({
+        label: String(value),
+        value,
+      })),
+    };
+  }
+
+  if (fieldSchema.type === "boolean") {
+    return {
+      fieldKey,
+      options: [
+        { label: "Yes", value: true },
+        { label: "No", value: false },
+      ],
+    };
+  }
+
+  return null;
+}
+
+function normalizeInteractionRequest(payload) {
+  const requestId = payload.request_id;
+  const kind = payload.kind || "permission";
+  const toolInput = payload.tool_input || null;
+  const request = {
+    requestId,
+    kind,
+    sessionId: payload.session_id,
+    toolName: payload.tool_name || "",
+    toolInput,
+    title: describeTool(payload.tool_name, toolInput),
+    message: payload.message || "",
+    mode: payload.mode || null,
+    url: payload.url || null,
+    requestedSchema: payload.requested_schema || null,
+    fieldKey: null,
+    options: [],
+    supported: kind === "permission",
+  };
+
+  if (kind === "elicitation") {
+    request.title = payload.mcp_server_name || payload.tool_name || "Question";
+    const parsed = extractElicitationOptions(payload.requested_schema);
+    request.supported = Boolean(parsed);
+    if (parsed) {
+      request.fieldKey = parsed.fieldKey;
+      request.options = parsed.options;
+    }
+  }
+
+  return request;
+}
+
+function hideInteractionSection() {
+  permissionSection.style.display = "none";
+  permissionActions.innerHTML = "";
+  permissionMessage.textContent = "";
+  delete permissionSection.dataset.requestId;
+  scheduleExpandedHeightUpdate();
+}
+
+function renderActionButton({ label, className, onClick }) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    onClick();
+  });
+  permissionActions.appendChild(button);
+}
+
+function showInteraction(requestId, request) {
+  permissionSection.style.display = "block";
+  permissionSection.dataset.requestId = requestId;
+  permissionTool.textContent = request.title;
+  permissionMessage.textContent =
+    request.message ||
+    (request.supported ? "" : t("interaction.unsupported"));
+  permissionActions.innerHTML = "";
+
+  if (request.kind === "permission") {
+    renderActionButton({
+      label: t("permission.allow"),
+      className: "btn-allow",
+      onClick: () => handleInteraction("allow"),
+    });
+    renderActionButton({
+      label: t("permission.deny"),
+      className: "btn-deny",
+      onClick: () => handleInteraction("deny"),
+    });
+  } else if (request.supported && request.fieldKey) {
+    request.options.forEach((option) => {
+      renderActionButton({
+        label: option.label,
+        className: "btn-option",
+        onClick: () =>
+          handleInteraction("accept", {
+            [request.fieldKey]: option.value,
+          }),
+      });
+    });
+    renderActionButton({
+      label: t("interaction.cancel"),
+      className: "btn-deny",
+      onClick: () => handleInteraction("cancel"),
+    });
+  }
+
+  renderActionButton({
+    label: t("interaction.passThrough"),
+    className: "btn-pass",
+    onClick: () =>
+      handleInteraction(request.kind === "permission" ? "ask" : "passthrough"),
+  });
+
+  scheduleExpandedHeightUpdate();
+}
+
+function getPendingInteractionForSession(sessionId) {
+  for (const request of pendingInteractions.values()) {
+    if (request.sessionId === sessionId) {
+      return request;
+    }
+  }
+  return null;
+}
+
+async function handleInteraction(decision, content = null) {
+  const requestId = permissionSection.dataset.requestId;
+  if (!requestId) return;
+
   await invoke("permission_decision", {
-    perm_id: permId,
+    perm_id: requestId,
     decision: decision,
     reason: null,
+    content,
   });
-  pendingPerms.delete(permId);
-  permissionSection.style.display = "none";
-  delete permissionSection.dataset.permId;
+  pendingInteractions.delete(requestId);
+  hideInteractionSection();
 
-  if (pendingPerms.size > 0) {
-    const [nextId, next] = pendingPerms.entries().next().value;
-    showPermission(next.toolName, next.toolInput, nextId);
+  if (pendingInteractions.size > 0) {
+    const [nextId, next] = pendingInteractions.entries().next().value;
+    showInteraction(nextId, next);
   }
 }
-
 
 async function handleOnboardingRetry() {
   onboardingRetryPending = true;

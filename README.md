@@ -22,20 +22,22 @@ cargo build
 cargo build --release
 ```
 
-The release binary used for Claude Code integration is:
+For local development, the bridge binary used for Claude Code integration is:
 
 ```bash
-src-tauri/target/release/orbit-cli
+src-tauri/target/debug/orbit-cli
 ```
+
+Tauri stages a dev-only `orbit-helper` shim in `src-tauri/binaries/` that forwards to that binary.
 
 ## Claude Code integration
 
-Orbit installs two things into Claude Code configuration:
+Orbit.app installs two things into Claude Code configuration:
 
-1. hook commands pointing at `orbit-cli hook`
+1. hook commands pointing at the app bundle's internal helper (`Orbit.app/Contents/MacOS/orbit-helper hook`)
 2. a `statusLine` command that points at `~/.orbit/statusline-wrapper.sh`
 
-The wrapper forwards statusline JSON to Orbit and then passes stdin through to the user's original statusline command.
+The wrapper forwards statusline JSON to Orbit and then passes stdin through to the user's original statusline command. The helper is an internal bridge shipped inside Orbit.app; end users do not need a separate CLI install.
 
 ## Safety model for statusline takeover
 
@@ -76,8 +78,10 @@ It does not only store the original command string. This is what makes exact res
 ### Install
 
 ```bash
-src-tauri/target/release/orbit-cli install
+Open Orbit.app
 ```
+
+On first launch, Orbit will attempt to connect itself to Claude Code automatically.
 
 Install will:
 
@@ -88,9 +92,7 @@ Install will:
 
 ### Uninstall
 
-```bash
-src-tauri/target/release/orbit-cli uninstall
-```
+Use Orbit's app menu to uninstall the integration.
 
 If Claude Code config still points at the managed Orbit wrapper, uninstall will:
 
@@ -111,11 +113,7 @@ In drift mode, plain uninstall is intentionally non-destructive:
 
 ### Force uninstall
 
-```bash
-src-tauri/target/release/orbit-cli uninstall --force
-```
-
-Use this when you want Orbit to clean up even after drift or an orphaned wrapper/state situation.
+Orbit keeps force cleanup as an internal recovery path for drift or orphaned wrapper/state situations.
 
 Force uninstall will:
 
@@ -127,6 +125,7 @@ Force uninstall will:
 
 - Orbit currently assumes a single-user local macOS environment
 - Orbit uses file locking around `settings.json` mutations to reduce concurrent write races
+- DMG builds bundle the internal helper as a Tauri sidecar before packaging
 - wrapper generation is tested both with unit tests and real temporary HOME directories
 - the pass-through path uses `bash -lc` for standard command-style statusline entries only
 

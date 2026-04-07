@@ -1,6 +1,6 @@
 //! GUI Onboarding Module
 //!
-//! Handles automatic installation of Orbit hooks on GUI startup.
+//! Handles automatic installation of Orbit integration on GUI startup.
 //! Designed for "silent & seamless" UX - background auto-install with tray indicators.
 
 use crate::installer::{
@@ -106,7 +106,7 @@ impl OnboardingState {
         match self {
             OnboardingState::Welcome => "Welcome to Orbit".to_string(),
             OnboardingState::Checking => "Checking Claude Code configuration...".to_string(),
-            OnboardingState::Installing => "Installing Orbit hooks...".to_string(),
+            OnboardingState::Installing => "Connecting Orbit to Claude Code...".to_string(),
             OnboardingState::Connected => "Connected to Claude Code".to_string(),
             OnboardingState::ConflictDetected(tool) => {
                 format!("Configuration conflict detected: {}", tool)
@@ -216,15 +216,15 @@ fn transition_state(
 #[derive(Clone)]
 pub struct OnboardingManager {
     state: Arc<Mutex<OnboardingState>>,
-    orbit_cli_path: String,
+    orbit_helper_path: String,
 }
 
 impl OnboardingManager {
     /// Create a new onboarding manager
-    pub fn new(orbit_cli_path: String) -> Self {
+    pub fn new(orbit_helper_path: String) -> Self {
         Self {
             state: Arc::new(Mutex::new(OnboardingState::Welcome)),
-            orbit_cli_path,
+            orbit_helper_path,
         }
     }
 
@@ -251,19 +251,19 @@ impl OnboardingManager {
 
     fn start_background_check_inner(&self, app_handle: Option<AppHandle>) {
         let state = Arc::clone(&self.state);
-        let orbit_cli_path = self.orbit_cli_path.clone();
+        let orbit_helper_path = self.orbit_helper_path.clone();
 
         std::thread::spawn(move || {
             transition_state(&state, OnboardingState::Checking, app_handle.as_ref());
 
-            match check_install_state(&orbit_cli_path) {
+            match check_install_state(&orbit_helper_path) {
                 Ok(InstallState::OrbitInstalled) => {
                     transition_state(&state, OnboardingState::Connected, app_handle.as_ref());
                 }
                 Ok(InstallState::NotInstalled) => {
                     transition_state(&state, OnboardingState::Installing, app_handle.as_ref());
 
-                    match silent_install(&orbit_cli_path) {
+                    match silent_install(&orbit_helper_path) {
                         Ok(()) => {
                             transition_state(
                                 &state,
@@ -294,60 +294,25 @@ impl OnboardingManager {
                         }
                     }
                 }
-                Ok(InstallState::DriftDetected) | Ok(InstallState::OtherTool(_)) => {
+                Ok(InstallState::DriftDetected) => {
                     transition_state(&state, OnboardingState::DriftDetected, app_handle.as_ref());
-                    transition_state(&state, OnboardingState::Installing, app_handle.as_ref());
-
-                    match silent_force_install(&orbit_cli_path) {
-                        Ok(()) => {
-                            transition_state(
-                                &state,
-                                OnboardingState::Connected,
-                                app_handle.as_ref(),
-                            );
-                        }
-                        Err(InstallError::PermissionDenied) => {
-                            transition_state(
-                                &state,
-                                OnboardingState::PermissionDenied,
-                                app_handle.as_ref(),
-                            );
-                        }
-                        Err(e) => {
-                            transition_state(
-                                &state,
-                                OnboardingState::Error(e.to_string()),
-                                app_handle.as_ref(),
-                            );
-                        }
-                    }
+                }
+                Ok(InstallState::OtherTool(tool)) => {
+                    transition_state(
+                        &state,
+                        OnboardingState::ConflictDetected(tool),
+                        app_handle.as_ref(),
+                    );
                 }
                 Ok(InstallState::Orphaned) => {
-                    transition_state(&state, OnboardingState::Installing, app_handle.as_ref());
-
-                    match silent_install(&orbit_cli_path) {
-                        Ok(()) => {
-                            transition_state(
-                                &state,
-                                OnboardingState::Connected,
-                                app_handle.as_ref(),
-                            );
-                        }
-                        Err(InstallError::PermissionDenied) => {
-                            transition_state(
-                                &state,
-                                OnboardingState::PermissionDenied,
-                                app_handle.as_ref(),
-                            );
-                        }
-                        Err(e) => {
-                            transition_state(
-                                &state,
-                                OnboardingState::Error(e.to_string()),
-                                app_handle.as_ref(),
-                            );
-                        }
-                    }
+                    transition_state(
+                        &state,
+                        OnboardingState::ConflictDetected(
+                            "Orbit integration is incomplete. Click Retry to repair it."
+                                .to_string(),
+                        ),
+                        app_handle.as_ref(),
+                    );
                 }
                 Err(e) => {
                     transition_state(
@@ -370,12 +335,12 @@ impl OnboardingManager {
 
     fn retry_install_inner(&self, app_handle: Option<AppHandle>) {
         let state = Arc::clone(&self.state);
-        let orbit_cli_path = self.orbit_cli_path.clone();
+        let orbit_helper_path = self.orbit_helper_path.clone();
 
         std::thread::spawn(move || {
             transition_state(&state, OnboardingState::Installing, app_handle.as_ref());
 
-            match silent_force_install(&orbit_cli_path) {
+            match silent_force_install(&orbit_helper_path) {
                 Ok(()) => {
                     transition_state(&state, OnboardingState::Connected, app_handle.as_ref());
                 }
@@ -401,48 +366,22 @@ impl OnboardingManager {
     pub fn uninstall(&self, force: bool) -> Result<(), String> {
         installer::silent_uninstall(force).map_err(|e| e.to_string())
     }
-
-    pub fn force_install_with_emitter(&self, app_handle: AppHandle) {
-        self.force_install_inner(Some(app_handle));
-    }
-
-    fn force_install_inner(&self, app_handle: Option<AppHandle>) {
-        let state = Arc::clone(&self.state);
-        let orbit_cli_path = self.orbit_cli_path.clone();
-
-        std::thread::spawn(move || {
-            transition_state(&state, OnboardingState::Installing, app_handle.as_ref());
-
-            match silent_force_install(&orbit_cli_path) {
-                Ok(()) => {
-                    transition_state(&state, OnboardingState::Connected, app_handle.as_ref());
-                }
-                Err(InstallError::PermissionDenied) => {
-                    transition_state(
-                        &state,
-                        OnboardingState::PermissionDenied,
-                        app_handle.as_ref(),
-                    );
-                }
-                Err(e) => {
-                    transition_state(
-                        &state,
-                        OnboardingState::Error(e.to_string()),
-                        app_handle.as_ref(),
-                    );
-                }
-            }
-        });
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::installer::{self, TEST_HOME_ENV_LOCK, silent_install, write_settings};
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::MutexGuard;
 
     #[test]
     fn onboarding_state_transitions() {
-        let manager = OnboardingManager::new("/opt/orbit-cli".to_string());
+        let manager = OnboardingManager::new(
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper".to_string(),
+        );
 
         // Initial state
         assert_eq!(manager.state(), OnboardingState::Welcome);
@@ -516,5 +455,144 @@ mod tests {
         assert!(OnboardingState::PermissionDenied.is_complete());
         assert!(OnboardingState::DriftDetected.is_complete());
         assert!(OnboardingState::Error("test".to_string()).is_complete());
+    }
+
+    struct TestHome {
+        _guard: MutexGuard<'static, ()>,
+        path: PathBuf,
+        old_home: Option<String>,
+    }
+
+    impl TestHome {
+        fn new() -> Self {
+            let guard = TEST_HOME_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let path = std::env::temp_dir().join(format!(
+                "orbit-onboarding-home-{}",
+                chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            let old_home = std::env::var("HOME").ok();
+            unsafe {
+                std::env::set_var("HOME", &path);
+            }
+
+            Self {
+                _guard: guard,
+                path,
+                old_home,
+            }
+        }
+
+        fn settings_path(&self) -> PathBuf {
+            self.path.join(".claude").join("settings.json")
+        }
+    }
+
+    impl Drop for TestHome {
+        fn drop(&mut self) {
+            match &self.old_home {
+                Some(old_home) => unsafe {
+                    std::env::set_var("HOME", old_home);
+                },
+                None => unsafe {
+                    std::env::remove_var("HOME");
+                },
+            }
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn wait_for_completion(manager: &OnboardingManager) -> OnboardingState {
+        for _ in 0..20 {
+            let state = manager.state();
+            if state.is_complete() {
+                return state;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        manager.state()
+    }
+
+    #[test]
+    fn onboarding_auto_connects_over_standard_command_statusline() {
+        let home = TestHome::new();
+        if let Some(parent) = home.settings_path().parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        write_settings(
+            &home.settings_path(),
+            &json!({
+                "statusLine": {
+                    "type": "command",
+                    "command": "/usr/local/bin/other-tool"
+                }
+            }),
+        )
+        .unwrap();
+
+        let manager = OnboardingManager::new(
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper".to_string(),
+        );
+        manager.start_background_check();
+
+        assert_eq!(wait_for_completion(&manager), OnboardingState::Connected);
+    }
+
+    #[test]
+    fn onboarding_still_flags_unsupported_statusline_configs() {
+        let home = TestHome::new();
+        if let Some(parent) = home.settings_path().parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        write_settings(
+            &home.settings_path(),
+            &json!({
+                "statusLine": {
+                    "type": "script",
+                    "command": "/usr/local/bin/other-tool"
+                }
+            }),
+        )
+        .unwrap();
+
+        let manager = OnboardingManager::new(
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper".to_string(),
+        );
+        manager.start_background_check();
+
+        assert_eq!(
+            wait_for_completion(&manager),
+            OnboardingState::ConflictDetected("/usr/local/bin/other-tool".to_string())
+        );
+    }
+
+    #[test]
+    fn onboarding_repairs_missing_new_hook_events_automatically() {
+        let home = TestHome::new();
+        silent_install("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
+
+        let mut settings = installer::read_settings(&home.settings_path()).unwrap();
+        settings
+            .get_mut("hooks")
+            .and_then(|v| v.as_object_mut())
+            .unwrap()
+            .remove("Elicitation");
+        installer::write_settings(&home.settings_path(), &settings).unwrap();
+
+        let manager = OnboardingManager::new(
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper".to_string(),
+        );
+        manager.start_background_check();
+
+        assert_eq!(wait_for_completion(&manager), OnboardingState::Connected);
+
+        let repaired = installer::read_settings(&home.settings_path()).unwrap();
+        assert!(
+            repaired
+                .get("hooks")
+                .and_then(|v| v.get("Elicitation"))
+                .and_then(|v| v.as_array())
+                .is_some()
+        );
     }
 }

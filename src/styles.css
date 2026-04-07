@@ -400,18 +400,26 @@ body {
 .permission-tool {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.7);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   word-break: break-all;
+}
+
+.permission-message {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 8px;
+  white-space: pre-wrap;
 }
 
 .permission-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .permission-actions button {
-  flex: 1;
-  padding: 6px 0;
+  flex: 1 1 120px;
+  padding: 6px 10px;
   border-radius: 8px;
   border: none;
   font-size: 12px;
@@ -430,6 +438,16 @@ body {
 }
 
 .btn-deny {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.btn-option {
+  background: #4ade80;
+  color: #000;
+}
+
+.btn-pass {
   background: rgba(255, 255, 255, 0.15);
   color: #fff;
 }

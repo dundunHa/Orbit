@@ -139,10 +139,10 @@ pub fn run() {
             ));
             app.manage(today_stats.clone());
 
-            let orbit_cli_path = installer::resolve_orbit_cli_path();
-            let onboarding = app::onboarding::OnboardingManager::new(orbit_cli_path);
+            let orbit_helper_path = installer::resolve_orbit_helper_path();
+            let onboarding = app::onboarding::OnboardingManager::new(orbit_helper_path);
             onboarding.start_background_check_with_emitter(app.handle().clone());
-            app::conflict_monitor::start_monitor(onboarding.clone(), app.handle().clone());
+            app::conflict_monitor::start_monitor(onboarding.clone());
             app.manage(onboarding.clone());
             tray::init(app.handle(), today_stats.clone())?;
 
@@ -158,10 +158,21 @@ pub fn run() {
 
                 // Set window level above menu bar so it can overlap the notch area
                 // Also set collection behavior to show on all Spaces (Mission Control desktops)
+                // Hide dock icon - only show in menubar
                 #[cfg(target_os = "macos")]
                 {
-                    use objc2_app_kit::{NSView, NSWindowCollectionBehavior};
+                    use objc2_app_kit::{
+                        NSApplication, NSApplicationActivationPolicy, NSView,
+                        NSWindowCollectionBehavior,
+                    };
                     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+                    // Hide dock icon by setting activation policy to accessory
+                    if let Some(mtm) = objc2::MainThreadMarker::new() {
+                        let ns_app = NSApplication::sharedApplication(mtm);
+                        ns_app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+                    }
+
                     match window.window_handle() {
                         Ok(wh) => {
                             if let RawWindowHandle::AppKit(appkit) = wh.as_raw() {

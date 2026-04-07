@@ -1,30 +1,25 @@
-//! Silent conflict resolution for onboarding.
+//! Lightweight onboarding state monitor.
 //!
-//! When Orbit detects another tool already owns Claude Code's `statusLine`,
-//! this module silently triggers a force-install through the onboarding manager.
-//! The wrapper script is fail-open and passes through to the original command,
-//! so the other tool's functionality is preserved.
+//! Orbit used to silently force-install when it detected a statusline conflict.
+//! The app now takes a conservative path: automatic setup only for clean installs,
+//! explicit user retry for reconnect/repair scenarios.
 
 use super::onboarding::{OnboardingManager, OnboardingState};
 use std::thread;
 use std::time::Duration;
-use tauri::AppHandle;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
-pub fn start_monitor(onboarding: OnboardingManager, app_handle: AppHandle) {
+pub fn start_monitor(onboarding: OnboardingManager) {
     thread::spawn(move || {
         loop {
             match onboarding.state() {
-                // Only react to ConflictDetected (set by start_background_check
-                // when silent_install returns InstallError::Conflict on the
-                // NotInstalled path). DriftDetected and OtherTool are handled
-                // inline by start_background_check via silent_force_install.
-                OnboardingState::ConflictDetected(_) => {
-                    onboarding.force_install_with_emitter(app_handle.clone());
-                    break;
-                }
-                state if state.is_complete() => break,
+                // Keep the monitor alive only while startup is still converging.
+                // Once Orbit needs user input or finishes setup, stop polling.
+                OnboardingState::Welcome
+                | OnboardingState::Checking
+                | OnboardingState::Installing => thread::sleep(POLL_INTERVAL),
+                state if state.is_complete() || state.needs_attention() => break,
                 _ => thread::sleep(POLL_INTERVAL),
             }
         }

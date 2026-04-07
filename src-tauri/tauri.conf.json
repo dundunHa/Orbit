@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "identifier": "app.orbit",
   "build": {
+    "beforeBuildCommand": "sh scripts/stage-orbit-helper.sh",
     "frontendDist": "../src"
   },
   "app": {
@@ -29,6 +30,9 @@
   },
   "bundle": {
     "active": true,
+    "externalBin": [
+      "binaries/orbit-helper"
+    ],
     "targets": "all",
     "icon": [
       "icons/icon.png"

@@ -3,6 +3,7 @@ use crate::history;
 use crate::notch::NotchGeometry;
 use crate::state::{PendingPermissions, PermissionDecision, Session, SessionMap};
 use parking_lot::RwLock;
+use serde_json::Value;
 use std::sync::LazyLock;
 
 pub const LEFT_ZONE_WIDTH: f64 = 45.0;
@@ -76,7 +77,6 @@ unsafe fn apply_native_frame(view_addr: usize, x: f64, width: f64, height: f64) 
 /// Dispatch a closure to the macOS main thread via GCD.
 #[cfg(target_os = "macos")]
 fn dispatch_on_main(f: impl FnOnce() + Send + 'static) {
-
     use std::ffi::c_void;
     unsafe extern "C" {
         static _dispatch_main_q: c_void;
@@ -137,7 +137,8 @@ fn dispatch_sync_main<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static)
             trampoline,
         );
     }
-    rx.recv().expect("dispatch_sync_main: main thread failed to respond")
+    rx.recv()
+        .expect("dispatch_sync_main: main thread failed to respond")
 }
 
 pub fn set_window_frame_for_geometry_pub(
@@ -264,11 +265,16 @@ pub async fn permission_decision(
     perm_id: String,
     decision: String,
     reason: Option<String>,
+    content: Option<Value>,
     pending: tauri::State<'_, PendingPermissions>,
 ) -> Result<(), String> {
     let mut pending = pending.lock().await;
     if let Some(perm) = pending.remove(&perm_id) {
-        let _ = perm.responder.send(PermissionDecision { decision, reason });
+        let _ = perm.responder.send(PermissionDecision {
+            decision,
+            reason,
+            content,
+        });
     }
     Ok(())
 }

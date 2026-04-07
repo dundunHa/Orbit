@@ -1,11 +1,13 @@
-//! Shared installation logic for Orbit
+//! Shared installation logic for Orbit.
 //!
-//! This module provides the core installation/uninstallation logic
-//! that can be used by both the CLI and GUI interfaces.
+//! The app bundle ships with an internal helper binary that Claude Code calls
+//! for hook and statusline integration. The GUI owns install/uninstall flow;
+//! the helper only bridges stdin/stdout payloads into the running app.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::fd::AsRawFd;
@@ -13,14 +15,20 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Path to the Unix socket for communication with the Orbit app
+/// Default path to the Unix socket for communication with the Orbit app.
 pub const SOCKET_PATH: &str = "/tmp/orbit.sock";
+pub const SOCKET_PATH_ENV: &str = "ORBIT_SOCKET_PATH";
 const STATUSLINE_STATE_FILE: &str = "statusline-state.json";
 const STATUSLINE_WRAPPER_FILE: &str = "statusline-wrapper.sh";
-const FALLBACK_ORBIT_CLI_PATH: &str = "/Applications/Orbit.app/Contents/MacOS/orbit-cli";
+const CLI_BINARY_NAME: &str = "orbit-cli";
+const HELPER_BINARY_NAME: &str = "orbit-helper";
+const FALLBACK_ORBIT_HELPER_PATH: &str = "/Applications/Orbit.app/Contents/MacOS/orbit-helper";
+
+#[cfg(test)]
+pub(crate) static TEST_HOME_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Hook events that Orbit registers with Claude Code
-pub const HOOK_EVENTS: [&str; 11] = [
+pub const HOOK_EVENTS: [&str; 13] = [
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
@@ -32,7 +40,13 @@ pub const HOOK_EVENTS: [&str; 11] = [
     "UserPromptSubmit",
     "SubagentStop",
     "PreCompact",
+    "Elicitation",
+    "ElicitationResult",
 ];
+
+pub fn socket_path() -> String {
+    std::env::var(SOCKET_PATH_ENV).unwrap_or_else(|_| SOCKET_PATH.to_string())
+}
 
 /// Template for the statusline wrapper script
 const STATUSLINE_WRAPPER_TEMPLATE: &str = r#"#!/bin/bash
@@ -43,13 +57,13 @@ const STATUSLINE_WRAPPER_TEMPLATE: &str = r#"#!/bin/bash
 INPUT=$(cat 2>/dev/null || true)
 
 # Send to Orbit (non-blocking, fail-open)
-ORBIT_CLI=__ORBIT_CLI_PATH__
-if [ -n "$ORBIT_CLI" ]; then
+ORBIT_HELPER=__ORBIT_HELPER_PATH__
+if [ -n "$ORBIT_HELPER" ]; then
     (
         if command -v perl >/dev/null 2>&1; then
-            echo "$INPUT" | perl -e 'alarm 2; system @ARGV' "$ORBIT_CLI" statusline >/dev/null 2>&1 || true
+            echo "$INPUT" | perl -e 'alarm 2; system @ARGV' "$ORBIT_HELPER" statusline >/dev/null 2>&1 || true
         else
-            echo "$INPUT" | "$ORBIT_CLI" statusline >/dev/null 2>&1 || true
+            echo "$INPUT" | "$ORBIT_HELPER" statusline >/dev/null 2>&1 || true
         fi
     ) &
     disown 2>/dev/null || true
@@ -58,7 +72,11 @@ fi
 # Pass through to original statusline script (if any)
 ORIGINAL_CMD=__ORBIT_ORIGINAL_CMD__
 if [ -n "$ORIGINAL_CMD" ]; then
-    echo "$INPUT" | bash -lc "$ORIGINAL_CMD"
+    if [ "$ORIGINAL_CMD" = "$0" ]; then
+        exit 0
+    fi
+
+    echo "$INPUT" | /bin/bash -lc "$ORIGINAL_CMD"
 fi
 "#;
 
@@ -162,6 +180,19 @@ impl From<String> for InstallError {
     }
 }
 
+impl InstallError {
+    /// Classify a string error, promoting permission-related messages to
+    /// `PermissionDenied`. Centralises the heuristic so a future migration
+    /// to structured `io::Error` propagation only needs to touch one site.
+    fn from_io_string(e: String) -> Self {
+        if e.contains("Permission") || e.contains("permission") {
+            InstallError::PermissionDenied
+        } else {
+            InstallError::Other(e)
+        }
+    }
+}
+
 /// Installation state for GUI auto-install flow
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstallState {
@@ -178,7 +209,7 @@ pub enum InstallState {
 }
 
 /// Check the current installation state without modifying anything
-pub fn check_install_state(_orbit_cli_path: &str) -> Result<InstallState, InstallError> {
+pub fn check_install_state(orbit_helper_path: &str) -> Result<InstallState, InstallError> {
     let settings_path = get_claude_settings_path()
         .map_err(|e| InstallError::Other(format!("Failed to get settings path: {}", e)))?;
     let state_path = get_statusline_state_path()
@@ -197,16 +228,21 @@ pub fn check_install_state(_orbit_cli_path: &str) -> Result<InstallState, Instal
         .map_err(|e| InstallError::Other(format!("Failed to read state: {}", e)))?;
 
     let current_command = get_statusline_command(&settings).map(str::to_string);
+    let desired_hook_command = helper_hook_command(orbit_helper_path);
 
     // Check if we have state first - this determines if Orbit was ever installed
     if let Some(state) = state {
         // We have state file - check if statusLine still points to our wrapper
         if current_command.as_deref() == Some(state.managed_command.as_str()) {
             // statusLine matches our managed command
-            if wrapper_path.exists() {
-                Ok(InstallState::OrbitInstalled)
-            } else {
+            if !wrapper_path.exists() {
                 Ok(InstallState::Orphaned)
+            } else if !settings_have_required_hook_commands(&settings, &desired_hook_command)
+                || state.hook_command.as_deref() != Some(desired_hook_command.as_str())
+            {
+                Ok(InstallState::NotInstalled)
+            } else {
+                Ok(InstallState::OrbitInstalled)
             }
         } else {
             // statusLine has changed from our managed command
@@ -238,7 +274,7 @@ pub fn check_install_state(_orbit_cli_path: &str) -> Result<InstallState, Instal
                     Ok(InstallState::OtherTool("unknown".to_string()))
                 }
             }
-            StatusLineConfig::StandardCommand { command } => Ok(InstallState::OtherTool(command)),
+            StatusLineConfig::StandardCommand { .. } => Ok(InstallState::NotInstalled),
             StatusLineConfig::Absent => Ok(InstallState::NotInstalled),
         }
     }
@@ -258,29 +294,14 @@ pub fn silent_install(orbit_cli_path: &str) -> Result<(), InstallError> {
             .map_err(|e| InstallError::Other(format!("Invalid settings: {}", e)))?;
 
         let prepared = prepare_install(current_settings.clone(), orbit_cli_path, &hook_command)
-            .map_err(|e| {
-                if e.contains("Permission") {
-                    InstallError::PermissionDenied
-                } else {
-                    InstallError::Other(e)
-                }
-            })?;
+            .map_err(InstallError::from_io_string)?;
 
-        write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script).map_err(|e| {
-            if e.contains("Permission") {
-                InstallError::PermissionDenied
-            } else {
-                InstallError::Other(e)
-            }
-        })?;
+        write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script)
+            .map_err(InstallError::from_io_string)?;
 
         if let Err(e) = write_settings(&settings_path, &prepared.settings) {
             let _ = remove_file_if_exists(&prepared.wrapper_path);
-            return Err(if e.contains("Permission") {
-                InstallError::PermissionDenied
-            } else {
-                InstallError::Other(e)
-            });
+            return Err(InstallError::from_io_string(e));
         }
 
         let state_path = get_statusline_state_path().map_err(InstallError::Other)?;
@@ -288,11 +309,7 @@ pub fn silent_install(orbit_cli_path: &str) -> Result<(), InstallError> {
             let _ = write_settings(&settings_path, &current_settings);
             let _ = remove_file_if_exists(&prepared.wrapper_path);
             let _ = remove_file_if_exists(&state_path);
-            return Err(if e.contains("Permission") {
-                InstallError::PermissionDenied
-            } else {
-                InstallError::Other(e)
-            });
+            return Err(InstallError::from_io_string(e));
         }
 
         Ok(())
@@ -310,6 +327,10 @@ pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
 
     let settings_path = get_claude_settings_path()
         .map_err(|e| InstallError::Other(format!("Failed to get settings path: {}", e)))?;
+    let managed_command = get_statusline_wrapper_path()
+        .map_err(|e| InstallError::Other(format!("Failed to get wrapper path: {}", e)))?
+        .to_string_lossy()
+        .to_string();
 
     with_file_lock(&settings_path, || {
         let current_settings = read_settings(&settings_path)
@@ -326,29 +347,34 @@ pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
             .map_err(|e| InstallError::Other(format!("Failed to read state: {}", e)))?;
         let _ = remove_file_if_exists(&state_path);
 
-        let prepared =
-            prepare_install_force(current_settings.clone(), orbit_cli_path, &hook_command)
-                .map_err(|e| {
-                    // Restore old state on failure
-                    if let Some(ref st) = old_state {
-                        let _ = write_statusline_state(&state_path, st);
-                    }
-                    if e.contains("Permission") {
-                        InstallError::PermissionDenied
-                    } else {
-                        InstallError::Other(e)
-                    }
-                })?;
+        let mut settings_for_install = current_settings.clone();
+        if get_statusline_command(&settings_for_install) == Some(managed_command.as_str()) {
+            match old_state.as_ref() {
+                Some(state) if !has_self_referential_original_statusline(state) => {
+                    restore_original_statusline(&mut settings_for_install, state);
+                }
+                _ => clear_statusline(&mut settings_for_install),
+            }
+        }
+
+        let stale_hook_commands =
+            collect_hook_commands_for_cleanup(old_state.as_ref(), &settings_for_install);
+        remove_orbit_hooks(&mut settings_for_install, &stale_hook_commands)
+            .map_err(InstallError::Other)?;
+
+        let prepared = prepare_install_force(settings_for_install, orbit_cli_path, &hook_command)
+            .map_err(|e| {
+            if let Some(ref st) = old_state {
+                let _ = write_statusline_state(&state_path, st);
+            }
+            InstallError::from_io_string(e)
+        })?;
 
         if let Err(e) = write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script) {
             if let Some(ref st) = old_state {
                 let _ = write_statusline_state(&state_path, st);
             }
-            return Err(if e.contains("Permission") {
-                InstallError::PermissionDenied
-            } else {
-                InstallError::Other(e)
-            });
+            return Err(InstallError::from_io_string(e));
         }
 
         if let Err(e) = write_settings(&settings_path, &prepared.settings) {
@@ -356,11 +382,7 @@ pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
             if let Some(ref st) = old_state {
                 let _ = write_statusline_state(&state_path, st);
             }
-            return Err(if e.contains("Permission") {
-                InstallError::PermissionDenied
-            } else {
-                InstallError::Other(e)
-            });
+            return Err(InstallError::from_io_string(e));
         }
 
         if let Err(e) = write_statusline_state(&state_path, &prepared.state) {
@@ -371,11 +393,7 @@ pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
             } else {
                 let _ = remove_file_if_exists(&state_path);
             }
-            return Err(if e.contains("Permission") {
-                InstallError::PermissionDenied
-            } else {
-                InstallError::Other(e)
-            });
+            return Err(InstallError::from_io_string(e));
         }
 
         Ok(())
@@ -386,21 +404,16 @@ fn backup_settings(settings: &Value) -> Result<(), InstallError> {
     let backup_dir = get_orbit_dir()
         .map_err(InstallError::Other)?
         .join("backups");
+    let now = Utc::now();
     let backup_path = backup_dir.join(format!(
-        "claude-settings-{}-{}.json",
-        Utc::now().format("%Y%m%dT%H%M%SZ"),
-        generate_install_id()
+        "claude-settings-{}-orbit-{}.json",
+        now.format("%Y%m%dT%H%M%SZ"),
+        now.timestamp_nanos_opt().unwrap_or(0)
     ));
 
     let content = serde_json::to_string_pretty(settings)
         .map_err(|e| InstallError::Other(format!("Failed to serialize settings backup: {}", e)))?;
-    atomic_write(&backup_path, content.as_bytes()).map_err(|e| {
-        if e.contains("Permission") || e.contains("permission") {
-            InstallError::PermissionDenied
-        } else {
-            InstallError::Other(e)
-        }
-    })?;
+    atomic_write(&backup_path, content.as_bytes()).map_err(InstallError::from_io_string)?;
 
     Ok(())
 }
@@ -430,12 +443,10 @@ pub fn silent_uninstall(force: bool) -> Result<(), InstallError> {
         }
 
         let mut settings_to_write = prepared.settings.clone();
-        remove_orbit_hooks(
-            &mut settings_to_write,
-            &collect_hook_commands_for_cleanup(prepared.state.as_ref())
-                .map_err(InstallError::Other)?,
-        )
-        .map_err(InstallError::Other)?;
+        let stale_hook_commands =
+            collect_hook_commands_for_cleanup(prepared.state.as_ref(), &settings_to_write);
+        remove_orbit_hooks(&mut settings_to_write, &stale_hook_commands)
+            .map_err(InstallError::Other)?;
 
         if settings_exists {
             write_settings(&settings_path, &settings_to_write).map_err(InstallError::Other)?;
@@ -465,7 +476,7 @@ pub fn prepare_install(
 
 /// Force variant of prepare_install that resolves drift and orphaned states
 /// by discarding old state and re-capturing the current statusLine.
-pub fn prepare_install_force(
+fn prepare_install_force(
     settings: Value,
     orbit_cli_path: &str,
     hook_command: &str,
@@ -492,7 +503,7 @@ fn prepare_install_inner(
             if !wrapper_path.exists() {
                 if !force {
                     return Err(
-                        "statusLine points to Orbit wrapper, but wrapper file is missing; run `orbit-cli uninstall --force` first"
+                        "statusLine points to Orbit wrapper, but wrapper file is missing; repair the integration from Orbit and try again"
                             .to_string(),
                     );
                 }
@@ -500,11 +511,18 @@ fn prepare_install_inner(
             } else {
                 // Idempotent install
                 let mut state = state;
-                if state.hook_command.is_none() {
-                    state.hook_command = Some(hook_command.to_string());
+                if has_self_referential_original_statusline(&state) {
+                    // Corrupted state would recurse through the wrapper forever.
+                    state.original_statusline = None;
+                    state.original_was_absent = true;
                 }
+                let original_command = original_statusline_command(&state).map(str::to_string);
 
                 let mut idempotent_settings = settings;
+                let stale_hook_commands =
+                    collect_hook_commands_for_cleanup(Some(&state), &idempotent_settings);
+                remove_orbit_hooks(&mut idempotent_settings, &stale_hook_commands)?;
+                state.hook_command = Some(hook_command.to_string());
                 add_orbit_hooks(&mut idempotent_settings, hook_command)?;
                 return Ok(PreparedInstall {
                     settings: idempotent_settings,
@@ -512,7 +530,7 @@ fn prepare_install_inner(
                     wrapper_path,
                     wrapper_script: render_wrapper_script(
                         orbit_cli_path,
-                        current_command.as_deref(),
+                        original_command.as_deref(),
                     ),
                 });
             }
@@ -537,7 +555,7 @@ fn prepare_install_inner(
         StatusLineConfig::OrbitOrphaned => {
             if !force {
                 return Err(
-                    "settings.json points to Orbit wrapper but no install state exists; run `orbit-cli uninstall --force` first"
+                    "settings.json points to Orbit wrapper but no install state exists; repair the integration from Orbit and try again"
                         .to_string(),
                 );
             }
@@ -545,11 +563,11 @@ fn prepare_install_inner(
         }
     }
 
-    // Add hooks
-    add_orbit_hooks(&mut settings, hook_command)?;
-
+    // Capture original statusLine BEFORE hooks mutation adds the `hooks` key
     let original_was_absent = settings.get("statusLine").is_none();
     let original_statusline = settings.get("statusLine").cloned();
+
+    add_orbit_hooks(&mut settings, hook_command)?;
 
     // Replace statusLine with Orbit wrapper
     if let Some(obj) = settings.as_object_mut() {
@@ -639,7 +657,7 @@ pub fn prepare_uninstall(mut settings: Value, force: bool) -> Result<PreparedUni
 }
 
 /// Evaluate uninstall mode based on current state
-pub fn evaluate_uninstall_mode(
+fn evaluate_uninstall_mode(
     current_command: Option<&str>,
     state: &StatuslineState,
     force: bool,
@@ -656,7 +674,7 @@ pub fn evaluate_uninstall_mode(
 }
 
 /// Read settings.json
-pub fn read_settings(path: &PathBuf) -> Result<Value, String> {
+pub fn read_settings(path: &Path) -> Result<Value, String> {
     if !path.exists() {
         return Ok(Value::Object(Default::default()));
     }
@@ -668,14 +686,14 @@ pub fn read_settings(path: &PathBuf) -> Result<Value, String> {
 }
 
 /// Write settings.json atomically
-pub fn write_settings(path: &PathBuf, settings: &Value) -> Result<(), String> {
+pub fn write_settings(path: &Path, settings: &Value) -> Result<(), String> {
     let pretty = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("failed to serialize settings: {}", e))?;
     atomic_write(path, pretty.as_bytes())
 }
 
 /// Atomic file write using temp file + rename
-pub fn atomic_write(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create directory {}: {}", parent.display(), e))?;
@@ -716,7 +734,12 @@ pub fn atomic_write(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Execute a function with a file lock
+/// Execute a function with a file lock.
+///
+/// NOTE: Uses `libc::flock` which provides process-level (not thread-level)
+/// advisory locking. Concurrent calls from the same process won't block each
+/// other. This is fine since the GUI serializes install/uninstall flows and the
+/// CLI is a separate process.
 pub fn with_file_lock<T>(
     path: &Path,
     f: impl FnOnce() -> Result<T, InstallError>,
@@ -824,6 +847,8 @@ pub fn remove_orbit_hooks(settings: &mut Value, commands: &[String]) -> Result<(
                 });
             }
         }
+        // Retain non-array event values (e.g. malformed string/object) untouched —
+        // they aren't ours to fix and add_orbit_hooks will reject them on next install.
         hooks.retain(|_, v| v.as_array().map(|a| !a.is_empty()).unwrap_or(true));
     }
 
@@ -841,7 +866,7 @@ pub fn remove_orbit_hooks(settings: &mut Value, commands: &[String]) -> Result<(
 }
 
 /// Check if a hook entry contains a specific command
-pub fn entry_has_hook_command(entry: &Value, command: &str) -> bool {
+fn entry_has_hook_command(entry: &Value, command: &str) -> bool {
     entry
         .get("hooks")
         .and_then(|h| h.as_array())
@@ -855,12 +880,16 @@ pub fn entry_has_hook_command(entry: &Value, command: &str) -> bool {
 }
 
 /// Classify the current statusLine configuration
-pub fn classify_statusline(settings: &Value, managed_command: &str) -> StatusLineConfig {
+fn classify_statusline(settings: &Value, managed_command: &str) -> StatusLineConfig {
     let Some(statusline) = settings.get("statusLine") else {
         return StatusLineConfig::Absent;
     };
 
     if !statusline.is_object() {
+        return StatusLineConfig::Unsupported;
+    }
+
+    if statusline.get("type").and_then(|v| v.as_str()) != Some("command") {
         return StatusLineConfig::Unsupported;
     }
 
@@ -870,10 +899,6 @@ pub fn classify_statusline(settings: &Value, managed_command: &str) -> StatusLin
 
     if command == managed_command {
         return StatusLineConfig::OrbitOrphaned;
-    }
-
-    if statusline.get("type").and_then(|v| v.as_str()) != Some("command") {
-        return StatusLineConfig::Unsupported;
     }
 
     if command.trim().is_empty() {
@@ -886,7 +911,7 @@ pub fn classify_statusline(settings: &Value, managed_command: &str) -> StatusLin
 }
 
 /// Read statusline state file
-pub fn read_statusline_state(path: &PathBuf) -> Result<Option<StatuslineState>, String> {
+fn read_statusline_state(path: &Path) -> Result<Option<StatuslineState>, String> {
     if !path.exists() {
         return Ok(None);
     }
@@ -899,14 +924,14 @@ pub fn read_statusline_state(path: &PathBuf) -> Result<Option<StatuslineState>, 
 }
 
 /// Write statusline state file
-pub fn write_statusline_state(path: &PathBuf, state: &StatuslineState) -> Result<(), String> {
+pub fn write_statusline_state(path: &Path, state: &StatuslineState) -> Result<(), String> {
     let content = serde_json::to_string_pretty(state)
         .map_err(|e| format!("failed to serialize statusline state: {}", e))?;
     atomic_write(path, content.as_bytes())
 }
 
 /// Write wrapper script with executable permissions
-pub fn write_wrapper_script(path: &PathBuf, script: &str) -> Result<(), String> {
+pub fn write_wrapper_script(path: &Path, script: &str) -> Result<(), String> {
     atomic_write(path, script.as_bytes())?;
     let mut perms = fs::metadata(path)
         .map_err(|e| format!("failed to read wrapper metadata {}: {}", path.display(), e))?
@@ -922,7 +947,7 @@ pub fn write_wrapper_script(path: &PathBuf, script: &str) -> Result<(), String> 
 }
 
 /// Remove file if it exists
-pub fn remove_file_if_exists(path: &PathBuf) -> Result<(), String> {
+pub fn remove_file_if_exists(path: &Path) -> Result<(), String> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -931,7 +956,7 @@ pub fn remove_file_if_exists(path: &PathBuf) -> Result<(), String> {
 }
 
 /// Get the current statusLine command from settings
-pub fn get_statusline_command(settings: &Value) -> Option<&str> {
+fn get_statusline_command(settings: &Value) -> Option<&str> {
     settings
         .get("statusLine")
         .and_then(|v| v.as_object())
@@ -942,27 +967,31 @@ pub fn get_statusline_command(settings: &Value) -> Option<&str> {
 /// Collect hook commands for cleanup
 pub fn collect_hook_commands_for_cleanup(
     state: Option<&StatuslineState>,
-) -> Result<Vec<String>, String> {
+    settings: &Value,
+) -> Vec<String> {
     let mut commands = Vec::new();
-    if let Some(command) = state.and_then(|s| s.hook_command.clone()) {
-        commands.push(command);
-    }
-    if let Ok(orbit_cli) = resolve_current_exe_path() {
-        let current_hook = format!("{} hook", orbit_cli);
-        if !commands.contains(&current_hook) {
-            commands.push(current_hook);
+    if let Some(command) = state.and_then(|s| s.hook_command.as_deref()) {
+        push_unique_command(&mut commands, command.to_string());
+        for alias in orbit_hook_aliases(command) {
+            push_unique_command(&mut commands, alias);
         }
     }
-    Ok(commands)
+    let current_hook = helper_hook_command(&resolve_orbit_helper_path());
+    push_unique_command(&mut commands, current_hook.clone());
+    for alias in orbit_hook_aliases(&current_hook) {
+        push_unique_command(&mut commands, alias);
+    }
+    for command in orbit_hook_commands_in_settings(settings) {
+        push_unique_command(&mut commands, command);
+    }
+    commands
 }
 
-/// Resolve home directory
-pub fn resolve_home_dir() -> Result<PathBuf, String> {
+fn resolve_home_dir() -> Result<PathBuf, String> {
     dirs_next::home_dir().ok_or_else(|| "home directory not available".to_string())
 }
 
-/// Get the Orbit configuration directory (~/.orbit)
-pub fn get_orbit_dir() -> Result<PathBuf, String> {
+fn get_orbit_dir() -> Result<PathBuf, String> {
     Ok(resolve_home_dir()?.join(".orbit"))
 }
 
@@ -971,8 +1000,7 @@ pub fn get_statusline_state_path() -> Result<PathBuf, String> {
     Ok(get_orbit_dir()?.join(STATUSLINE_STATE_FILE))
 }
 
-/// Get path to statusline wrapper script
-pub fn get_statusline_wrapper_path() -> Result<PathBuf, String> {
+fn get_statusline_wrapper_path() -> Result<PathBuf, String> {
     Ok(get_orbit_dir()?.join(STATUSLINE_WRAPPER_FILE))
 }
 
@@ -990,27 +1018,19 @@ pub fn resolve_current_exe_path() -> Result<String, String> {
     Ok(abs.to_string_lossy().to_string())
 }
 
-pub fn resolve_orbit_cli_path() -> String {
+pub fn resolve_orbit_helper_path() -> String {
     std::env::current_exe()
-        .map(|exe| orbit_cli_sibling_path(exe).to_string_lossy().to_string())
-        .unwrap_or_else(|_| FALLBACK_ORBIT_CLI_PATH.to_string())
+        .map(|exe| orbit_helper_sibling_path(exe).to_string_lossy().to_string())
+        .unwrap_or_else(|_| FALLBACK_ORBIT_HELPER_PATH.to_string())
 }
 
-pub fn install_command() -> String {
-    build_install_command(&resolve_orbit_cli_path())
-}
-
-fn orbit_cli_sibling_path(mut current_exe: PathBuf) -> PathBuf {
-    current_exe.set_file_name("orbit-cli");
+fn orbit_helper_sibling_path(mut current_exe: PathBuf) -> PathBuf {
+    current_exe.set_file_name(HELPER_BINARY_NAME);
     current_exe
 }
 
-fn build_install_command(orbit_cli_path: &str) -> String {
-    format!("\"{}\" install", orbit_cli_path.replace('"', "\\\""))
-}
-
 /// Shell-quote a string for safe inclusion in scripts
-pub fn shell_single_quote(s: &str) -> String {
+fn shell_single_quote(s: &str) -> String {
     if s.is_empty() {
         "''".to_string()
     } else {
@@ -1019,17 +1039,144 @@ pub fn shell_single_quote(s: &str) -> String {
 }
 
 /// Render the wrapper script with given parameters
-pub fn render_wrapper_script(orbit_cli_path: &str, original_command: Option<&str>) -> String {
+fn render_wrapper_script(orbit_cli_path: &str, original_command: Option<&str>) -> String {
     STATUSLINE_WRAPPER_TEMPLATE
-        .replace("__ORBIT_CLI_PATH__", &shell_single_quote(orbit_cli_path))
+        .replace("__ORBIT_HELPER_PATH__", &shell_single_quote(orbit_cli_path))
         .replace(
             "__ORBIT_ORIGINAL_CMD__",
             &shell_single_quote(original_command.unwrap_or("")),
         )
 }
 
+fn original_statusline_command(state: &StatuslineState) -> Option<&str> {
+    let original = state.original_statusline.as_ref()?;
+    let statusline = original.as_object()?;
+    if statusline.get("type").and_then(|v| v.as_str()) != Some("command") {
+        return None;
+    }
+    statusline.get("command").and_then(|v| v.as_str())
+}
+
+fn has_self_referential_original_statusline(state: &StatuslineState) -> bool {
+    original_statusline_command(state) == Some(state.managed_command.as_str())
+}
+
+fn clear_statusline(settings: &mut Value) {
+    if let Some(obj) = settings.as_object_mut() {
+        obj.remove("statusLine");
+    }
+}
+
+fn restore_original_statusline(settings: &mut Value, state: &StatuslineState) {
+    if let Some(obj) = settings.as_object_mut() {
+        if state.original_was_absent {
+            obj.remove("statusLine");
+        } else if let Some(original_statusline) = state.original_statusline.clone() {
+            obj.insert("statusLine".to_string(), original_statusline);
+        } else {
+            obj.insert("statusLine".to_string(), Value::Null);
+        }
+    }
+}
+
+fn helper_hook_command(helper_path: &str) -> String {
+    format!("{} hook", helper_path)
+}
+
+fn orbit_cli_sibling_path(mut current_exe: PathBuf) -> PathBuf {
+    current_exe.set_file_name(CLI_BINARY_NAME);
+    current_exe
+}
+
+fn orbit_hook_aliases(command: &str) -> Vec<String> {
+    let Some(binary_path) = command.strip_suffix(" hook") else {
+        return Vec::new();
+    };
+
+    let binary_path = PathBuf::from(binary_path);
+    let Some(file_name) = binary_path.file_name() else {
+        return Vec::new();
+    };
+
+    if file_name == OsStr::new(HELPER_BINARY_NAME) {
+        return vec![helper_hook_command(
+            &orbit_cli_sibling_path(binary_path).to_string_lossy(),
+        )];
+    }
+
+    if file_name == OsStr::new(CLI_BINARY_NAME) {
+        return vec![helper_hook_command(
+            &orbit_helper_sibling_path(binary_path).to_string_lossy(),
+        )];
+    }
+
+    Vec::new()
+}
+
+fn orbit_hook_commands_in_settings(settings: &Value) -> Vec<String> {
+    let mut commands = Vec::new();
+    let Some(hooks) = settings.get("hooks").and_then(|v| v.as_object()) else {
+        return commands;
+    };
+
+    for entries in hooks.values().filter_map(Value::as_array) {
+        for entry in entries {
+            if let Some(inner_hooks) = entry.get("hooks").and_then(Value::as_array) {
+                for hook in inner_hooks {
+                    if hook.get("type").and_then(Value::as_str) != Some("command") {
+                        continue;
+                    }
+                    let Some(command) = hook.get("command").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    if !orbit_hook_aliases(command).is_empty() {
+                        push_unique_command(&mut commands, command.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    commands
+}
+
+fn push_unique_command(commands: &mut Vec<String>, command: String) {
+    if !commands.iter().any(|existing| existing == &command) {
+        commands.push(command);
+    }
+}
+
+#[cfg(test)]
+fn settings_has_exact_hook_command(settings: &Value, command: &str) -> bool {
+    settings
+        .get("hooks")
+        .and_then(|v| v.as_object())
+        .into_iter()
+        .flat_map(|events| events.values())
+        .filter_map(|entries| entries.as_array())
+        .flat_map(|entries| entries.iter())
+        .any(|entry| entry_has_hook_command(entry, command))
+}
+
+fn settings_have_required_hook_commands(settings: &Value, command: &str) -> bool {
+    let Some(hooks) = settings.get("hooks").and_then(|v| v.as_object()) else {
+        return false;
+    };
+
+    HOOK_EVENTS.iter().all(|event| {
+        hooks
+            .get(*event)
+            .and_then(|entries| entries.as_array())
+            .is_some_and(|entries| {
+                entries
+                    .iter()
+                    .any(|entry| entry_has_hook_command(entry, command))
+            })
+    })
+}
+
 /// Generate a unique installation ID
-pub fn generate_install_id() -> String {
+fn generate_install_id() -> String {
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -1047,9 +1194,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::path::PathBuf;
-    use std::sync::{Mutex, MutexGuard};
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    use std::sync::MutexGuard;
 
     struct TestHome {
         _guard: MutexGuard<'static, ()>,
@@ -1059,11 +1204,12 @@ mod tests {
 
     impl TestHome {
         fn new() -> Self {
-            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = TEST_HOME_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let path = std::env::temp_dir()
                 .join(format!("orbit-installer-home-{}", generate_install_id()));
             fs::create_dir_all(&path).unwrap();
             let old_home = std::env::var("HOME").ok();
+            // SAFETY: ENV_LOCK is held, so no other test thread accesses env vars.
             unsafe {
                 std::env::set_var("HOME", &path);
             }
@@ -1090,6 +1236,7 @@ mod tests {
 
     impl Drop for TestHome {
         fn drop(&mut self) {
+            // SAFETY: ENV_LOCK is still held (via _guard) during drop.
             match &self.old_home {
                 Some(old_home) => unsafe {
                     std::env::set_var("HOME", old_home);
@@ -1109,13 +1256,13 @@ mod tests {
         }
         write_settings(&settings_path, &initial_settings)?;
 
-        let orbit_cli = "/opt/orbit-cli".to_string();
-        let hook_command = format!("{} hook", orbit_cli);
+        let orbit_helper = "/Applications/Orbit.app/Contents/MacOS/orbit-helper".to_string();
+        let hook_command = format!("{} hook", orbit_helper);
 
         with_file_lock(&settings_path, || {
             let current_settings = read_settings(&settings_path)?;
             ensure_settings_object(&current_settings)?;
-            let prepared = prepare_install(current_settings.clone(), &orbit_cli, &hook_command)?;
+            let prepared = prepare_install(current_settings.clone(), &orbit_helper, &hook_command)?;
 
             write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script)?;
             write_settings(&settings_path, &prepared.settings)?;
@@ -1132,8 +1279,8 @@ mod tests {
         }
         write_settings(&settings_path, &initial_settings)?;
 
-        let orbit_cli = "/opt/orbit-cli".to_string();
-        let hook_command = format!("{} hook", orbit_cli);
+        let orbit_helper = "/Applications/Orbit.app/Contents/MacOS/orbit-helper".to_string();
+        let hook_command = format!("{} hook", orbit_helper);
 
         with_file_lock(&settings_path, || {
             let current_settings = read_settings(&settings_path)?;
@@ -1143,7 +1290,7 @@ mod tests {
             let _ = remove_file_if_exists(&state_path);
 
             let prepared =
-                prepare_install_force(current_settings.clone(), &orbit_cli, &hook_command)?;
+                prepare_install_force(current_settings.clone(), &orbit_helper, &hook_command)?;
 
             write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script)?;
             write_settings(&settings_path, &prepared.settings)?;
@@ -1164,10 +1311,9 @@ mod tests {
             }
 
             let mut settings_to_write = prepared.settings.clone();
-            remove_orbit_hooks(
-                &mut settings_to_write,
-                &collect_hook_commands_for_cleanup(prepared.state.as_ref())?,
-            )?;
+            let stale_hook_commands =
+                collect_hook_commands_for_cleanup(prepared.state.as_ref(), &settings_to_write);
+            remove_orbit_hooks(&mut settings_to_write, &stale_hook_commands)?;
             write_settings(&settings_path, &settings_to_write)?;
             for path in &prepared.files_to_remove {
                 remove_file_if_exists(path)?;
@@ -1262,8 +1408,16 @@ mod tests {
             }
         });
 
-        add_orbit_hooks(&mut settings, "/opt/orbit-cli hook").unwrap();
-        add_orbit_hooks(&mut settings, "/opt/orbit-cli hook").unwrap();
+        add_orbit_hooks(
+            &mut settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook",
+        )
+        .unwrap();
+        add_orbit_hooks(
+            &mut settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook",
+        )
+        .unwrap();
 
         let post_tool_use = settings
             .get("hooks")
@@ -1273,7 +1427,12 @@ mod tests {
 
         let exact_count = post_tool_use
             .iter()
-            .filter(|entry| entry_has_hook_command(entry, "/opt/orbit-cli hook"))
+            .filter(|entry| {
+                entry_has_hook_command(
+                    entry,
+                    "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook",
+                )
+            })
             .count();
         assert_eq!(exact_count, 1);
         assert!(
@@ -1284,17 +1443,46 @@ mod tests {
     }
 
     #[test]
+    fn settings_have_required_hook_commands_detects_missing_event() {
+        let mut settings = json!({});
+        add_orbit_hooks(
+            &mut settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook",
+        )
+        .unwrap();
+
+        settings
+            .get_mut("hooks")
+            .and_then(|v| v.as_object_mut())
+            .unwrap()
+            .remove("Elicitation");
+
+        assert!(!settings_have_required_hook_commands(
+            &settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook"
+        ));
+        assert!(settings_has_exact_hook_command(
+            &settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook"
+        ));
+    }
+
+    #[test]
     fn remove_orbit_hooks_keeps_non_orbit_strings() {
         let mut settings = json!({
             "hooks": {
                 "PostToolUse": [
-                    {"hooks": [{"type": "command", "command": "/opt/orbit-cli hook"}]},
+                    {"hooks": [{"type": "command", "command": "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook"}]},
                     {"hooks": [{"type": "command", "command": "/usr/local/bin/orbital-tool hook"}]}
                 ]
             }
         });
 
-        remove_orbit_hooks(&mut settings, &["/opt/orbit-cli hook".to_string()]).unwrap();
+        remove_orbit_hooks(
+            &mut settings,
+            &["/Applications/Orbit.app/Contents/MacOS/orbit-helper hook".to_string()],
+        )
+        .unwrap();
 
         let post_tool_use = settings
             .get("hooks")
@@ -1315,7 +1503,9 @@ mod tests {
             original_statusline: None,
             original_was_absent: true,
             managed_command: managed_command().to_string(),
-            hook_command: Some("/opt/orbit-cli hook".to_string()),
+            hook_command: Some(
+                "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook".to_string(),
+            ),
             install_id: "test".to_string(),
             installed_at: "2026-01-01T00:00:00Z".to_string(),
         };
@@ -1337,12 +1527,185 @@ mod tests {
     #[test]
     fn render_wrapper_script_is_fail_open() {
         let script = render_wrapper_script(
-            "/Applications/Orbit.app/Contents/MacOS/orbit-cli",
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper",
             Some("/usr/local/bin/my-statusline --flag"),
         );
-        assert!(script.contains("bash -lc \"$ORIGINAL_CMD\""));
+        assert!(script.contains("echo \"$INPUT\" | /bin/bash -lc \"$ORIGINAL_CMD\""));
+        assert!(script.contains("if [ \"$ORIGINAL_CMD\" = \"$0\" ]"));
         assert!(script.contains("cat 2>/dev/null || true"));
         assert!(!script.contains("set -eo pipefail"));
+    }
+
+    #[test]
+    fn idempotent_install_updates_hook_command_and_preserves_original_passthrough() {
+        let home = TestHome::new();
+        let original_settings = json!({
+            "statusLine": {
+                "type": "command",
+                "command": "/usr/local/bin/original-status --flag"
+            }
+        });
+
+        run_install_for_test(&home, original_settings).unwrap();
+        let current_settings = read_settings(&home.settings_path()).unwrap();
+        let helper_path = "/Applications/Orbit.app/Contents/MacOS/orbit-helper";
+        let prepared = prepare_install(
+            current_settings,
+            helper_path,
+            &format!("{helper_path} hook"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            prepared.state.hook_command,
+            Some("/Applications/Orbit.app/Contents/MacOS/orbit-helper hook".to_string())
+        );
+        assert!(
+            prepared
+                .wrapper_script
+                .contains("'/usr/local/bin/original-status --flag'")
+        );
+        assert!(
+            !prepared
+                .wrapper_script
+                .contains(&home.wrapper_path().to_string_lossy().to_string())
+        );
+    }
+
+    #[test]
+    fn idempotent_install_sanitizes_self_referential_original_statusline() {
+        let home = TestHome::new();
+        run_install_for_test(&home, json!({})).unwrap();
+
+        let wrapper_command = home.wrapper_path().to_string_lossy().to_string();
+        write_statusline_state(
+            &home.state_path(),
+            &StatuslineState {
+                original_statusline: Some(json!({
+                    "type": "command",
+                    "command": wrapper_command,
+                })),
+                original_was_absent: false,
+                managed_command: home.wrapper_path().to_string_lossy().to_string(),
+                hook_command: Some(
+                    "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook".to_string(),
+                ),
+                install_id: "test".to_string(),
+                installed_at: "2026-01-01T00:00:00Z".to_string(),
+            },
+        )
+        .unwrap();
+
+        let current_settings = read_settings(&home.settings_path()).unwrap();
+        let prepared = prepare_install(
+            current_settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper",
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook",
+        )
+        .unwrap();
+
+        assert!(prepared.state.original_statusline.is_none());
+        assert!(prepared.state.original_was_absent);
+        assert!(
+            !prepared
+                .wrapper_script
+                .contains(&home.wrapper_path().to_string_lossy().to_string())
+        );
+    }
+
+    #[test]
+    fn idempotent_install_replaces_previous_helper_hook_path() {
+        let home = TestHome::new();
+        run_install_for_test(&home, json!({})).unwrap();
+
+        let mut current_settings = read_settings(&home.settings_path()).unwrap();
+        remove_orbit_hooks(
+            &mut current_settings,
+            &["/Applications/Orbit.app/Contents/MacOS/orbit-helper hook".to_string()],
+        )
+        .unwrap();
+        add_orbit_hooks(
+            &mut current_settings,
+            "/Volumes/Orbit/Orbit.app/Contents/MacOS/orbit-helper hook",
+        )
+        .unwrap();
+        write_settings(&home.settings_path(), &current_settings).unwrap();
+
+        let mut state = read_statusline_state(&home.state_path()).unwrap().unwrap();
+        state.hook_command =
+            Some("/Volumes/Orbit/Orbit.app/Contents/MacOS/orbit-helper hook".to_string());
+        write_statusline_state(&home.state_path(), &state).unwrap();
+
+        let prepared = prepare_install(
+            current_settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper",
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook",
+        )
+        .unwrap();
+
+        assert!(!settings_has_exact_hook_command(
+            &prepared.settings,
+            "/Volumes/Orbit/Orbit.app/Contents/MacOS/orbit-helper hook",
+        ));
+        assert!(settings_has_exact_hook_command(
+            &prepared.settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook",
+        ));
+    }
+
+    #[test]
+    fn prepare_install_repairs_state_files_missing_hook_command() {
+        let home = TestHome::new();
+        run_install_for_test(&home, json!({})).unwrap();
+
+        let legacy_state = format!(
+            r#"{{
+  "original_statusline": null,
+  "original_was_absent": true,
+  "managed_command": "{}",
+  "install_id": "legacy",
+  "installed_at": "2026-01-01T00:00:00Z"
+}}"#,
+            home.wrapper_path().to_string_lossy()
+        );
+        atomic_write(&home.state_path(), legacy_state.as_bytes()).unwrap();
+
+        let current_settings = read_settings(&home.settings_path()).unwrap();
+        let prepared = prepare_install(
+            current_settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper",
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook",
+        )
+        .unwrap();
+
+        assert_eq!(
+            prepared.state.hook_command,
+            Some("/Applications/Orbit.app/Contents/MacOS/orbit-helper hook".to_string())
+        );
+    }
+
+    #[test]
+    fn force_install_cleans_legacy_cli_hooks_without_state_file() {
+        let home = TestHome::new();
+        let mut settings = json!({});
+        add_orbit_hooks(
+            &mut settings,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-cli hook",
+        )
+        .unwrap();
+        write_settings(&home.settings_path(), &settings).unwrap();
+
+        silent_force_install("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
+
+        let repaired = read_settings(&home.settings_path()).unwrap();
+        assert!(!settings_has_exact_hook_command(
+            &repaired,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-cli hook",
+        ));
+        assert!(settings_has_exact_hook_command(
+            &repaired,
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook",
+        ));
     }
 
     #[test]
@@ -1371,7 +1734,7 @@ mod tests {
         ));
         assert!(!entry_has_hook_command(
             &entry,
-            "/usr/local/bin/orbit-cli hook"
+            "/Applications/Orbit.app/Contents/MacOS/orbit-helper hook"
         ));
     }
 
@@ -1555,9 +1918,52 @@ mod tests {
     }
 
     #[test]
+    fn silent_force_install_preserves_original_statusline_when_repairing_wrapper() {
+        let home = TestHome::new();
+        let original = json!({
+            "statusLine": {
+                "type": "command",
+                "command": "/usr/local/bin/tool-a"
+            }
+        });
+        run_install_for_test(&home, original).unwrap();
+
+        silent_force_install("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
+
+        let state = read_statusline_state(&home.state_path()).unwrap().unwrap();
+        assert_eq!(
+            state.original_statusline,
+            Some(json!({
+                "type": "command",
+                "command": "/usr/local/bin/tool-a"
+            }))
+        );
+    }
+
+    #[test]
     fn check_install_state_detects_not_installed() {
         let _home = TestHome::new();
-        let state = check_install_state("/opt/orbit-cli").unwrap();
+        let state =
+            check_install_state("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
+        assert_eq!(state, InstallState::NotInstalled);
+    }
+
+    #[test]
+    fn check_install_state_treats_standard_command_as_takeover_ready() {
+        let home = TestHome::new();
+        write_settings(
+            &home.settings_path(),
+            &json!({
+                "statusLine": {
+                    "type": "command",
+                    "command": "/usr/local/bin/existing-statusline"
+                }
+            }),
+        )
+        .unwrap();
+
+        let state =
+            check_install_state("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
         assert_eq!(state, InstallState::NotInstalled);
     }
 
@@ -1567,8 +1973,27 @@ mod tests {
         let original_settings = json!({});
         run_install_for_test(&home, original_settings).unwrap();
 
-        let state = check_install_state("/opt/orbit-cli").unwrap();
+        let state =
+            check_install_state("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
         assert_eq!(state, InstallState::OrbitInstalled);
+    }
+
+    #[test]
+    fn check_install_state_detects_missing_required_hook_as_not_installed() {
+        let home = TestHome::new();
+        run_install_for_test(&home, json!({})).unwrap();
+
+        let mut settings = read_settings(&home.settings_path()).unwrap();
+        settings
+            .get_mut("hooks")
+            .and_then(|v| v.as_object_mut())
+            .unwrap()
+            .remove("Elicitation");
+        write_settings(&home.settings_path(), &settings).unwrap();
+
+        let state =
+            check_install_state("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
+        assert_eq!(state, InstallState::NotInstalled);
     }
 
     #[test]
@@ -1586,21 +2011,14 @@ mod tests {
         });
         write_settings(&home.settings_path(), &drifted).unwrap();
 
-        let state = check_install_state("/opt/orbit-cli").unwrap();
+        let state =
+            check_install_state("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
         assert_eq!(state, InstallState::DriftDetected);
     }
 
     #[test]
-    fn install_command_quotes_path() {
-        assert_eq!(
-            build_install_command("/Applications/Orbit App/Contents/MacOS/orbit-cli"),
-            "\"/Applications/Orbit App/Contents/MacOS/orbit-cli\" install"
-        );
-    }
-
-    #[test]
-    fn orbit_cli_sibling_rewrites_binary_name() {
-        let rewritten = orbit_cli_sibling_path(PathBuf::from("/tmp/target/debug/orbit"));
-        assert_eq!(rewritten, PathBuf::from("/tmp/target/debug/orbit-cli"));
+    fn orbit_helper_sibling_rewrites_binary_name() {
+        let rewritten = orbit_helper_sibling_path(PathBuf::from("/tmp/target/debug/orbit"));
+        assert_eq!(rewritten, PathBuf::from("/tmp/target/debug/orbit-helper"));
     }
 }

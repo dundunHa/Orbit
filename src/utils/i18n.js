@@ -5,6 +5,7 @@ const zh = {
   // Pill status
   "status.thinking": "思考中...",
   "status.approve": "待批准",
+  "status.respond": "待选择",
   "status.stuck": "卡住了？({seconds}秒)",
   "status.compacting": "压缩中...",
   "status.ended": "已结束",
@@ -25,7 +26,7 @@ const zh = {
   // Onboarding
   "onboarding.welcome": "欢迎使用 Orbit",
   "onboarding.checking": "正在检查 Claude Code 配置...",
-  "onboarding.installing": "正在安装 Orbit 钩子...",
+  "onboarding.installing": "正在将 Orbit 连接到 Claude Code...",
   "onboarding.connected": "已连接到 Claude Code",
   "onboarding.conflict": "检测到配置冲突",
   "onboarding.permissionDenied": "需要权限",
@@ -50,6 +51,7 @@ const zh = {
   "sessionStatus.thinking": "思考中",
   "sessionStatus.running": "运行中",
   "sessionStatus.approve": "待批准",
+  "sessionStatus.respond": "待选择",
   "sessionStatus.stuck": "卡住了",
   "sessionStatus.compacting": "压缩中",
   "sessionStatus.idle": "空闲",
@@ -57,11 +59,15 @@ const zh = {
   // Permission
   "permission.allow": "允许",
   "permission.deny": "拒绝",
+  "interaction.passThrough": "回到终端处理",
+  "interaction.cancel": "取消",
+  "interaction.unsupported": "这个请求需要更复杂的输入，Orbit 先让 Claude/Codex 在终端继续处理。",
 };
 
 const en = {
   "status.thinking": "Thinking...",
   "status.approve": "Approve?",
+  "status.respond": "Respond?",
   "status.stuck": "Stuck? ({seconds}s)",
   "status.compacting": "Compacting...",
   "status.ended": "Ended",
@@ -80,7 +86,7 @@ const en = {
 
   "onboarding.welcome": "Welcome to Orbit",
   "onboarding.checking": "Checking Claude Code configuration...",
-  "onboarding.installing": "Installing Orbit hooks...",
+  "onboarding.installing": "Connecting Orbit to Claude Code...",
   "onboarding.connected": "Connected to Claude Code",
   "onboarding.conflict": "Configuration conflict detected",
   "onboarding.permissionDenied": "Permission required",
@@ -102,12 +108,16 @@ const en = {
   "sessionStatus.thinking": "thinking",
   "sessionStatus.running": "running",
   "sessionStatus.approve": "approve?",
+  "sessionStatus.respond": "respond?",
   "sessionStatus.stuck": "stuck",
   "sessionStatus.compacting": "compacting",
   "sessionStatus.idle": "idle",
 
   "permission.allow": "Allow",
   "permission.deny": "Deny",
+  "interaction.passThrough": "Continue in terminal",
+  "interaction.cancel": "Cancel",
+  "interaction.unsupported": "This request needs a richer form, so Orbit will hand it back to Claude/Codex in the terminal.",
 };
 
 const locales = { zh, en };

@@ -97,10 +97,27 @@ pub struct HookPayload {
     #[serde(default)]
     pub tool_response: Option<Value>,
     #[serde(default)]
+    #[serde(alias = "mcpServerName")]
+    pub mcp_server_name: Option<String>,
+    #[serde(default)]
     #[serde(alias = "notificationType")]
     pub notification_type: Option<String>,
     #[serde(default)]
     pub message: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "elicitationId")]
+    pub elicitation_id: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "requestedSchema")]
+    pub requested_schema: Option<Value>,
+    #[serde(default)]
+    pub action: Option<String>,
+    #[serde(default)]
+    pub content: Option<Value>,
     #[serde(default)]
     pub pid: Option<u32>,
     #[serde(default)]
@@ -109,7 +126,7 @@ pub struct HookPayload {
     pub status: Option<String>,
 }
 
-/// Pending permission request waiting for user decision
+/// Pending user interaction request waiting for Orbit UI to answer.
 #[allow(dead_code)]
 pub struct PendingPermission {
     pub session_id: String,
@@ -120,9 +137,11 @@ pub struct PendingPermission {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionDecision {
-    pub decision: String, // "allow", "deny", "ask"
+    pub decision: String, // permission: allow/deny/ask, elicitation: accept/decline/cancel/passthrough
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<Value>,
 }
 
 pub type SessionMap = Arc<Mutex<HashMap<String, Session>>>;
@@ -359,6 +378,23 @@ impl Session {
                     tool_input: payload.tool_input.clone().unwrap_or(Value::Null),
                 };
             }
+            "Elicitation" => {
+                self.status = SessionStatus::WaitingForApproval {
+                    tool_name: payload
+                        .mcp_server_name
+                        .clone()
+                        .unwrap_or_else(|| "Question".to_string()),
+                    tool_input: serde_json::json!({
+                        "message": payload.message.clone(),
+                        "mode": payload.mode.clone(),
+                        "url": payload.url.clone(),
+                        "requested_schema": payload.requested_schema.clone(),
+                    }),
+                };
+            }
+            "ElicitationResult" => {
+                self.status = SessionStatus::Processing;
+            }
             "Stop" | "SubagentStop" => {
                 // LLM generation stopped (reply completed, interrupted by user Ctrl+C, or subagent finished)
                 // Status dot becomes GREEN (idle) - session continues, waiting for next input
@@ -410,8 +446,15 @@ mod tests {
             tool_input: None,
             tool_use_id: None,
             tool_response: None,
+            mcp_server_name: None,
             notification_type: None,
             message: None,
+            mode: None,
+            url: None,
+            elicitation_id: None,
+            requested_schema: None,
+            action: None,
+            content: None,
             pid: None,
             tty: None,
             status: None,
