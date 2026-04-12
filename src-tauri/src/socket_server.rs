@@ -7,6 +7,7 @@ use tokio::net::UnixListener;
 use tokio::sync::oneshot;
 
 use crate::history;
+use crate::hook_debug;
 use crate::installer;
 use crate::state::{
     ConnectionCount, HookPayload, PendingPermission, PendingPermissions, PermissionDecision,
@@ -61,6 +62,126 @@ fn interaction_request_id(payload: &HookPayload) -> String {
 
     let ts = chrono::Utc::now().timestamp_millis();
     format!("{}-interaction-{}", payload.session_id, ts)
+}
+
+fn build_interaction_response(
+    payload: &HookPayload,
+    decision: &PermissionDecision,
+) -> Option<serde_json::Value> {
+    match payload.hook_event_name.as_str() {
+        "PermissionRequest" => build_permission_request_response(
+            decision,
+            payload.tool_name.as_deref(),
+            payload.tool_input.as_ref(),
+        ),
+        "Elicitation" | "ElicitationResult" => {
+            build_elicitation_response(&payload.hook_event_name, decision)
+        }
+        _ => None,
+    }
+}
+
+fn build_permission_request_response(
+    decision: &PermissionDecision,
+    tool_name: Option<&str>,
+    tool_input: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    match decision.normalized_decision() {
+        "allow" => {
+            let mut response = serde_json::json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "PermissionRequest",
+                    "decision": { "behavior": "allow" }
+                }
+            });
+
+            if tool_name == Some("AskUserQuestion")
+                && let Some(updated_input) =
+                    build_ask_user_question_updated_input(tool_input, decision.content.as_ref())
+            {
+                response["hookSpecificOutput"]["decision"]["updatedInput"] = updated_input;
+            }
+
+            Some(response)
+        }
+        "deny" => Some(serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PermissionRequest",
+                "decision": { "behavior": "deny" }
+            }
+        })),
+        "passthrough" => None,
+        _ => None,
+    }
+}
+
+fn build_ask_user_question_updated_input(
+    tool_input: Option<&serde_json::Value>,
+    content: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let mut updated_input = tool_input?.as_object()?.clone();
+    let answers = content?.get("answers")?.clone();
+    updated_input.insert("answers".to_string(), answers);
+    Some(serde_json::Value::Object(updated_input))
+}
+
+fn build_elicitation_response(
+    hook_event_name: &str,
+    decision: &PermissionDecision,
+) -> Option<serde_json::Value> {
+    match decision.normalized_decision() {
+        "accept" => Some(serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": hook_event_name,
+                "action": "accept",
+                "content": decision.content.clone().unwrap_or_else(|| serde_json::json!({}))
+            }
+        })),
+        "decline" => Some(serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": hook_event_name,
+                "action": "decline"
+            }
+        })),
+        "cancel" => Some(serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": hook_event_name,
+                "action": "cancel"
+            }
+        })),
+        "passthrough" => None,
+        _ => None,
+    }
+}
+
+fn interaction_decision_for_debug(decision: &PermissionDecision) -> String {
+    match (decision.normalized_decision(), decision.reason.as_deref()) {
+        ("deny", Some(reason)) if !reason.is_empty() => format!("deny:{reason}"),
+        (normalized, _) => normalized.to_string(),
+    }
+}
+
+async fn write_optional_hook_response(
+    writer: &mut tokio::net::unix::OwnedWriteHalf,
+    response: Option<&serde_json::Value>,
+) {
+    if let Some(response) = response
+        && let Ok(response_bytes) = serde_json::to_vec(response)
+    {
+        let _ = writer.write_all(&response_bytes).await;
+        let _ = writer.flush().await;
+    }
+
+    let _ = writer.shutdown().await;
+}
+
+fn hook_debug_payload_summary(input: &str) -> String {
+    const MAX_CHARS: usize = 2000;
+    let mut summary: String = input.chars().take(MAX_CHARS).collect();
+    if input.chars().count() > MAX_CHARS {
+        summary.push_str("…<truncated>");
+    }
+    summary
 }
 
 pub async fn start(
@@ -196,16 +317,35 @@ async fn handle_connection(
         }
     }
 
+    let payload_summary = hook_debug_payload_summary(buf);
     let payload: HookPayload = match serde_json::from_str::<HookPayload>(buf) {
         Ok(p) => {
             info!(
                 "[Orbit] Hook event received: {} (session: {})",
                 p.hook_event_name, p.session_id
             );
+            hook_debug::append_hook_debug_log(
+                "socket_server",
+                Some(&p.session_id),
+                Some(&p.hook_event_name),
+                None,
+                "hook-received",
+                None,
+                Some(payload_summary.as_str()),
+            );
             p
         }
         Err(e) => {
             error!("[Orbit] Failed to parse hook payload: {e}");
+            hook_debug::append_hook_debug_log(
+                "socket_server",
+                None,
+                None,
+                None,
+                "parse-failed",
+                None,
+                Some(payload_summary.as_str()),
+            );
             return;
         }
     };
@@ -229,12 +369,7 @@ async fn handle_connection(
             let now = chrono::Utc::now();
             let mut pending_spawns_guard = pending_spawns.lock().await;
             cleanup_pending_spawns(&mut pending_spawns_guard, now);
-            match_pending_parent(
-                &mut pending_spawns_guard,
-                &session_id,
-                &payload.cwd,
-                now,
-            )
+            match_pending_parent(&mut pending_spawns_guard, &session_id, &payload.cwd, now)
         }
     };
 
@@ -252,7 +387,8 @@ async fn handle_connection(
     }
 
     // Update session state
-    let mut pending_parent_candidate: Option<(String, String, chrono::DateTime<chrono::Utc>)> = None;
+    let mut pending_parent_candidate: Option<(String, String, chrono::DateTime<chrono::Utc>)> =
+        None;
     {
         let mut sessions_guard = sessions.lock().await;
         let session = sessions_guard.entry(session_id.clone()).or_insert_with(|| {
@@ -268,11 +404,8 @@ async fn handle_connection(
         session.apply_event(&payload);
 
         if is_task_pre_tool_use {
-            pending_parent_candidate = Some((
-                session.id.clone(),
-                session.cwd.clone(),
-                chrono::Utc::now(),
-            ));
+            pending_parent_candidate =
+                Some((session.id.clone(), session.cwd.clone(), chrono::Utc::now()));
         }
 
         if session.title.is_none() {
@@ -398,65 +531,37 @@ async fn handle_connection(
         // Wait for user decision (timeout 5 min).
         match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
             Ok(Ok(decision)) => {
-                let response = if is_permission_request {
-                    match decision.decision.as_str() {
-                        "allow" => Some(serde_json::json!({
-                            "hookSpecificOutput": {
-                                "hookEventName": "PermissionRequest",
-                                "decision": { "behavior": "allow" }
-                            }
-                        })),
-                        "deny" => Some(serde_json::json!({
-                            "hookSpecificOutput": {
-                                "hookEventName": "PermissionRequest",
-                                "decision": {
-                                    "behavior": "deny",
-                                    "message": decision.reason.unwrap_or_else(|| "Denied via Orbit".to_string())
-                                }
-                            }
-                        })),
-                        _ => Some(serde_json::json!({
-                            "hookSpecificOutput": {
-                                "hookEventName": "PermissionRequest",
-                                "decision": { "behavior": "ask" }
-                            }
-                        })),
-                    }
-                } else {
-                    match decision.decision.as_str() {
-                        "accept" => Some(serde_json::json!({
-                            "hookSpecificOutput": {
-                                "hookEventName": "Elicitation",
-                                "action": "accept",
-                                "content": decision.content.unwrap_or_else(|| serde_json::json!({}))
-                            }
-                        })),
-                        "decline" => Some(serde_json::json!({
-                            "hookSpecificOutput": {
-                                "hookEventName": "Elicitation",
-                                "action": "decline"
-                            }
-                        })),
-                        "cancel" => Some(serde_json::json!({
-                            "hookSpecificOutput": {
-                                "hookEventName": "Elicitation",
-                                "action": "cancel"
-                            }
-                        })),
-                        _ => None,
-                    }
-                };
+                let response = build_interaction_response(&payload, &decision);
+                let response_json = response.as_ref().map(|value| value.to_string());
+                let debug_decision = interaction_decision_for_debug(&decision);
 
-                if let Some(response) = response {
-                    let response_bytes = serde_json::to_vec(&response).unwrap_or_default();
-                    let _ = writer.write_all(&response_bytes).await;
-                }
+                hook_debug::append_hook_debug_log(
+                    "socket_server",
+                    Some(&payload.session_id),
+                    Some(&payload.hook_event_name),
+                    Some(&perm_id),
+                    &debug_decision,
+                    response_json.as_deref(),
+                    None,
+                );
+
+                write_optional_hook_response(&mut writer, response.as_ref()).await;
             }
             _ => {
                 // Timeout or error, remove pending and notify frontend.
                 let mut pending = pending.lock().await;
                 pending.remove(&perm_id);
                 let _ = app_handle.emit("interaction-timeout", &perm_id);
+                hook_debug::append_hook_debug_log(
+                    "socket_server",
+                    Some(&payload.session_id),
+                    Some(&payload.hook_event_name),
+                    Some(&perm_id),
+                    "timeout",
+                    None,
+                    None,
+                );
+                write_optional_hook_response(&mut writer, None).await;
             }
         }
     }
@@ -685,5 +790,124 @@ mod tests {
             control.get("session_id").and_then(|v| v.as_str()),
             Some("session-xyz")
         );
+    }
+
+    fn make_decision(decision: &str) -> PermissionDecision {
+        PermissionDecision {
+            decision: decision.to_string(),
+            reason: None,
+            content: None,
+        }
+    }
+
+    #[test]
+    fn test_build_interaction_response_maps_permission_allow_and_deny() {
+        let payload = create_hook_payload("PermissionRequest", "test-permission");
+        let allow = build_interaction_response(&payload, &make_decision("allow")).unwrap();
+        let deny = build_interaction_response(&payload, &make_decision("deny")).unwrap();
+
+        assert_eq!(
+            allow["hookSpecificOutput"]["hookEventName"],
+            "PermissionRequest"
+        );
+        assert_eq!(allow["hookSpecificOutput"]["decision"]["behavior"], "allow");
+        assert!(
+            allow["hookSpecificOutput"]["decision"]
+                .get("updatedInput")
+                .is_none()
+        );
+        assert_eq!(
+            deny["hookSpecificOutput"]["hookEventName"],
+            "PermissionRequest"
+        );
+        assert_eq!(deny["hookSpecificOutput"]["decision"]["behavior"], "deny");
+        assert!(
+            deny["hookSpecificOutput"]["decision"]
+                .get("message")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_build_interaction_response_builds_updated_input_for_ask_user_question() {
+        let mut payload = create_hook_payload("PermissionRequest", "test-ask-user-question");
+        payload.tool_name = Some("AskUserQuestion".to_string());
+        payload.tool_input = Some(serde_json::json!({
+            "questions": [{
+                "question": "要加吗？",
+                "header": "Review 确认",
+                "options": [
+                    { "label": "全部处理" },
+                    { "label": "只加测试" }
+                ],
+                "multiSelect": false
+            }]
+        }));
+        let decision = PermissionDecision {
+            decision: "allow".to_string(),
+            reason: None,
+            content: Some(serde_json::json!({
+                "answers": { "要加吗？": "全部处理" }
+            })),
+        };
+
+        let response = build_interaction_response(&payload, &decision).unwrap();
+
+        assert_eq!(
+            response["hookSpecificOutput"]["decision"]["behavior"],
+            "allow"
+        );
+        assert_eq!(
+            response["hookSpecificOutput"]["decision"]["updatedInput"]["questions"][0]["question"],
+            "要加吗？"
+        );
+        assert_eq!(
+            response["hookSpecificOutput"]["decision"]["updatedInput"]["answers"]["要加吗？"],
+            "全部处理"
+        );
+    }
+
+    #[test]
+    fn test_build_interaction_response_maps_elicitation_accept_cancel_and_passthrough() {
+        let payload = create_hook_payload("Elicitation", "test-elicitation");
+        let accept = build_interaction_response(
+            &payload,
+            &PermissionDecision {
+                decision: "accept".to_string(),
+                reason: None,
+                content: Some(serde_json::json!({ "choice": "plan_a" })),
+            },
+        )
+        .unwrap();
+        let decline = build_interaction_response(&payload, &make_decision("decline")).unwrap();
+        let cancel = build_interaction_response(&payload, &make_decision("cancel")).unwrap();
+        let passthrough = build_interaction_response(&payload, &make_decision("passthrough"));
+
+        assert_eq!(accept["hookSpecificOutput"]["hookEventName"], "Elicitation");
+        assert_eq!(accept["hookSpecificOutput"]["action"], "accept");
+        assert_eq!(accept["hookSpecificOutput"]["content"]["choice"], "plan_a");
+        assert_eq!(decline["hookSpecificOutput"]["action"], "decline");
+        assert_eq!(cancel["hookSpecificOutput"]["action"], "cancel");
+        assert!(passthrough.is_none());
+    }
+
+    #[test]
+    fn test_build_interaction_response_supports_legacy_permission_ask_passthrough() {
+        let payload = create_hook_payload("PermissionRequest", "test-legacy-ask");
+        let passthrough = build_interaction_response(&payload, &make_decision("ask"));
+
+        assert!(passthrough.is_none());
+    }
+
+    #[test]
+    fn test_build_interaction_response_uses_elicitation_result_hook_name() {
+        let payload = create_hook_payload("ElicitationResult", "test-elicitation-result");
+        let response = build_interaction_response(&payload, &make_decision("cancel")).unwrap();
+
+        assert_eq!(
+            response["hookSpecificOutput"]["hookEventName"],
+            "ElicitationResult"
+        );
+        assert_eq!(response["hookSpecificOutput"]["action"], "cancel");
     }
 }

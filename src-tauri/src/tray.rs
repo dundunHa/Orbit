@@ -86,7 +86,7 @@ fn load_tray_icon() -> Option<Image<'static>> {
 
 fn token_stats_text(today_stats: &TodayStats) -> String {
     let stats = today_stats.lock();
-    let rate_str = if stats.out_rate > 0.1 {
+    let rate_str = if stats.tokens_out > 0 && stats.out_rate > 0.1 {
         format!(" ({:.1} tok/s)", stats.out_rate)
     } else {
         String::new()

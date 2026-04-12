@@ -141,11 +141,20 @@ pub struct PendingPermission {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionDecision {
-    pub decision: String, // permission: allow/deny/ask, elicitation: accept/decline/cancel/passthrough
+    pub decision: String, // permission: allow/deny/passthrough (legacy ask), elicitation: accept/decline/cancel/passthrough
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<Value>,
+}
+
+impl PermissionDecision {
+    pub fn normalized_decision(&self) -> &str {
+        match self.decision.as_str() {
+            "ask" => "passthrough",
+            other => other,
+        }
+    }
 }
 
 pub type SessionMap = Arc<Mutex<HashMap<String, Session>>>;
@@ -159,8 +168,11 @@ pub struct TodayTokenStats {
     pub tokens_in: u64,
     pub tokens_out: u64,
     /// Tokens/sec, EMA-smoothed for stable tray display
+    #[serde(skip)]
     pub out_rate: f64,
+    #[serde(skip)]
     last_rate_sample_ts: Option<DateTime<Utc>>,
+    #[serde(skip)]
     last_rate_sample_out: u64,
     /// Per-session token baselines captured at start of day (or first seen today).
     /// Used to compute today-only deltas for sessions that span midnight.
@@ -226,10 +238,12 @@ impl TodayTokenStats {
     /// Load token baselines from disk, returning default if file doesn't exist or is corrupted.
     pub fn load_from_disk() -> Self {
         let path = baselines_path();
-        match std::fs::read_to_string(&path) {
+        let mut stats = match std::fs::read_to_string(&path) {
             Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
             Err(_) => Self::default(),
-        }
+        };
+        stats.reset_if_new_day();
+        stats
     }
 
     /// Save token baselines to disk, ignoring errors.
@@ -445,6 +459,60 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::installer::TEST_HOME_ENV_LOCK;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::MutexGuard;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestHome {
+        _guard: MutexGuard<'static, ()>,
+        path: PathBuf,
+        old_home: Option<String>,
+    }
+
+    impl TestHome {
+        fn new() -> Self {
+            let guard = TEST_HOME_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let path = std::env::temp_dir().join(format!(
+                "orbit-state-home-{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            let old_home = std::env::var("HOME").ok();
+            // SAFETY: TEST_HOME_ENV_LOCK is held for the lifetime of this helper.
+            unsafe {
+                std::env::set_var("HOME", &path);
+            }
+
+            Self {
+                _guard: guard,
+                path,
+                old_home,
+            }
+        }
+
+        fn baselines_path(&self) -> PathBuf {
+            self.path.join(".orbit").join("token-baselines.json")
+        }
+    }
+
+    impl Drop for TestHome {
+        fn drop(&mut self) {
+            match &self.old_home {
+                Some(old_home) => unsafe {
+                    std::env::set_var("HOME", old_home);
+                },
+                None => unsafe {
+                    std::env::remove_var("HOME");
+                },
+            }
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 
     fn make_hook_payload(event: &str) -> HookPayload {
         HookPayload {
@@ -624,5 +692,85 @@ mod tests {
         assert_eq!(entries[0].tokens_out, 0);
         assert_eq!(entries[0].cost_usd, 0.0);
         assert_eq!(entries[0].model, None);
+    }
+
+    #[test]
+    fn test_permission_decision_normalizes_legacy_ask_to_passthrough() {
+        let decision = PermissionDecision {
+            decision: "ask".to_string(),
+            reason: None,
+            content: None,
+        };
+
+        assert_eq!(decision.normalized_decision(), "passthrough");
+    }
+
+    #[test]
+    fn test_permission_decision_keeps_non_legacy_values() {
+        let decision = PermissionDecision {
+            decision: "deny".to_string(),
+            reason: Some("Denied in UI".to_string()),
+            content: None,
+        };
+
+        assert_eq!(decision.normalized_decision(), "deny");
+    }
+
+    #[test]
+    fn test_today_token_stats_load_ignores_persisted_rate_fields() {
+        let home = TestHome::new();
+        let path = home.baselines_path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            format!(
+                r#"{{
+                    "date": {},
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "out_rate": 7.0,
+                    "last_rate_sample_ts": "2026-04-11T10:00:00Z",
+                    "last_rate_sample_out": 42,
+                    "session_baselines": {{}}
+                }}"#,
+                today_key()
+            ),
+        )
+        .unwrap();
+
+        let stats = TodayTokenStats::load_from_disk();
+
+        assert_eq!(stats.tokens_in, 0);
+        assert_eq!(stats.tokens_out, 0);
+        assert_eq!(stats.out_rate, 0.0);
+        assert_eq!(stats.last_rate_sample_ts, None);
+        assert_eq!(stats.last_rate_sample_out, 0);
+    }
+
+    #[test]
+    fn test_today_token_stats_load_resets_when_file_is_from_previous_day() {
+        let home = TestHome::new();
+        let path = home.baselines_path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            r#"{
+                "date": 19990101,
+                "tokens_in": 123,
+                "tokens_out": 456,
+                "session_baselines": {
+                    "session-1": [10, 20]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let stats = TodayTokenStats::load_from_disk();
+
+        assert_eq!(stats.date, today_key());
+        assert_eq!(stats.tokens_in, 0);
+        assert_eq!(stats.tokens_out, 0);
+        assert!(stats.session_baselines.is_empty());
+        assert_eq!(stats.out_rate, 0.0);
     }
 }

@@ -452,6 +452,12 @@ body {
   color: #fff;
 }
 
+/* Elicitation variant: blue-tinted to distinguish from permission (orange) */
+.permission-section[data-kind="elicitation"] {
+  background: rgba(96, 165, 250, 0.15);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
 /* === Sections === */
 .section-title {
   font-size: 10px;

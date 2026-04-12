@@ -7,13 +7,19 @@ use serde_json::Value;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 
-use orbit::installer;
+use orbit::{hook_debug, installer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HookResponseMode {
     None,
     PermissionRequest,
     Elicitation,
+}
+
+#[derive(Debug, Default)]
+struct HookDebugContext {
+    session_id: Option<String>,
+    hook_event_name: Option<String>,
 }
 
 fn main() {
@@ -49,6 +55,19 @@ fn cmd_hook() {
         std::process::exit(0);
     }
 
+    let debug_context = hook_debug_context(input);
+    let payload_summary = hook_debug_payload_summary(input);
+
+    hook_debug::append_hook_debug_log(
+        "orbit_cli",
+        debug_context.session_id.as_deref(),
+        debug_context.hook_event_name.as_deref(),
+        None,
+        "hook-received",
+        None,
+        Some(payload_summary.as_str()),
+    );
+
     match UnixStream::connect(&socket_path) {
         Ok(mut stream) => {
             if let Some(response) = forward_hook_payload(input, &mut stream) {
@@ -56,6 +75,15 @@ fn cmd_hook() {
             }
         }
         Err(_) => {
+            hook_debug::append_hook_debug_log(
+                "orbit_cli",
+                debug_context.session_id.as_deref(),
+                debug_context.hook_event_name.as_deref(),
+                None,
+                "socket-connect-failed",
+                None,
+                Some(payload_summary.as_str()),
+            );
             std::process::exit(0);
         }
     }
@@ -63,27 +91,91 @@ fn cmd_hook() {
 
 fn forward_hook_payload<S: Read + Write>(input: &str, stream: &mut S) -> Option<String> {
     let payload = format!("{}\n", input);
+    let debug_context = hook_debug_context(input);
+    let payload_summary = hook_debug_payload_summary(input);
+    let response_mode = expected_hook_response(input);
+
     if stream.write_all(payload.as_bytes()).is_err() {
+        hook_debug::append_hook_debug_log(
+            "orbit_cli",
+            debug_context.session_id.as_deref(),
+            debug_context.hook_event_name.as_deref(),
+            None,
+            "socket-write-failed",
+            None,
+            Some(payload_summary.as_str()),
+        );
         return None;
     }
 
-    match expected_hook_response(input) {
+    let response = match response_mode {
         HookResponseMode::None => None,
         HookResponseMode::PermissionRequest | HookResponseMode::Elicitation => {
             let mut response = String::new();
             match stream.read_to_string(&mut response) {
-                Ok(_) if !response.trim().is_empty() => Some(response.trim().to_string()),
-                _ if matches!(
-                    expected_hook_response(input),
-                    HookResponseMode::PermissionRequest
-                ) =>
-                {
-                    Some(permission_request_fallback())
+                Ok(_) => {
+                    let trimmed = response.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
                 }
-                _ => None,
+                Err(_) => None,
             }
         }
+    };
+
+    let decision = match response_mode {
+        HookResponseMode::None => "forward-only",
+        HookResponseMode::PermissionRequest | HookResponseMode::Elicitation => {
+            if response.is_some() {
+                "socket-json-response"
+            } else {
+                "socket-eof-no-response"
+            }
+        }
+    };
+
+    hook_debug::append_hook_debug_log(
+        "orbit_cli",
+        debug_context.session_id.as_deref(),
+        debug_context.hook_event_name.as_deref(),
+        None,
+        decision,
+        response.as_deref(),
+        Some(payload_summary.as_str()),
+    );
+
+    response
+}
+
+fn hook_debug_context(input: &str) -> HookDebugContext {
+    let Ok(value) = serde_json::from_str::<Value>(input) else {
+        return HookDebugContext::default();
+    };
+
+    HookDebugContext {
+        session_id: value
+            .get("session_id")
+            .or_else(|| value.get("sessionId"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        hook_event_name: value
+            .get("hook_event_name")
+            .or_else(|| value.get("hookEventName"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
     }
+}
+
+fn hook_debug_payload_summary(input: &str) -> String {
+    const MAX_CHARS: usize = 2000;
+    let mut summary: String = input.chars().take(MAX_CHARS).collect();
+    if input.chars().count() > MAX_CHARS {
+        summary.push_str("…<truncated>");
+    }
+    summary
 }
 
 fn expected_hook_response(input: &str) -> HookResponseMode {
@@ -95,21 +187,11 @@ fn expected_hook_response(input: &str) -> HookResponseMode {
                 .and_then(|v| v.as_str())
                 .map(|s| match s {
                     "PermissionRequest" => HookResponseMode::PermissionRequest,
-                    "Elicitation" => HookResponseMode::Elicitation,
+                    "Elicitation" | "ElicitationResult" => HookResponseMode::Elicitation,
                     _ => HookResponseMode::None,
                 })
         })
         .unwrap_or(HookResponseMode::None)
-}
-
-fn permission_request_fallback() -> String {
-    serde_json::json!({
-        "hookSpecificOutput": {
-            "hookEventName": "PermissionRequest",
-            "decision": { "behavior": "ask" }
-        }
-    })
-    .to_string()
 }
 
 fn cmd_statusline() {
@@ -250,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn forward_hook_payload_falls_back_to_ask_when_no_response_arrives() {
+    fn forward_hook_payload_returns_none_when_permission_socket_closes_without_response() {
         let payload =
             r#"{"session_id":"session-3","hook_event_name":"PermissionRequest","cwd":"/tmp"}"#;
         let (mut client, server) = UnixStream::pair().unwrap();
@@ -266,14 +348,11 @@ mod tests {
         let received = server_thread.join().unwrap();
 
         assert_eq!(received.trim(), payload);
-        assert_eq!(
-            response.as_deref(),
-            Some(permission_request_fallback().as_str())
-        );
+        assert!(response.is_none());
     }
 
     #[test]
-    fn forward_hook_payload_lets_elicitation_fall_through_when_no_response_arrives() {
+    fn forward_hook_payload_returns_none_when_elicitation_socket_closes_without_response() {
         let payload = r#"{"session_id":"session-elicit-2","hook_event_name":"Elicitation","cwd":"/tmp","mcp_server_name":"compound","message":"Pick one","mode":"form"}"#;
         let (mut client, server) = UnixStream::pair().unwrap();
 
@@ -289,6 +368,16 @@ mod tests {
 
         assert_eq!(received.trim(), payload);
         assert!(response.is_none());
+    }
+
+    #[test]
+    fn expected_hook_response_treats_elicitation_result_like_elicitation() {
+        let payload = r#"{"session_id":"session-elicit-3","hook_event_name":"ElicitationResult","cwd":"/tmp"}"#;
+
+        assert_eq!(
+            expected_hook_response(payload),
+            HookResponseMode::Elicitation
+        );
     }
 
     #[test]

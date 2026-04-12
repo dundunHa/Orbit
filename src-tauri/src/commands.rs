@@ -6,8 +6,8 @@ use parking_lot::RwLock;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-pub const LEFT_ZONE_WIDTH: f64 = 45.0;
-pub const RIGHT_ZONE_WIDTH: f64 = 105.0;
+pub const LEFT_ZONE_WIDTH: f64 = 35.0;
+pub const RIGHT_ZONE_WIDTH: f64 = 25.0;
 pub const MASCOT_LEFT_INSET: f64 = 8.0;
 const MIN_EXPANDED_HEIGHT: f64 = 168.0;
 const MAX_EXPANDED_HEIGHT: f64 = 320.0;
@@ -342,6 +342,53 @@ mod tests {
         assert_eq!(current_notch_geometry().notch_left, updated.notch_left);
         // _restore drops here, restoring original
     }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn detect_resume_terminal_prefers_running_alacritty() {
+        let processes = "/Applications/Alacritty.app/Contents/MacOS/alacritty\n";
+        assert_eq!(
+            detect_resume_terminal_from_processes(processes, false),
+            Some(ResumeTerminal::Alacritty)
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn detect_resume_terminal_falls_back_to_installed_alacritty() {
+        assert_eq!(
+            detect_resume_terminal_from_processes("", true),
+            Some(ResumeTerminal::Alacritty)
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn build_resume_shell_command_uses_current_claude_cli() {
+        let command = build_resume_shell_command("/tmp/demo dir", "session-123");
+        assert!(command.contains("exec claude --resume 'session-123'"));
+        assert!(command.contains("cd '/tmp/demo dir'"));
+        assert!(!command.contains("claude-code"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn build_resume_launch_spec_uses_alacritty_binary() {
+        let spec = build_resume_launch_spec(ResumeTerminal::Alacritty, "/tmp", "session-123");
+
+        match spec {
+            ResumeLaunchSpec::Process { program, args } => {
+                assert_eq!(program, ALACRITTY_BINARY);
+                assert_eq!(args[0], "--working-directory");
+                assert_eq!(args[1], "/tmp");
+                assert_eq!(args[2], "--command");
+                assert_eq!(args[3], "/bin/zsh");
+                assert_eq!(args[4], "-lc");
+                assert!(args[5].contains("claude --resume 'session-123'"));
+            }
+            ResumeLaunchSpec::AppleScript(_) => panic!("expected Alacritty process launch"),
+        }
+    }
 }
 
 fn validate_session_id(session_id: &str) -> Result<(), String> {
@@ -372,31 +419,114 @@ fn escape_for_applescript(s: &str) -> String {
         .replace('\'', "\\'")
 }
 
-/// Build a shell single-quoted path that is safe inside an AppleScript double-quoted string.
-/// Two-level escaping:
-/// - Shell layer: wrap in `'...'`; single quotes become `'"'"'` (no backslash required).
-/// - AppleScript layer: `\` → `\\`, `"` → `\"` (the only chars AppleScript interprets in "...").
-///
-/// Result can be embedded directly in `do script "cd {} && ..."` where the surrounding
-/// AppleScript double-quotes are already in the format string. Shell `$`, backticks, and
-/// other metacharacters are all literal inside single-quoted shell strings.
 #[cfg(target_os = "macos")]
-fn escape_cwd_for_terminal(s: &str) -> String {
+const ALACRITTY_BINARY: &str = "/Applications/Alacritty.app/Contents/MacOS/alacritty";
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResumeTerminal {
+    Alacritty,
+    TerminalApp,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ResumeLaunchSpec {
+    AppleScript(String),
+    Process {
+        program: &'static str,
+        args: Vec<String>,
+    },
+}
+
+#[cfg(target_os = "macos")]
+fn shell_single_quote(s: &str) -> String {
     let mut result = String::from("'");
     for c in s.chars() {
         match c {
-            // Shell: end-single-quote, double-quoted literal single-quote, re-open single-quote.
-            // The `"` chars need AppleScript escaping → `\"`.
-            '\'' => result.push_str("'\\\"'\\\"'"),
-            // AppleScript: \\ → \ (literal backslash in single-quoted shell string)
-            '\\' => result.push_str("\\\\"),
-            // AppleScript: \" → " (literal double-quote in single-quoted shell string)
-            '"' => result.push_str("\\\""),
+            '\'' => result.push_str("'\"'\"'"),
             other => result.push(other),
         }
     }
     result.push('\'');
     result
+}
+
+#[cfg(target_os = "macos")]
+fn detect_resume_terminal_from_processes(
+    processes: &str,
+    alacritty_installed: bool,
+) -> Option<ResumeTerminal> {
+    let alacritty_running = processes
+        .lines()
+        .any(|line| line.contains(ALACRITTY_BINARY));
+    if alacritty_running || alacritty_installed {
+        return Some(ResumeTerminal::Alacritty);
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn detect_resume_terminal() -> ResumeTerminal {
+    let alacritty_installed = std::path::Path::new(ALACRITTY_BINARY).exists();
+
+    if let Ok(output) = std::process::Command::new("ps")
+        .args(["-ax", "-o", "command="])
+        .output()
+        && output.status.success()
+    {
+        let processes = String::from_utf8_lossy(&output.stdout);
+        if let Some(terminal) =
+            detect_resume_terminal_from_processes(processes.as_ref(), alacritty_installed)
+        {
+            return terminal;
+        }
+    }
+
+    if alacritty_installed {
+        return ResumeTerminal::Alacritty;
+    }
+
+    ResumeTerminal::TerminalApp
+}
+
+#[cfg(target_os = "macos")]
+fn build_resume_shell_command(cwd: &str, session_id: &str) -> String {
+    format!(
+        "cd {} && exec claude --resume {}",
+        shell_single_quote(cwd),
+        shell_single_quote(session_id)
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn build_resume_launch_spec(
+    terminal: ResumeTerminal,
+    cwd: &str,
+    session_id: &str,
+) -> ResumeLaunchSpec {
+    let shell_command = build_resume_shell_command(cwd, session_id);
+
+    match terminal {
+        ResumeTerminal::Alacritty => ResumeLaunchSpec::Process {
+            program: ALACRITTY_BINARY,
+            args: vec![
+                "--working-directory".to_string(),
+                cwd.to_string(),
+                "--command".to_string(),
+                "/bin/zsh".to_string(),
+                "-lc".to_string(),
+                shell_command,
+            ],
+        },
+        ResumeTerminal::TerminalApp => ResumeLaunchSpec::AppleScript(format!(
+            r#"tell application "Terminal"
+    do script "{}"
+    activate
+end tell"#,
+            escape_for_applescript(&shell_command)
+        )),
+    }
 }
 
 /// Resume a Claude Code session in a new terminal window
@@ -417,29 +547,25 @@ pub async fn resume_session(session_id: String, cwd: String) -> Result<(), Strin
 
     #[cfg(target_os = "macos")]
     {
-        // safe_cwd is a shell single-quoted path (safe against $, `, etc.)
-        // that is also escaped for embedding in an AppleScript double-quoted string.
-        let safe_cwd = escape_cwd_for_terminal(cwd_str);
-        // session_id is validated to [a-zA-Z0-9_-]; AppleScript escaping is a no-op here
-        // but kept for defence in depth.
-        let safe_session_id = escape_for_applescript(&session_id);
-        let script = format!(
-            r#"tell application "Terminal"
-    do script "cd {} && claude-code resume --session-id \"{}\""
-    activate
-end tell"#,
-            safe_cwd, safe_session_id
-        );
+        match build_resume_launch_spec(detect_resume_terminal(), cwd_str, &session_id) {
+            ResumeLaunchSpec::AppleScript(script) => {
+                let output = std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(&script)
+                    .output()
+                    .map_err(|e| format!("Failed to execute AppleScript: {}", e))?;
 
-        let output = std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .output()
-            .map_err(|e| format!("Failed to execute AppleScript: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("AppleScript failed: {}", stderr));
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(format!("AppleScript failed: {}", stderr));
+                }
+            }
+            ResumeLaunchSpec::Process { program, args } => {
+                std::process::Command::new(program)
+                    .args(args)
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch terminal: {}", e))?;
+            }
         }
     }
 

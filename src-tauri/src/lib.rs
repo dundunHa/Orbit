@@ -2,6 +2,7 @@ mod anomaly;
 mod app;
 mod commands;
 mod history;
+pub mod hook_debug;
 pub mod installer;
 mod notch;
 mod socket_server;

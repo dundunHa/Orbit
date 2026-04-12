@@ -10,9 +10,9 @@ import {
   getSessionTokenStats,
 } from "./utils/sessionTransform.js";
 import { t, getLocale } from "./utils/i18n.js";
+import { invokeCommand } from "./utils/tauriInvoke.js";
 
 const { listen } = window.__TAURI__.event;
-const { invoke } = window.__TAURI__.core;
 
 // State
 let sessions = {}; // All sessions keyed by session_id
@@ -212,7 +212,7 @@ async function init() {
   });
 
   try {
-    notchInfo = await invoke("get_notch_info");
+    notchInfo = await invokeCommand("get_notch_info");
   } catch (e) {
     console.error("Failed to get notch info:", e);
   }
@@ -242,14 +242,14 @@ async function init() {
   }
 
   try {
-    const currentOnboarding = await invoke("get_onboarding_state");
+    const currentOnboarding = await invokeCommand("get_onboarding_state");
     setOnboardingState(currentOnboarding);
   } catch (e) {
     console.error("Failed to load onboarding state:", e);
   }
 
   try {
-    const existing = await invoke("get_sessions");
+    const existing = await invokeCommand("get_sessions");
     for (const s of existing) {
       sessions[s.id] = s;
     }
@@ -262,7 +262,7 @@ async function init() {
 }
 
 function refreshHistoryCache() {
-  invoke("get_history")
+  invokeCommand("get_history")
     .then((history) => {
       cachedHistory = history;
       if (isExpanded) {
@@ -714,6 +714,62 @@ function extractElicitationOptions(schema) {
   return null;
 }
 
+function extractAskUserQuestionOptions(toolInput) {
+  if (!toolInput || typeof toolInput !== "object") {
+    return null;
+  }
+
+  const questions = toolInput.questions;
+  if (!Array.isArray(questions) || questions.length !== 1) {
+    return null;
+  }
+
+  const question = questions[0];
+  if (!question || typeof question !== "object") {
+    return null;
+  }
+
+  if (question.multiSelect) {
+    return null;
+  }
+
+  if (!Array.isArray(question.options) || question.options.length === 0) {
+    return null;
+  }
+
+  const options = question.options
+    .map((option) => {
+      if (!option || typeof option !== "object" || !option.label) {
+        return null;
+      }
+      return {
+        label: String(option.label),
+        value: String(option.label),
+        description:
+          typeof option.description === "string" ? option.description : "",
+      };
+    })
+    .filter(Boolean);
+
+  if (options.length === 0 || typeof question.question !== "string") {
+    return null;
+  }
+
+  return {
+    title: question.header || payloadSafeToolTitle(toolInput),
+    question: question.question,
+    answers: options,
+  };
+}
+
+function payloadSafeToolTitle(toolInput) {
+  if (!toolInput || typeof toolInput !== "object") {
+    return "Question";
+  }
+  const firstQuestion = Array.isArray(toolInput.questions) ? toolInput.questions[0] : null;
+  return firstQuestion?.header || "Question";
+}
+
 function normalizeInteractionRequest(payload) {
   const requestId = payload.request_id;
   const kind = payload.kind || "permission";
@@ -730,9 +786,24 @@ function normalizeInteractionRequest(payload) {
     url: payload.url || null,
     requestedSchema: payload.requested_schema || null,
     fieldKey: null,
+    questionKey: null,
     options: [],
     supported: kind === "permission",
+    answerMode: kind === "permission" ? "permission" : "elicitation",
   };
+
+  if (kind === "permission" && payload.tool_name === "AskUserQuestion") {
+    const parsedQuestion = extractAskUserQuestionOptions(toolInput);
+    request.supported = Boolean(parsedQuestion);
+    request.answerMode = parsedQuestion ? "ask_user_question" : "permission";
+    if (parsedQuestion) {
+      request.title = parsedQuestion.title;
+      request.message = parsedQuestion.question;
+      request.questionKey = parsedQuestion.question;
+      request.options = parsedQuestion.answers;
+    }
+    return request;
+  }
 
   if (kind === "elicitation") {
     request.title = payload.mcp_server_name || payload.tool_name || "Question";
@@ -752,6 +823,7 @@ function hideInteractionSection() {
   permissionActions.innerHTML = "";
   permissionMessage.textContent = "";
   delete permissionSection.dataset.requestId;
+  delete permissionSection.dataset.kind;
   scheduleExpandedHeightUpdate();
 }
 
@@ -770,13 +842,27 @@ function renderActionButton({ label, className, onClick }) {
 function showInteraction(requestId, request) {
   permissionSection.style.display = "block";
   permissionSection.dataset.requestId = requestId;
+  permissionSection.dataset.kind = request.kind;
   permissionTool.textContent = request.title;
   permissionMessage.textContent =
     request.message ||
     (request.supported ? "" : t("interaction.unsupported"));
   permissionActions.innerHTML = "";
 
-  if (request.kind === "permission") {
+  if (request.answerMode === "ask_user_question" && request.supported && request.questionKey) {
+    request.options.forEach((option) => {
+      renderActionButton({
+        label: option.label,
+        className: "btn-option",
+        onClick: () =>
+          handleInteraction("allow", {
+            answers: {
+              [request.questionKey]: option.value,
+            },
+          }),
+      });
+    });
+  } else if (request.kind === "permission") {
     renderActionButton({
       label: t("permission.allow"),
       className: "btn-allow",
@@ -808,8 +894,7 @@ function showInteraction(requestId, request) {
   renderActionButton({
     label: t("interaction.passThrough"),
     className: "btn-pass",
-    onClick: () =>
-      handleInteraction(request.kind === "permission" ? "ask" : "passthrough"),
+    onClick: () => handleInteraction("passthrough"),
   });
 
   scheduleExpandedHeightUpdate();
@@ -828,18 +913,22 @@ async function handleInteraction(decision, content = null) {
   const requestId = permissionSection.dataset.requestId;
   if (!requestId) return;
 
-  await invoke("permission_decision", {
-    perm_id: requestId,
-    decision: decision,
-    reason: null,
-    content,
-  });
-  pendingInteractions.delete(requestId);
-  hideInteractionSection();
+  try {
+    await invokeCommand("permission_decision", {
+      permId: requestId,
+      decision: decision,
+      reason: null,
+      content,
+    });
+    pendingInteractions.delete(requestId);
+    hideInteractionSection();
 
-  if (pendingInteractions.size > 0) {
-    const [nextId, next] = pendingInteractions.entries().next().value;
-    showInteraction(nextId, next);
+    if (pendingInteractions.size > 0) {
+      const [nextId, next] = pendingInteractions.entries().next().value;
+      showInteraction(nextId, next);
+    }
+  } catch (e) {
+    console.error("[Orbit] Failed to submit interaction decision:", e);
   }
 }
 
@@ -848,7 +937,7 @@ async function handleOnboardingRetry() {
   renderOnboardingSection();
 
   try {
-    await invoke("retry_onboarding_install");
+    await invokeCommand("retry_onboarding_install");
   } catch (e) {
     onboardingRetryPending = false;
     renderOnboardingSection();
@@ -883,7 +972,7 @@ async function expandIsland() {
 
   // Elevator: expand native window FIRST, then CSS animation fills it
   try {
-    await invoke("expand_window");
+    await invokeCommand("expand_window");
   } catch (e) {
     console.error("Failed to expand window:", e);
   }
@@ -938,7 +1027,7 @@ async function finishCollapse() {
 
   // THEN shrink native window (elevator: door closes after you're inside)
   try {
-    await invoke("collapse_window");
+    await invokeCommand("collapse_window");
   } catch (e) {
     console.error("Failed to collapse window:", e);
   }
@@ -1082,7 +1171,7 @@ function renderHistory(entries) {
 
 async function resumeSession(sessionId, cwd) {
   try {
-    await invoke("resume_session", { session_id: sessionId, cwd });
+    await invokeCommand("resume_session", { sessionId, cwd });
     // Close the expanded island after triggering resume
     if (isExpanded) {
       collapseIsland();
