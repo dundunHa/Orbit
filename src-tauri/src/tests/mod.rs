@@ -101,6 +101,7 @@ async fn test_full_session_lifecycle_with_statusline_tokens() {
             tokens_out: session.tokens_out,
             cost_usd: session.cost_usd,
             model: session.model.clone(),
+            tty: session.tty.clone(),
         }
     };
 

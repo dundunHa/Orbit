@@ -28,6 +28,9 @@ pub struct HistoryEntry {
     pub cost_usd: f64,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tty: Option<String>,
 }
 
 fn history_path() -> PathBuf {
@@ -59,6 +62,12 @@ pub fn save_entry(entry: HistoryEntry) {
 pub fn load_entries() -> Vec<HistoryEntry> {
     let _guard = HISTORY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     load_entries_inner(&history_path())
+}
+
+pub fn find_entry(session_id: &str) -> Option<HistoryEntry> {
+    load_entries()
+        .into_iter()
+        .find(|e| e.session_id == session_id)
 }
 
 fn load_entries_inner(path: &PathBuf) -> Vec<HistoryEntry> {

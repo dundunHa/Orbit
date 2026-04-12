@@ -366,7 +366,9 @@ mod tests {
     #[test]
     fn build_resume_shell_command_uses_current_claude_cli() {
         let command = build_resume_shell_command("/tmp/demo dir", "session-123");
-        assert!(command.contains("exec claude --resume 'session-123'"));
+        // claude binary is shell-quoted (absolute path or bare "claude")
+        assert!(command.contains("claude"));
+        assert!(command.contains("--resume 'session-123'"));
         assert!(command.contains("cd '/tmp/demo dir'"));
         assert!(!command.contains("claude-code"));
     }
@@ -384,9 +386,93 @@ mod tests {
                 assert_eq!(args[2], "--command");
                 assert_eq!(args[3], "/bin/zsh");
                 assert_eq!(args[4], "-lc");
-                assert!(args[5].contains("claude --resume 'session-123'"));
+                assert!(args[5].contains("claude"));
+                assert!(args[5].contains("--resume 'session-123'"));
             }
             ResumeLaunchSpec::AppleScript(_) => panic!("expected Alacritty process launch"),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parse_tmux_clients_picks_most_active() {
+        let output = "/dev/ttys001\tmain\t1712000100\n/dev/ttys002\twork\t1712000200\n/dev/ttys003\tdev\t1712000050\n";
+        let result = parse_tmux_clients(output);
+        assert_eq!(result, Some("/dev/ttys002".to_string()));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parse_tmux_clients_single_client() {
+        let output = "/dev/ttys005\tmysession\t1712000300\n";
+        let result = parse_tmux_clients(output);
+        assert_eq!(result, Some("/dev/ttys005".to_string()));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parse_tmux_clients_empty_returns_none() {
+        assert_eq!(parse_tmux_clients(""), None);
+        assert_eq!(parse_tmux_clients("\n"), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parse_tmux_display_valid() {
+        let output = "main\t0\t1\n";
+        assert_eq!(parse_tmux_display(output), Some("main:0.1".to_string()));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parse_tmux_display_malformed() {
+        assert_eq!(parse_tmux_display(""), None);
+        assert_eq!(parse_tmux_display("onlyone"), None);
+        assert_eq!(parse_tmux_display("two\tfields"), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn build_resume_launch_spec_tmux_uses_split_window() {
+        let spec = build_resume_launch_spec(
+            ResumeTerminal::Tmux {
+                binary: "/opt/homebrew/bin/tmux".to_string(),
+                target_pane: "main:0.1".to_string(),
+            },
+            "/tmp/project",
+            "session-abc",
+        );
+
+        match spec {
+            ResumeLaunchSpec::Process { program, args } => {
+                assert_eq!(program, "/opt/homebrew/bin/tmux");
+                assert_eq!(args[0], "split-window");
+                assert_eq!(args[1], "-h");
+                assert_eq!(args[2], "-t");
+                assert_eq!(args[3], "main:0.1");
+                assert_eq!(args[4], "-c");
+                assert_eq!(args[5], "/tmp/project");
+                // The last arg is the shell command
+                assert!(args[6].contains("claude"));
+                assert!(args[6].contains("--resume 'session-abc'"));
+            }
+            ResumeLaunchSpec::AppleScript(_) => panic!("expected tmux process launch"),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn build_resume_launch_spec_terminal_app_uses_applescript() {
+        let spec =
+            build_resume_launch_spec(ResumeTerminal::TerminalApp, "/tmp", "session-xyz");
+
+        match spec {
+            ResumeLaunchSpec::AppleScript(script) => {
+                assert!(script.contains("tell application \"Terminal\""));
+                assert!(script.contains("do script"));
+                assert!(script.contains("session-xyz"));
+            }
+            ResumeLaunchSpec::Process { .. } => panic!("expected AppleScript launch"),
         }
     }
 }
@@ -423,8 +509,12 @@ fn escape_for_applescript(s: &str) -> String {
 const ALACRITTY_BINARY: &str = "/Applications/Alacritty.app/Contents/MacOS/alacritty";
 
 #[cfg(target_os = "macos")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum ResumeTerminal {
+    Tmux {
+        binary: String,
+        target_pane: String,
+    },
     Alacritty,
     TerminalApp,
 }
@@ -434,9 +524,133 @@ enum ResumeTerminal {
 enum ResumeLaunchSpec {
     AppleScript(String),
     Process {
-        program: &'static str,
+        program: String,
         args: Vec<String>,
     },
+}
+
+#[cfg(target_os = "macos")]
+const TMUX_CANDIDATES: &[&str] = &[
+    "/opt/homebrew/bin/tmux",  // Apple Silicon homebrew
+    "/usr/local/bin/tmux",     // Intel homebrew / manual
+    "/opt/local/bin/tmux",     // MacPorts
+];
+
+#[cfg(target_os = "macos")]
+const CLAUDE_CANDIDATES: &[&str] = &[
+    "/opt/homebrew/bin/claude",
+    "/usr/local/bin/claude",
+];
+
+#[cfg(target_os = "macos")]
+fn find_tmux_binary() -> Option<&'static str> {
+    TMUX_CANDIDATES
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())
+        .copied()
+}
+
+#[cfg(target_os = "macos")]
+fn find_claude_binary() -> String {
+    CLAUDE_CANDIDATES
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "claude".to_string())
+}
+
+/// Parse `tmux list-clients` output to find the most recently active client's tty.
+/// Format: `<client_tty>\t<session_name>\t<client_activity>`
+#[cfg(target_os = "macos")]
+fn parse_tmux_clients(output: &str) -> Option<String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 {
+                let activity: u64 = parts[2].trim().parse().ok()?;
+                Some((parts[0].to_string(), activity))
+            } else {
+                None
+            }
+        })
+        .max_by_key(|(_, activity)| *activity)
+        .map(|(tty, _)| tty)
+}
+
+/// Parse `tmux display-message` output to extract session:window.pane target.
+/// Format: `<session_name>\t<window_index>\t<pane_index>`
+#[cfg(target_os = "macos")]
+fn parse_tmux_display(output: &str) -> Option<String> {
+    let line = output.lines().next()?;
+    let parts: Vec<&str> = line.split('\t').collect();
+    if parts.len() >= 3 {
+        Some(format!("{}:{}.{}", parts[0], parts[1], parts[2]))
+    } else {
+        None
+    }
+}
+
+/// Try to match a saved tty to a live tmux pane. Returns the pane target if found.
+#[cfg(target_os = "macos")]
+fn try_match_tty_to_pane(tmux_binary: &str, saved_tty: &str) -> Option<String> {
+    // tmux list-panes -a -F '#{pane_tty}\t#{session_name}\t#{window_index}\t#{pane_index}'
+    let output = std::process::Command::new(tmux_binary)
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{pane_tty}\t#{session_name}\t#{window_index}\t#{pane_index}",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 4 && parts[0] == saved_tty {
+            return Some(format!("{}:{}.{}", parts[1], parts[2], parts[3]));
+        }
+    }
+    None
+}
+
+/// Detect the currently active tmux pane by finding the most recent client.
+#[cfg(target_os = "macos")]
+fn detect_tmux_active_pane(tmux_binary: &str) -> Option<String> {
+    // Step 1: list attached clients, pick most active
+    let output = std::process::Command::new(tmux_binary)
+        .args([
+            "list-clients",
+            "-F",
+            "#{client_tty}\t#{session_name}\t#{client_activity}",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let client_tty = parse_tmux_clients(&stdout)?;
+
+    // Step 2: get the current pane of this client
+    let output = std::process::Command::new(tmux_binary)
+        .args([
+            "display-message",
+            "-p",
+            "-t",
+            &client_tty,
+            "#{session_name}\t#{window_index}\t#{pane_index}",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_tmux_display(&stdout)
 }
 
 #[cfg(target_os = "macos")]
@@ -466,8 +680,9 @@ fn detect_resume_terminal_from_processes(
     None
 }
 
+/// Detect a non-tmux terminal for fallback after tmux failure.
 #[cfg(target_os = "macos")]
-fn detect_resume_terminal() -> ResumeTerminal {
+fn detect_non_tmux_terminal() -> ResumeTerminal {
     let alacritty_installed = std::path::Path::new(ALACRITTY_BINARY).exists();
 
     if let Ok(output) = std::process::Command::new("ps")
@@ -492,9 +707,11 @@ fn detect_resume_terminal() -> ResumeTerminal {
 
 #[cfg(target_os = "macos")]
 fn build_resume_shell_command(cwd: &str, session_id: &str) -> String {
+    let claude = find_claude_binary();
     format!(
-        "cd {} && exec claude --resume {}",
+        "cd {} && exec {} --resume {}",
         shell_single_quote(cwd),
+        shell_single_quote(&claude),
         shell_single_quote(session_id)
     )
 }
@@ -508,8 +725,20 @@ fn build_resume_launch_spec(
     let shell_command = build_resume_shell_command(cwd, session_id);
 
     match terminal {
+        ResumeTerminal::Tmux { binary, target_pane } => ResumeLaunchSpec::Process {
+            program: binary,
+            args: vec![
+                "split-window".to_string(),
+                "-h".to_string(),
+                "-t".to_string(),
+                target_pane,
+                "-c".to_string(),
+                cwd.to_string(),
+                shell_command,
+            ],
+        },
         ResumeTerminal::Alacritty => ResumeLaunchSpec::Process {
-            program: ALACRITTY_BINARY,
+            program: ALACRITTY_BINARY.to_string(),
             args: vec![
                 "--working-directory".to_string(),
                 cwd.to_string(),
@@ -529,8 +758,8 @@ end tell"#,
     }
 }
 
-/// Resume a Claude Code session in a new terminal window
-/// Opens the specified working directory and resumes the session
+/// Resume a Claude Code session in a new terminal window or tmux pane.
+/// Strategy: tty match → active tmux client → Alacritty/Terminal.app
 #[tauri::command]
 pub async fn resume_session(session_id: String, cwd: String) -> Result<(), String> {
     validate_session_id(&session_id)?;
@@ -547,26 +776,38 @@ pub async fn resume_session(session_id: String, cwd: String) -> Result<(), Strin
 
     #[cfg(target_os = "macos")]
     {
-        match build_resume_launch_spec(detect_resume_terminal(), cwd_str, &session_id) {
-            ResumeLaunchSpec::AppleScript(script) => {
-                let output = std::process::Command::new("osascript")
-                    .arg("-e")
-                    .arg(&script)
-                    .output()
-                    .map_err(|e| format!("Failed to execute AppleScript: {}", e))?;
+        // Mixed strategy: try tty match first, then heuristic tmux, then fallback
+        let tmux_binary = find_tmux_binary();
 
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(format!("AppleScript failed: {}", stderr));
+        if let Some(tmux_bin) = tmux_binary {
+            // Step 1: Try to match saved tty from history to a live tmux pane
+            let saved_tty = crate::history::find_entry(&session_id).and_then(|e| e.tty);
+            let tty_target = saved_tty
+                .as_deref()
+                .and_then(|tty| try_match_tty_to_pane(tmux_bin, tty));
+
+            // Step 2: If tty matched, use that pane; otherwise try active client
+            let tmux_target = tty_target.or_else(|| detect_tmux_active_pane(tmux_bin));
+
+            if let Some(target_pane) = tmux_target {
+                let terminal = ResumeTerminal::Tmux {
+                    binary: tmux_bin.to_string(),
+                    target_pane,
+                };
+                let spec = build_resume_launch_spec(terminal, cwd_str, &session_id);
+                match execute_launch_spec(spec) {
+                    Ok(()) => return Ok(()),
+                    Err(_) => {
+                        // tmux failed, fall through to non-tmux terminal
+                    }
                 }
             }
-            ResumeLaunchSpec::Process { program, args } => {
-                std::process::Command::new(program)
-                    .args(args)
-                    .spawn()
-                    .map_err(|e| format!("Failed to launch terminal: {}", e))?;
-            }
         }
+
+        // Step 3: Fallback to Alacritty or Terminal.app
+        let fallback = detect_non_tmux_terminal();
+        let spec = build_resume_launch_spec(fallback, cwd_str, &session_id);
+        execute_launch_spec(spec)?;
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -574,5 +815,31 @@ pub async fn resume_session(session_id: String, cwd: String) -> Result<(), Strin
         return Err("Session resume is currently only supported on macOS".to_string());
     }
 
+    Ok(())
+}
+
+/// Execute a ResumeLaunchSpec, returning Ok on success.
+#[cfg(target_os = "macos")]
+fn execute_launch_spec(spec: ResumeLaunchSpec) -> Result<(), String> {
+    match spec {
+        ResumeLaunchSpec::AppleScript(script) => {
+            let output = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output()
+                .map_err(|e| format!("Failed to execute AppleScript: {}", e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("AppleScript failed: {}", stderr));
+            }
+        }
+        ResumeLaunchSpec::Process { program, args } => {
+            std::process::Command::new(&program)
+                .args(&args)
+                .spawn()
+                .map_err(|e| format!("Failed to launch terminal: {}", e))?;
+        }
+    }
     Ok(())
 }

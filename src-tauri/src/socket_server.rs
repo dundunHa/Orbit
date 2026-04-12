@@ -453,6 +453,7 @@ async fn handle_connection(
                 tokens_out: session.tokens_out,
                 cost_usd: session.cost_usd,
                 model: session.model.clone(),
+                tty: session.tty.clone(),
             })
         } else {
             None
