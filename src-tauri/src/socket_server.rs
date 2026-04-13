@@ -436,28 +436,7 @@ async fn handle_connection(
     // Write history outside the lock to avoid blocking tokio worker
     let history_entry = if is_session_end {
         let sessions_guard = sessions.lock().await;
-        if let Some(session) = sessions_guard.get(&session_id) {
-            let duration = (session.last_event_at - session.started_at)
-                .num_seconds()
-                .max(0);
-            Some(history::HistoryEntry {
-                session_id: session.id.clone(),
-                parent_session_id: session.parent_session_id.clone(),
-                cwd: session.cwd.clone(),
-                started_at: session.started_at,
-                ended_at: session.last_event_at,
-                tool_count: session.tool_count,
-                duration_secs: duration,
-                title: session.title.clone().unwrap_or_default(),
-                tokens_in: session.tokens_in,
-                tokens_out: session.tokens_out,
-                cost_usd: session.cost_usd,
-                model: session.model.clone(),
-                tty: session.tty.clone(),
-            })
-        } else {
-            None
-        }
+        sessions_guard.get(&session_id).map(|s| s.to_history_entry())
     } else {
         None
     };

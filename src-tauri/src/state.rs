@@ -39,6 +39,58 @@ pub enum SessionStatus {
     Ended,
 }
 
+/// Source of a session title, ordered by priority (higher value = higher priority).
+/// Used to prevent lower-quality titles from overriding better ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum TitleSource {
+    UserPrompt = 1,
+    HistoryJsonl = 2,
+    SessionsMetadata = 3,
+}
+
+/// Known bare slash commands that carry no useful title information.
+const BARE_SLASH_COMMANDS: &[&str] = &[
+    "/clear",
+    "/help",
+    "/model",
+    "/compact",
+    "/cost",
+    "/status",
+    "/permissions",
+    "/review",
+    "/bug",
+    "/init",
+    "/doctor",
+    "/logout",
+    "/login",
+];
+
+fn is_bare_slash_command(s: &str) -> bool {
+    let trimmed = s.trim();
+    if !trimmed.starts_with('/') {
+        return false;
+    }
+    let command_part = trimmed.split_whitespace().next().unwrap_or("");
+    BARE_SLASH_COMMANDS.contains(&command_part)
+}
+
+/// Normalize a raw title string into a clean Option<String>.
+/// - Trims whitespace
+/// - Returns None for empty/whitespace-only strings
+/// - Returns None for bare slash commands (/clear, /help, etc.)
+/// - Truncates to 40 chars at Unicode char boundaries (no panic on CJK/emoji)
+fn normalize_title(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if is_bare_slash_command(trimmed) {
+        return None;
+    }
+    let truncated: String = trimmed.chars().take(40).collect();
+    Some(truncated)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
@@ -57,6 +109,9 @@ pub struct Session {
     pub tty: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title_source: Option<TitleSource>,
     #[serde(default)]
     pub tokens_in: u64,
     #[serde(default)]
@@ -289,7 +344,9 @@ impl AppState {
 impl Session {
     pub fn new(id: String, cwd: String, pid: Option<u32>, tty: Option<String>) -> Self {
         let now = Utc::now();
-        let title = Self::fetch_title_from_claude_sessions(&id);
+        let (title, title_source) = Self::fetch_title_from_claude_sessions(&id)
+            .map(|(t, s)| (Some(t), Some(s)))
+            .unwrap_or((None, None));
         Self {
             id,
             cwd,
@@ -302,6 +359,7 @@ impl Session {
             pid,
             tty,
             title,
+            title_source,
             tokens_in: 0,
             tokens_out: 0,
             cost_usd: 0.0,
@@ -309,7 +367,17 @@ impl Session {
         }
     }
 
-    fn fetch_title_from_claude_sessions(session_id: &str) -> Option<String> {
+    fn set_title_if_higher_priority(&mut self, title: String, source: TitleSource) {
+        match self.title_source {
+            Some(current) if current >= source => {}
+            _ => {
+                self.title = Some(title);
+                self.title_source = Some(source);
+            }
+        }
+    }
+
+    fn fetch_title_from_claude_sessions(session_id: &str) -> Option<(String, TitleSource)> {
         let home = dirs_next::home_dir()?;
 
         let sessions_dir = home.join(".claude").join("sessions");
@@ -318,9 +386,9 @@ impl Session {
                 if let Ok(content) = std::fs::read_to_string(entry.path())
                     && let Ok(session_data) = serde_json::from_str::<ClaudeSessionFile>(&content)
                     && session_data.session_id == session_id
-                    && !session_data.name.is_empty()
+                    && let Some(title) = normalize_title(&session_data.name)
                 {
-                    return Some(session_data.name);
+                    return Some((title, TitleSource::SessionsMetadata));
                 }
             }
         }
@@ -330,12 +398,9 @@ impl Session {
             for line in content.lines() {
                 if let Ok(entry) = serde_json::from_str::<HistoryJsonlEntry>(line)
                     && entry.session_id == session_id
+                    && let Some(title) = normalize_title(&entry.display)
                 {
-                    let display = entry.display.trim();
-                    if !display.is_empty() && !display.starts_with('/') {
-                        let title = display.chars().take(40).collect::<String>();
-                        return Some(title);
-                    }
+                    return Some((title, TitleSource::HistoryJsonl));
                 }
             }
         }
@@ -344,9 +409,9 @@ impl Session {
     }
 
     pub fn refresh_title_from_claude(&mut self) -> Option<String> {
-        Self::fetch_title_from_claude_sessions(&self.id).inspect(|title| {
-            self.title = Some(title.clone());
-        })
+        Self::fetch_title_from_claude_sessions(&self.id).inspect(|(title, source)| {
+            self.set_title_if_higher_priority(title.clone(), *source);
+        }).map(|(title, _)| title)
     }
 
     /// Apply cumulative token data from statusline
@@ -366,15 +431,10 @@ impl Session {
         match payload.hook_event_name.as_str() {
             "UserPromptSubmit" => {
                 self.status = SessionStatus::Processing;
-                if self.title.is_none()
-                    && let Some(msg) = &payload.message
+                if let Some(msg) = &payload.message
+                    && let Some(normalized) = normalize_title(msg)
                 {
-                    let title = if msg.len() > 40 {
-                        format!("{}...", &msg[..37])
-                    } else {
-                        msg.clone()
-                    };
-                    self.title = Some(title);
+                    self.set_title_if_higher_priority(normalized, TitleSource::UserPrompt);
                 }
             }
             "PreToolUse" => {
@@ -452,6 +512,27 @@ impl Session {
                 self.status = SessionStatus::Compacting;
             }
             _ => {}
+        }
+    }
+
+    pub fn to_history_entry(&self) -> crate::history::HistoryEntry {
+        let duration = (self.last_event_at - self.started_at)
+            .num_seconds()
+            .max(0);
+        crate::history::HistoryEntry {
+            session_id: self.id.clone(),
+            parent_session_id: self.parent_session_id.clone(),
+            cwd: self.cwd.clone(),
+            started_at: self.started_at,
+            ended_at: self.last_event_at,
+            tool_count: self.tool_count,
+            duration_secs: duration,
+            title: self.title.clone(),
+            tokens_in: self.tokens_in,
+            tokens_out: self.tokens_out,
+            cost_usd: self.cost_usd,
+            model: self.model.clone(),
+            tty: self.tty.clone(),
         }
     }
 }
@@ -687,6 +768,7 @@ mod tests {
         let entries: Vec<HistoryEntry> = serde_json::from_str(old_json).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].session_id, "test-123");
+        assert_eq!(entries[0].title, Some("Test Session".to_string()));
         // Token/cost fields should default to 0/None
         assert_eq!(entries[0].tokens_in, 0);
         assert_eq!(entries[0].tokens_out, 0);
@@ -772,5 +854,185 @@ mod tests {
         assert_eq!(stats.tokens_out, 0);
         assert!(stats.session_baselines.is_empty());
         assert_eq!(stats.out_rate, 0.0);
+    }
+
+    // --- normalize_title() tests ---
+
+    #[test]
+    fn test_normalize_title_normal_text() {
+        assert_eq!(normalize_title("hello world"), Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn test_normalize_title_empty_string() {
+        assert_eq!(normalize_title(""), None);
+    }
+
+    #[test]
+    fn test_normalize_title_whitespace_only() {
+        assert_eq!(normalize_title("   "), None);
+    }
+
+    #[test]
+    fn test_normalize_title_cjk_truncation() {
+        let long_cjk = "修复中文bug测试一下多字节字符截断是否正确处理不会panic产生问题扩展更多的中文字符达到四十字以上";
+        assert!(long_cjk.chars().count() > 40, "test string must exceed 40 chars");
+        let result = normalize_title(long_cjk).unwrap();
+        assert_eq!(result.chars().count(), 40);
+        assert!(result.starts_with("修复中文bug测试"));
+    }
+
+    #[test]
+    fn test_normalize_title_emoji_no_panic() {
+        let result = normalize_title("hello 🌍 world 🎉 test");
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("hello"));
+    }
+
+    #[test]
+    fn test_normalize_title_bare_slash_command_filtered() {
+        assert_eq!(normalize_title("/clear"), None);
+        assert_eq!(normalize_title("/help"), None);
+        assert_eq!(normalize_title("/model"), None);
+        assert_eq!(normalize_title("/compact"), None);
+    }
+
+    #[test]
+    fn test_normalize_title_slash_with_content_kept() {
+        assert_eq!(normalize_title("/openspec:apply foo"), Some("/openspec:apply foo".to_string()));
+        assert_eq!(normalize_title("/ship this feature"), Some("/ship this feature".to_string()));
+    }
+
+    #[test]
+    fn test_normalize_title_trims_whitespace() {
+        assert_eq!(normalize_title("  hello world  "), Some("hello world".to_string()));
+    }
+
+    // --- TitleSource priority tests ---
+
+    #[test]
+    fn test_title_priority_higher_overrides_lower() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        // Simulate UserPrompt setting a low-priority title
+        session.set_title_if_higher_priority("low priority title".to_string(), TitleSource::UserPrompt);
+        assert_eq!(session.title, Some("low priority title".to_string()));
+        assert_eq!(session.title_source, Some(TitleSource::UserPrompt));
+
+        // Higher priority should override
+        session.set_title_if_higher_priority("high priority title".to_string(), TitleSource::SessionsMetadata);
+        assert_eq!(session.title, Some("high priority title".to_string()));
+        assert_eq!(session.title_source, Some(TitleSource::SessionsMetadata));
+    }
+
+    #[test]
+    fn test_title_priority_lower_does_not_override_higher() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        session.set_title_if_higher_priority("good title".to_string(), TitleSource::SessionsMetadata);
+        session.set_title_if_higher_priority("bad title".to_string(), TitleSource::UserPrompt);
+
+        assert_eq!(session.title, Some("good title".to_string()));
+        assert_eq!(session.title_source, Some(TitleSource::SessionsMetadata));
+    }
+
+    #[test]
+    fn test_title_priority_same_level_does_not_override() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        session.set_title_if_higher_priority("first prompt".to_string(), TitleSource::UserPrompt);
+        session.set_title_if_higher_priority("second prompt".to_string(), TitleSource::UserPrompt);
+
+        assert_eq!(session.title, Some("first prompt".to_string()));
+    }
+
+    // --- HistoryEntry backward compat with Option<String> title ---
+
+    #[test]
+    fn test_history_entry_title_null_deserializes_as_none() {
+        use crate::history::HistoryEntry;
+
+        let json = r#"[{
+            "session_id": "test-null",
+            "cwd": "/tmp",
+            "started_at": "2024-01-01T00:00:00Z",
+            "ended_at": "2024-01-01T00:01:00Z",
+            "tool_count": 1,
+            "duration_secs": 60,
+            "title": null
+        }]"#;
+
+        let entries: Vec<HistoryEntry> = serde_json::from_str(json).unwrap();
+        assert_eq!(entries[0].title, None);
+    }
+
+    #[test]
+    fn test_history_entry_title_string_deserializes_as_some() {
+        use crate::history::HistoryEntry;
+
+        let json = r#"[{
+            "session_id": "test-str",
+            "cwd": "/tmp",
+            "started_at": "2024-01-01T00:00:00Z",
+            "ended_at": "2024-01-01T00:01:00Z",
+            "tool_count": 1,
+            "duration_secs": 60,
+            "title": "My Session"
+        }]"#;
+
+        let entries: Vec<HistoryEntry> = serde_json::from_str(json).unwrap();
+        assert_eq!(entries[0].title, Some("My Session".to_string()));
+    }
+
+    #[test]
+    fn test_history_entry_title_empty_string_deserializes_as_none() {
+        use crate::history::HistoryEntry;
+
+        let json = r#"[{
+            "session_id": "test-empty",
+            "cwd": "/tmp",
+            "started_at": "2024-01-01T00:00:00Z",
+            "ended_at": "2024-01-01T00:01:00Z",
+            "tool_count": 1,
+            "duration_secs": 60,
+            "title": ""
+        }]"#;
+
+        let entries: Vec<HistoryEntry> = serde_json::from_str(json).unwrap();
+        assert_eq!(entries[0].title, None);
+    }
+
+    // --- Regression: UTF-8 truncation must not panic ---
+
+    #[test]
+    fn test_user_prompt_cjk_no_panic() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        let mut payload = make_hook_payload("UserPromptSubmit");
+        payload.message = Some("这是一个非常长的中文消息用来测试多字节字符截断是否会导致运行时panic崩溃问题".to_string());
+
+        session.apply_event(&payload);
+
+        assert!(session.title.is_some());
+        assert!(session.title.as_ref().unwrap().chars().count() <= 40);
+    }
+
+    // --- to_history_entry() ---
+
+    #[test]
+    fn test_to_history_entry_preserves_title() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        session.title = Some("test title".to_string());
+        session.title_source = Some(TitleSource::HistoryJsonl);
+
+        let entry = session.to_history_entry();
+        assert_eq!(entry.title, Some("test title".to_string()));
+    }
+
+    #[test]
+    fn test_to_history_entry_none_title() {
+        let session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        let entry = session.to_history_entry();
+        assert_eq!(entry.title, None);
     }
 }

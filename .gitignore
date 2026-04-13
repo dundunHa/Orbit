@@ -14,3 +14,7 @@ src-tauri/gen/
 .gstack
 TODOS.md
 DESIGN.md
+
+# Session context and docs
+.context/
+docs/

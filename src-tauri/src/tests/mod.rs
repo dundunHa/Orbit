@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::history::HistoryEntry;
 use crate::state::{HookPayload, Session, SessionMap, StatuslineUpdate};
 
 fn create_test_session_map() -> SessionMap {
@@ -78,7 +77,7 @@ async fn test_full_session_lifecycle_with_statusline_tokens() {
         guard.insert(session_id.to_string(), session);
     }
 
-    let history_entry = {
+        let history_entry = {
         let guard = sessions.lock().await;
         let session = guard.get(session_id).unwrap();
 
@@ -88,21 +87,7 @@ async fn test_full_session_lifecycle_with_statusline_tokens() {
         assert_eq!(session.cost_usd, 0.03);
         assert_eq!(session.model.as_deref(), Some("claude-sonnet-4-6"));
 
-        HistoryEntry {
-            session_id: session.id.clone(),
-            parent_session_id: session.parent_session_id.clone(),
-            cwd: session.cwd.clone(),
-            started_at: session.started_at,
-            ended_at: session.last_event_at,
-            tool_count: session.tool_count,
-            duration_secs: 60,
-            title: session.title.clone().unwrap_or_default(),
-            tokens_in: session.tokens_in,
-            tokens_out: session.tokens_out,
-            cost_usd: session.cost_usd,
-            model: session.model.clone(),
-            tty: session.tty.clone(),
-        }
+        session.to_history_entry()
     };
 
     assert_eq!(history_entry.tokens_in, 250);
@@ -162,9 +147,10 @@ fn test_history_backward_compatibility() {
         "title": "Test Session"
     }]"#;
 
-    let entries: Vec<HistoryEntry> = serde_json::from_str(old_json).unwrap();
+    let entries: Vec<crate::history::HistoryEntry> = serde_json::from_str(old_json).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].session_id, "test-123");
+    assert_eq!(entries[0].title, Some("Test Session".to_string()));
     assert_eq!(entries[0].tokens_in, 0);
     assert_eq!(entries[0].tokens_out, 0);
     assert_eq!(entries[0].cost_usd, 0.0);

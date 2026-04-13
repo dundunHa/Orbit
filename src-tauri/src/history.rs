@@ -1,7 +1,16 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+
+/// Deserialize `""` as `None` for backward compatibility with old `title: String` format.
+fn deserialize_title_opt<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    Ok(opt.filter(|s| !s.is_empty()))
+}
 
 const MAX_HISTORY: usize = 50;
 
@@ -19,7 +28,9 @@ pub struct HistoryEntry {
     pub ended_at: DateTime<Utc>,
     pub tool_count: u32,
     pub duration_secs: i64,
-    pub title: String,
+    #[serde(default, deserialize_with = "deserialize_title_opt")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     #[serde(default)]
     pub tokens_in: u64,
     #[serde(default)]
