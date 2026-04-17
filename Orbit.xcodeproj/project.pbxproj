@@ -6,13 +6,91 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		060798CFB519CE7BE30A9DBE /* TokenFormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6D727E9B81A247CA83AE031 /* TokenFormattingTests.swift */; };
+		06450090D99F13726B4F3FB3 /* HookDebugLoggerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6606B359978D2F320BD6FD7 /* HookDebugLoggerTests.swift */; };
+		108185E32D1BA506B7059276 /* OnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 377B4D83109A2A6C3590B119 /* OnboardingTests.swift */; };
+		29F396081632E3EB6AF3B8FA /* TodayTokenStatsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C301D57F3D149B46AAFF326B /* TodayTokenStatsTests.swift */; };
+		3BF0D7B2F96E71547CCE663D /* AnomalyDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383C437CE69B59C2007B227A /* AnomalyDetectorTests.swift */; };
+		6720058A6FCC02A0484406D4 /* InstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3644C6DCA4E89A420C358572 /* InstallerTests.swift */; };
+		69A0598EFF65B5AC757F66EC /* OrbitCoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CA15ADA3AF6ADFE8B65F5CD /* OrbitCoreTests.swift */; };
+		6A9D130287D2D1E9F67B1CE4 /* CLITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67D33D009819489D3AE7FDE6 /* CLITests.swift */; };
+		6D9208B43E6ED1C14C143D12 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F449509965B7176BB8D4224C /* Foundation.framework */; };
+		7E4811C092E2DEFAA4C1A2DA /* SessionResumerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C41898998089DE3D070463E0 /* SessionResumerTests.swift */; };
+		86361ACD50C643D1014A28B3 /* HookRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CC64733256AD1DB1E395EB1 /* HookRouterTests.swift */; };
+		A8DF413E40AC1F467FBA113D /* ModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7979381AA5CC6D1EDFFB6CDF /* ModelTests.swift */; };
+		DE22F3F4BD35FDED370A30F5 /* InteractionResponseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25C3B973F6C3669E510D5584 /* InteractionResponseTests.swift */; };
+		DF577052286413E0D36DFF14 /* SocketServerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F974B792E1B81AD0A1F586B7 /* SocketServerTests.swift */; };
+		E202D7A2C6E31B4BB96EE95A /* NotchGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C6AF9E54DD36E20A9C20973 /* NotchGeometryTests.swift */; };
+		F1E4145C13B8D073971C8B7B /* HistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CA40438C416A7143D32DA1F /* HistoryTests.swift */; };
+		AA0002000000000000000001 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0001000000000000000001 /* main.swift */; };
+		AA0002000000000000000002 /* SocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0001000000000000000002 /* SocketClient.swift */; };
+		AA0002000000000000000003 /* Installer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0001000000000000000003 /* Installer.swift */; };
+		AA0002000000000000000004 /* AnyCodable.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0001000000000000000004 /* AnyCodable.swift */; };
+		AA0002000000000000000005 /* orbit-helper in CopyFiles */ = {isa = PBXBuildFile; fileRef = AA0001000000000000000005 /* orbit-helper */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		5E4BA5710D089FF21D4E5C57 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D57104B62F8CEEDF00DF86E7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D57104BD2F8CEEDF00DF86E7;
+			remoteInfo = Orbit;
+		};
+		AA0008000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D57104B62F8CEEDF00DF86E7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0004000000000000000001;
+			remoteInfo = "orbit-helper";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA0005000000000000000003 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				AA0002000000000000000005 /* orbit-helper in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		0CA40438C416A7143D32DA1F /* HistoryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HistoryTests.swift; path = OrbitTests/HistoryTests.swift; sourceTree = "<group>"; };
+		25C3B973F6C3669E510D5584 /* InteractionResponseTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = InteractionResponseTests.swift; path = OrbitTests/InteractionResponseTests.swift; sourceTree = "<group>"; };
+		2CA15ADA3AF6ADFE8B65F5CD /* OrbitCoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OrbitCoreTests.swift; path = OrbitTests/OrbitCoreTests.swift; sourceTree = "<group>"; };
+		3644C6DCA4E89A420C358572 /* InstallerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = InstallerTests.swift; path = OrbitTests/InstallerTests.swift; sourceTree = "<group>"; };
+		377B4D83109A2A6C3590B119 /* OnboardingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingTests.swift; path = OrbitTests/OnboardingTests.swift; sourceTree = "<group>"; };
+		383C437CE69B59C2007B227A /* AnomalyDetectorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AnomalyDetectorTests.swift; path = OrbitTests/AnomalyDetectorTests.swift; sourceTree = "<group>"; };
+		67D33D009819489D3AE7FDE6 /* CLITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CLITests.swift; path = OrbitTests/CLITests.swift; sourceTree = "<group>"; };
+		6C6AF9E54DD36E20A9C20973 /* NotchGeometryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = NotchGeometryTests.swift; path = OrbitTests/NotchGeometryTests.swift; sourceTree = "<group>"; };
+		71DFA2B80F68B97FF5C15F1C /* OrbitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OrbitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7979381AA5CC6D1EDFFB6CDF /* ModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ModelTests.swift; path = OrbitTests/ModelTests.swift; sourceTree = "<group>"; };
+		7CC64733256AD1DB1E395EB1 /* HookRouterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HookRouterTests.swift; path = OrbitTests/HookRouterTests.swift; sourceTree = "<group>"; };
+		C301D57F3D149B46AAFF326B /* TodayTokenStatsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TodayTokenStatsTests.swift; path = OrbitTests/TodayTokenStatsTests.swift; sourceTree = "<group>"; };
+		C41898998089DE3D070463E0 /* SessionResumerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionResumerTests.swift; path = OrbitTests/SessionResumerTests.swift; sourceTree = "<group>"; };
+		C6606B359978D2F320BD6FD7 /* HookDebugLoggerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HookDebugLoggerTests.swift; path = OrbitTests/HookDebugLoggerTests.swift; sourceTree = "<group>"; };
+		C6D727E9B81A247CA83AE031 /* TokenFormattingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TokenFormattingTests.swift; path = OrbitTests/TokenFormattingTests.swift; sourceTree = "<group>"; };
 		D57104BE2F8CEEDF00DF86E7 /* Orbit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Orbit.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F449509965B7176BB8D4224C /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		F974B792E1B81AD0A1F586B7 /* SocketServerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SocketServerTests.swift; path = OrbitTests/SocketServerTests.swift; sourceTree = "<group>"; };
+		AA0001000000000000000001 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = main.swift; path = OrbitCLI/main.swift; sourceTree = "<group>"; };
+		AA0001000000000000000002 /* SocketClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SocketClient.swift; path = OrbitCLI/SocketClient.swift; sourceTree = "<group>"; };
+		AA0001000000000000000003 /* Installer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Installer.swift; path = Orbit/OrbitCore/Installer.swift; sourceTree = "<group>"; };
+		AA0001000000000000000004 /* AnyCodable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AnyCodable.swift; path = Orbit/OrbitCore/Models/AnyCodable.swift; sourceTree = "<group>"; };
+		AA0001000000000000000005 /* orbit-helper */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "orbit-helper"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		D57104C02F8CEEDF00DF86E7 /* Orbit */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Orbit;
 			sourceTree = "<group>";
 		};
@@ -26,14 +104,79 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E02F5D83027DE86607DEAB94 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6D9208B43E6ED1C14C143D12 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0005000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		AA0003000000000000000001 /* OrbitCLI */ = {
+			isa = PBXGroup;
+			children = (
+				AA0001000000000000000001 /* main.swift */,
+				AA0001000000000000000002 /* SocketClient.swift */,
+			);
+			name = OrbitCLI;
+			sourceTree = "<group>";
+		};
+		11ED06DB5C55907E667436B4 /* OrbitTests */ = {
+			isa = PBXGroup;
+			children = (
+				383C437CE69B59C2007B227A /* AnomalyDetectorTests.swift */,
+				67D33D009819489D3AE7FDE6 /* CLITests.swift */,
+				0CA40438C416A7143D32DA1F /* HistoryTests.swift */,
+				C6606B359978D2F320BD6FD7 /* HookDebugLoggerTests.swift */,
+				7CC64733256AD1DB1E395EB1 /* HookRouterTests.swift */,
+				3644C6DCA4E89A420C358572 /* InstallerTests.swift */,
+				25C3B973F6C3669E510D5584 /* InteractionResponseTests.swift */,
+				7979381AA5CC6D1EDFFB6CDF /* ModelTests.swift */,
+				6C6AF9E54DD36E20A9C20973 /* NotchGeometryTests.swift */,
+				377B4D83109A2A6C3590B119 /* OnboardingTests.swift */,
+				2CA15ADA3AF6ADFE8B65F5CD /* OrbitCoreTests.swift */,
+				C41898998089DE3D070463E0 /* SessionResumerTests.swift */,
+				F974B792E1B81AD0A1F586B7 /* SocketServerTests.swift */,
+				C301D57F3D149B46AAFF326B /* TodayTokenStatsTests.swift */,
+				C6D727E9B81A247CA83AE031 /* TokenFormattingTests.swift */,
+			);
+			name = OrbitTests;
+			sourceTree = "<group>";
+		};
+		27A70083EC779084A42051CB /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				780DCA621BB70A9A918BC1F0 /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		780DCA621BB70A9A918BC1F0 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				F449509965B7176BB8D4224C /* Foundation.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
 		D57104B52F8CEEDF00DF86E7 = {
 			isa = PBXGroup;
 			children = (
 				D57104C02F8CEEDF00DF86E7 /* Orbit */,
+				AA0003000000000000000001 /* OrbitCLI */,
 				D57104BF2F8CEEDF00DF86E7 /* Products */,
+				27A70083EC779084A42051CB /* Frameworks */,
+				11ED06DB5C55907E667436B4 /* OrbitTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -41,6 +184,8 @@
 			isa = PBXGroup;
 			children = (
 				D57104BE2F8CEEDF00DF86E7 /* Orbit.app */,
+				71DFA2B80F68B97FF5C15F1C /* OrbitTests.xctest */,
+				AA0001000000000000000005 /* orbit-helper */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,6 +193,40 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		04B61BDC4867BD43B215D701 /* OrbitTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4FBCF1C0C52EC74B1E97E493 /* Build configuration list for PBXNativeTarget "OrbitTests" */;
+			buildPhases = (
+				CD4E76DA71182832C89CDF62 /* Sources */,
+				E02F5D83027DE86607DEAB94 /* Frameworks */,
+				C3FA607748CF44231F7D3D70 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C2370063A6DCA448D3736B3A /* PBXTargetDependency */,
+			);
+			name = OrbitTests;
+			productName = OrbitTests;
+			productReference = 71DFA2B80F68B97FF5C15F1C /* OrbitTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		AA0004000000000000000001 /* orbit-helper */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0007000000000000000001 /* Build configuration list for PBXNativeTarget "orbit-helper" */;
+			buildPhases = (
+				AA0005000000000000000001 /* Sources */,
+				AA0005000000000000000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "orbit-helper";
+			productName = "orbit-helper";
+			productReference = AA0001000000000000000005 /* orbit-helper */;
+			productType = "com.apple.product-type.tool";
+		};
 		D57104BD2F8CEEDF00DF86E7 /* Orbit */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = D57104CB2F8CEEDF00DF86E7 /* Build configuration list for PBXNativeTarget "Orbit" */;
@@ -55,17 +234,17 @@
 				D57104BA2F8CEEDF00DF86E7 /* Sources */,
 				D57104BB2F8CEEDF00DF86E7 /* Frameworks */,
 				D57104BC2F8CEEDF00DF86E7 /* Resources */,
+				AA0005000000000000000003 /* CopyFiles */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA0008000000000000000002 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D57104C02F8CEEDF00DF86E7 /* Orbit */,
 			);
 			name = Orbit;
-			packageProductDependencies = (
-			);
 			productName = Orbit;
 			productReference = D57104BE2F8CEEDF00DF86E7 /* Orbit.app */;
 			productType = "com.apple.product-type.application";
@@ -81,6 +260,9 @@
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					D57104BD2F8CEEDF00DF86E7 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					AA0004000000000000000001 = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -100,11 +282,20 @@
 			projectRoot = "";
 			targets = (
 				D57104BD2F8CEEDF00DF86E7 /* Orbit */,
+				AA0004000000000000000001 /* orbit-helper */,
+				04B61BDC4867BD43B215D701 /* OrbitTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		C3FA607748CF44231F7D3D70 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D57104BC2F8CEEDF00DF86E7 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -115,6 +306,39 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		AA0005000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0002000000000000000001 /* main.swift in Sources */,
+				AA0002000000000000000002 /* SocketClient.swift in Sources */,
+				AA0002000000000000000003 /* Installer.swift in Sources */,
+				AA0002000000000000000004 /* AnyCodable.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CD4E76DA71182832C89CDF62 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3BF0D7B2F96E71547CCE663D /* AnomalyDetectorTests.swift in Sources */,
+				6A9D130287D2D1E9F67B1CE4 /* CLITests.swift in Sources */,
+				F1E4145C13B8D073971C8B7B /* HistoryTests.swift in Sources */,
+				06450090D99F13726B4F3FB3 /* HookDebugLoggerTests.swift in Sources */,
+				86361ACD50C643D1014A28B3 /* HookRouterTests.swift in Sources */,
+				6720058A6FCC02A0484406D4 /* InstallerTests.swift in Sources */,
+				DE22F3F4BD35FDED370A30F5 /* InteractionResponseTests.swift in Sources */,
+				A8DF413E40AC1F467FBA113D /* ModelTests.swift in Sources */,
+				E202D7A2C6E31B4BB96EE95A /* NotchGeometryTests.swift in Sources */,
+				108185E32D1BA506B7059276 /* OnboardingTests.swift in Sources */,
+				69A0598EFF65B5AC757F66EC /* OrbitCoreTests.swift in Sources */,
+				7E4811C092E2DEFAA4C1A2DA /* SessionResumerTests.swift in Sources */,
+				DF577052286413E0D36DFF14 /* SocketServerTests.swift in Sources */,
+				29F396081632E3EB6AF3B8FA /* TodayTokenStatsTests.swift in Sources */,
+				060798CFB519CE7BE30A9DBE /* TokenFormattingTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D57104BA2F8CEEDF00DF86E7 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -124,7 +348,72 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		AA0008000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = "orbit-helper";
+			target = AA0004000000000000000001 /* orbit-helper */;
+			targetProxy = AA0008000000000000000001 /* PBXContainerItemProxy */;
+		};
+		C2370063A6DCA448D3736B3A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Orbit;
+			target = D57104BD2F8CEEDF00DF86E7 /* Orbit */;
+			targetProxy = 5E4BA5710D089FF21D4E5C57 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		AA0006000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8GGKKYRFN7;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				PRODUCT_NAME = "orbit-helper";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA0006000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8GGKKYRFN7;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				PRODUCT_NAME = "orbit-helper";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A61EA0B471274F03E3084E98 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dundunha.OrbitTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Orbit.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Orbit";
+			};
+			name = Debug;
+		};
+		D4C8C3AD1BA051CD85BCD4E3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.dundunha.OrbitTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Orbit.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Orbit";
+			};
+			name = Release;
+		};
 		D57104C92F8CEEDF00DF86E7 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -254,12 +543,14 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8GGKKYRFN7;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHighResolutionCapable = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSSupportsAutomaticGraphicsSwitching = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -286,12 +577,14 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 8GGKKYRFN7;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHighResolutionCapable = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSSupportsAutomaticGraphicsSwitching = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -312,6 +605,24 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		AA0007000000000000000001 /* Build configuration list for PBXNativeTarget "orbit-helper" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0006000000000000000001 /* Debug */,
+				AA0006000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4FBCF1C0C52EC74B1E97E493 /* Build configuration list for PBXNativeTarget "OrbitTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D4C8C3AD1BA051CD85BCD4E3 /* Release */,
+				A61EA0B471274F03E3084E98 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		D57104B92F8CEEDF00DF86E7 /* Build configuration list for PBXProject "Orbit" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

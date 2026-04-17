@@ -1,0 +1,30 @@
+{
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/OverlayRuntimeSnapshot.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayRuntimeSnapshot.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayRuntimeSnapshot.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayRuntimeSnapshot.dia",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayRuntimeSnapshot.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayRuntimeSnapshot.swiftdeps"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/OverlayShellView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayShellView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayShellView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayShellView.dia",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayShellView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayShellView.swiftdeps"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/OverlayStateMachine.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayStateMachine.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayStateMachine.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayStateMachine.dia",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayStateMachine.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OverlayStateMachine.swiftdeps"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/ParityGeometry.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ParityGeometry.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ParityGeometry.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ParityGeometry.dia",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ParityGeometry.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ParityGeometry.swiftdeps"
+  }
+}

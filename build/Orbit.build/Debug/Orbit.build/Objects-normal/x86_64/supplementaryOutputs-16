@@ -1,0 +1,30 @@
+{
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/ExpandedView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ExpandedView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ExpandedView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ExpandedView.dia",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ExpandedView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/ExpandedView.swiftdeps"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/HistoryRowView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/HistoryRowView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/HistoryRowView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/HistoryRowView.dia",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/HistoryRowView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/HistoryRowView.swiftdeps"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/OnboardingView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OnboardingView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OnboardingView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OnboardingView.dia",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OnboardingView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/OnboardingView.swiftdeps"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/PermissionView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/PermissionView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/PermissionView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/PermissionView.dia",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/PermissionView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/x86_64/PermissionView.swiftdeps"
+  }
+}

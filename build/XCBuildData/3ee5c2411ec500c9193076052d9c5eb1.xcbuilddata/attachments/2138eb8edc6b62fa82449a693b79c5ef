@@ -1,0 +1,519 @@
+{
+  "" : {
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Orbit-primary.dia",
+    "emit-module-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Orbit-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Orbit-primary-emit-module.dia",
+    "pch" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Orbit-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Orbit-primary.swiftdeps"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/AppDelegate.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppDelegate.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppDelegate.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppDelegate.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppDelegate.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppDelegate.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppDelegate.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppDelegate.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppDelegate~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/AppViewModel.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppViewModel.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppViewModel.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppViewModel.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppViewModel.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppViewModel.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppViewModel.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppViewModel.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AppViewModel~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/ContentView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ContentView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ContentView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ContentView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/FloatingPanel.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/FloatingPanel.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/FloatingPanel.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/FloatingPanel.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/FloatingPanel.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/FloatingPanel.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/FloatingPanel.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/FloatingPanel.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/FloatingPanel~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Localization/Strings.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Strings.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Strings.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Strings.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Strings.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Strings.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Strings.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Strings.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Strings~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitApp.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitApp.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitApp.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitApp.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitApp.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitApp.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitApp.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitApp.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitApp~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/AnomalyDetector.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnomalyDetector.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnomalyDetector.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnomalyDetector.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnomalyDetector.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnomalyDetector.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnomalyDetector.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnomalyDetector.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnomalyDetector~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/History.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/History.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/History.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/History.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/History.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/History.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/History.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/History.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/History~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/HookDebugLogger.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookDebugLogger.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookDebugLogger.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookDebugLogger.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookDebugLogger.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookDebugLogger.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookDebugLogger.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookDebugLogger.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookDebugLogger~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/HookRouter.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookRouter.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookRouter.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookRouter.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookRouter.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookRouter.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookRouter.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookRouter.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookRouter~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Installer.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Installer.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Installer.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Installer.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Installer.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Installer.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Installer.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Installer.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Installer~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/InteractionResponse.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/InteractionResponse.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/InteractionResponse.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/InteractionResponse.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/InteractionResponse.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/InteractionResponse.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/InteractionResponse.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/InteractionResponse.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/InteractionResponse~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Models/AnyCodable.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnyCodable.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnyCodable.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnyCodable.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnyCodable.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnyCodable.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnyCodable.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnyCodable.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/AnyCodable~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Models/DateCoding.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DateCoding.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DateCoding.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DateCoding.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DateCoding.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DateCoding.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DateCoding.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DateCoding.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DateCoding~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Models/HookPayload.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookPayload.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookPayload.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookPayload.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookPayload.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookPayload.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookPayload.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookPayload.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HookPayload~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Models/PendingInteraction.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PendingInteraction.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PendingInteraction.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PendingInteraction.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PendingInteraction.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PendingInteraction.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PendingInteraction.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PendingInteraction.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PendingInteraction~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Models/PermissionDecision.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionDecision.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionDecision.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionDecision.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionDecision.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionDecision.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionDecision.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionDecision.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionDecision~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Models/Session.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Session.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Session.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Session.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Session.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Session.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Session.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Session.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Session~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Models/SessionStatus.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStatus.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStatus.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStatus.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStatus.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStatus.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStatus.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStatus.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStatus~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Models/StatuslineUpdate.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatuslineUpdate.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatuslineUpdate.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatuslineUpdate.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatuslineUpdate.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatuslineUpdate.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatuslineUpdate.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatuslineUpdate.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatuslineUpdate~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/Models/TitleHelpers.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TitleHelpers.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TitleHelpers.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TitleHelpers.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TitleHelpers.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TitleHelpers.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TitleHelpers.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TitleHelpers.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TitleHelpers~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/NotchGeometry.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/NotchGeometry.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/NotchGeometry.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/NotchGeometry.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/NotchGeometry.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/NotchGeometry.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/NotchGeometry.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/NotchGeometry.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/NotchGeometry~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/OnboardingManager.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingManager.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingManager.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingManager.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingManager.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingManager.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingManager.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingManager.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingManager~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/OrbitCore.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitCore.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitCore.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitCore.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitCore.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitCore.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitCore.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitCore.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OrbitCore~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/SessionResumer.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionResumer.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionResumer.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionResumer.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionResumer.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionResumer.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionResumer.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionResumer.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionResumer~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/SessionStore.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStore.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStore.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStore.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStore.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStore.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStore.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStore.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionStore~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/SocketServer.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SocketServer.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SocketServer.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SocketServer.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SocketServer.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SocketServer.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SocketServer.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SocketServer.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SocketServer~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/TodayTokenStats.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TodayTokenStats.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TodayTokenStats.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TodayTokenStats.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TodayTokenStats.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TodayTokenStats.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TodayTokenStats.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TodayTokenStats.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TodayTokenStats~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/OrbitCore/TokenFormatting.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TokenFormatting.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TokenFormatting.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TokenFormatting.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TokenFormatting.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TokenFormatting.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TokenFormatting.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TokenFormatting.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TokenFormatting~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/DisplayPolicy.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DisplayPolicy.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DisplayPolicy.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DisplayPolicy.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DisplayPolicy.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DisplayPolicy.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DisplayPolicy.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DisplayPolicy.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/DisplayPolicy~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/OverlayController.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayController.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayController.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayController.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayController.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayController.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayController.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayController.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayController~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/OverlayPayloadSlot.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayPayloadSlot.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayPayloadSlot.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayPayloadSlot.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayPayloadSlot.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayPayloadSlot.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayPayloadSlot.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayPayloadSlot.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayPayloadSlot~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/OverlayRuntimeSnapshot.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayRuntimeSnapshot.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayRuntimeSnapshot.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayRuntimeSnapshot.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayRuntimeSnapshot.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayRuntimeSnapshot.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayRuntimeSnapshot.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayRuntimeSnapshot.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayRuntimeSnapshot~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/OverlayShellView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayShellView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayShellView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayShellView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayShellView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayShellView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayShellView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayShellView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayShellView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/OverlayStateMachine.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayStateMachine.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayStateMachine.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayStateMachine.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayStateMachine.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayStateMachine.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayStateMachine.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayStateMachine.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OverlayStateMachine~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/ParityGeometry.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ParityGeometry.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ParityGeometry.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ParityGeometry.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ParityGeometry.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ParityGeometry.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ParityGeometry.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ParityGeometry.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ParityGeometry~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Overlay/RuntimeSizingPolicy.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/RuntimeSizingPolicy.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/RuntimeSizingPolicy.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/RuntimeSizingPolicy.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/RuntimeSizingPolicy.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/RuntimeSizingPolicy.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/RuntimeSizingPolicy.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/RuntimeSizingPolicy.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/RuntimeSizingPolicy~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/ScreenMonitor.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ScreenMonitor.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ScreenMonitor.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ScreenMonitor.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ScreenMonitor.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ScreenMonitor.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ScreenMonitor.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ScreenMonitor.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ScreenMonitor~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/TrayController.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TrayController.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TrayController.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TrayController.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TrayController.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TrayController.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TrayController.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TrayController.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/TrayController~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/BottomRoundedRectangle.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/BottomRoundedRectangle.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/BottomRoundedRectangle.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/BottomRoundedRectangle.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/BottomRoundedRectangle.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/BottomRoundedRectangle.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/BottomRoundedRectangle.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/BottomRoundedRectangle.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/BottomRoundedRectangle~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/Color+Hex.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Color+Hex.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Color+Hex.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Color+Hex.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Color+Hex.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Color+Hex.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Color+Hex.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Color+Hex.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/Color+Hex~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/ElicitationView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ElicitationView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ElicitationView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ElicitationView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ElicitationView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ElicitationView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ElicitationView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ElicitationView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ElicitationView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/ExpandedView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ExpandedView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ExpandedView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ExpandedView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ExpandedView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ExpandedView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ExpandedView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ExpandedView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/ExpandedView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/HistoryRowView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HistoryRowView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HistoryRowView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HistoryRowView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HistoryRowView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HistoryRowView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HistoryRowView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HistoryRowView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/HistoryRowView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/OnboardingView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/OnboardingView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/PermissionView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PermissionView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/PillView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PillView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PillView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PillView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PillView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PillView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PillView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PillView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/PillView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/SectionHeaderView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SectionHeaderView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SectionHeaderView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SectionHeaderView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SectionHeaderView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SectionHeaderView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SectionHeaderView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SectionHeaderView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SectionHeaderView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/SessionTreeView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionTreeView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionTreeView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionTreeView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionTreeView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionTreeView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionTreeView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionTreeView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/SessionTreeView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/StatusDotView.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatusDotView.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatusDotView.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatusDotView.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatusDotView.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatusDotView.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatusDotView.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatusDotView.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/StatusDotView~partial.swiftmodule"
+  },
+  "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/build/Orbit.build/Debug/Orbit.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

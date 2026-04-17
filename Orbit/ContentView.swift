@@ -1,59 +1,24 @@
-//
-//  ContentView.swift
-//  Orbit
-//
-//  Created by lxp on 4/13/26.
-//
-
 import SwiftUI
-import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @ObservedObject var viewModel: AppViewModel
+    let geometry: NotchGeometry
+
+    @State private var bridge = OverlayBridge()
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
+        OverlayShellView(
+            bridge: bridge,
+            geometry: geometry,
+            payload: {
+                AnyView(OverlayPayloadSlot(viewModel: viewModel, geometry: geometry))
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-            .toolbar {
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-        } detail: {
-            Text("Select an item")
+        )
+        .onAppear {
+            bridge.activeStatus = viewModel.activeSession()?.status ?? .waitingForInput
+        }
+        .onReceive(viewModel.$sessions) { _ in
+            bridge.activeStatus = viewModel.activeSession()?.status ?? .waitingForInput
         }
     }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
-            }
-        }
-    }
-}
-
-#Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
 }

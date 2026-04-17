@@ -1,0 +1,24 @@
+{
+  "source": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/Orbit/Views/ExpandedView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "%u tools",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 38
+        }
+      },
+      {
+        "comment": "",
+        "key": "No history yet",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 66
+        }
+      }
+    ]
+  },
+  "version": 1
+}

@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'Orbit' in project 'Orbit'
+➜ Explicit dependency on target 'orbit-helper' in project 'Orbit'
+Target 'orbit-helper' in project 'Orbit' (no dependencies)
