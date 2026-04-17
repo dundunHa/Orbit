@@ -25,24 +25,23 @@ public func buildInteractionResponse(payload: HookPayload, decision: PermissionD
 func buildPermissionRequestResponse(decision: PermissionDecision, toolName: String?, toolInput: AnyCodable?) -> [String: Any]? {
     switch decision.normalizedDecision() {
     case "allow":
-        var response: [String: Any] = [
-            "hookSpecificOutput": [
-                "hookEventName": "PermissionRequest",
-                "decision": ["behavior": "allow"],
-            ],
-        ]
+        var decisionObject: [String: Any] = ["behavior": "allow"]
 
         if toolName == "AskUserQuestion",
-           let updatedInput = buildAskUserQuestionUpdatedInput(toolInput: toolInput, content: decision.content)
-        {
-            var hookOutput = response["hookSpecificOutput"] as! [String: Any]
-            var decisionObject = hookOutput["decision"] as! [String: Any]
+           let updatedInput = buildAskUserQuestionUpdatedInput(toolInput: toolInput, content: decision.content) {
             decisionObject["updatedInput"] = updatedInput
-            hookOutput["decision"] = decisionObject
-            response["hookSpecificOutput"] = hookOutput
         }
 
-        return response
+        if let updatedPermissions = permissionUpdatesToJSONObject(decision.updatedPermissions) {
+            decisionObject["updatedPermissions"] = updatedPermissions
+        }
+
+        return [
+            "hookSpecificOutput": [
+                "hookEventName": "PermissionRequest",
+                "decision": decisionObject,
+            ],
+        ]
     case "deny":
         return [
             "hookSpecificOutput": [
@@ -93,14 +92,32 @@ func buildAskUserQuestionUpdatedInput(toolInput: AnyCodable?, content: AnyCodabl
     guard let toolInputObject = toolInput.map(anyCodableToAny) as? [String: Any] else {
         return nil
     }
-    guard let contentObject = content.map(anyCodableToAny) as? [String: Any],
-          let answers = contentObject["answers"]
-    else {
+    guard let contentObject = content.map(anyCodableToAny) as? [String: Any] else {
         return nil
     }
     var updated = toolInputObject
-    updated["answers"] = answers
+    if let answers = contentObject["answers"] {
+        updated["answers"] = answers
+    }
+    if let responses = contentObject["responses"] {
+        updated["responses"] = responses
+    }
+    guard updated["answers"] != nil || updated["responses"] != nil else {
+        return nil
+    }
     return updated
+}
+
+func permissionUpdatesToJSONObject(_ updates: [PermissionUpdateEntry]?) -> [[String: Any]]? {
+    guard let updates, !updates.isEmpty else {
+        return nil
+    }
+    let encoder = JSONEncoder()
+    guard let data = try? encoder.encode(updates),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        return nil
+    }
+    return json
 }
 
 public func serializeInteractionResponse(_ response: [String: Any]) -> Data? {

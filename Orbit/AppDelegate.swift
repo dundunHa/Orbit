@@ -138,7 +138,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let viewModel else { return }
 
             if let interaction = viewModel.pendingInteraction {
-                NSLog("[Orbit] pendingInteraction set: kind=%@ tool=%@ id=%@", interaction.kind, interaction.toolName, interaction.id)
+                NSLog(
+                    "[Orbit] pendingInteraction set: kind=%@ tool=%@ id=%@ queue=%ld",
+                    interaction.kind,
+                    interaction.toolName,
+                    interaction.id,
+                    viewModel.pendingInteractions.count
+                )
                 if self.overlayController != nil {
                     NSLog("[Orbit] Calling requestExpand()")
                     self.overlayController?.requestExpand()
@@ -230,6 +236,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let data = Data(bytes)
         let decoder = JSONDecoder()
 
+        if Self.isStatuslineUpdateMessage(data) {
+            if let update = try? decoder.decode(StatuslineUpdate.self, from: data) {
+                await hookRouter.routeStatuslineUpdate(update)
+                await MainActor.run {
+                    viewModel.refreshSessions()
+                    viewModel.todayStats = TodayTokenStats.loadFromDisk()
+                }
+            }
+            return nil
+        }
+
         // HookPayload
         let payload: HookPayload?
         do {
@@ -256,20 +273,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .awaitPermissionDecision(let requestId):
                 NSLog("[Orbit] Awaiting permission decision: requestId=%@ event=%@", requestId, payload.hookEventName)
                 await MainActor.run {
-                    viewModel.pendingInteraction = PendingInteraction(
+                    viewModel.enqueuePendingInteraction(
+                        PendingInteraction(
                         id: requestId,
                         kind: payload.hookEventName == "Elicitation" ? "elicitation" : "permission",
                         sessionId: payload.sessionId,
                         toolName: payload.toolName ?? "Permission",
                         toolInput: payload.toolInput ?? .null,
                         message: payload.message ?? "",
-                        requestedSchema: payload.requestedSchema
+                        requestedSchema: payload.requestedSchema,
+                        permissionSuggestions: payload.permissionSuggestions
+                    )
                     )
                     viewModel.refreshSessions()
                 }
 
                 let decision = await hookRouter.awaitPermissionDecision(requestId: requestId)
                 NSLog("[Orbit] Permission decision received: %@ for requestId=%@", decision.normalizedDecision(), requestId)
+                await MainActor.run {
+                    viewModel.clearPendingInteraction(requestId: requestId)
+                }
 
                 if let responseDict = buildInteractionResponse(payload: payload, decision: decision),
                    let responseData = serializeInteractionResponse(responseDict)
@@ -291,17 +314,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // StatuslineUpdate
-        if let update = try? decoder.decode(StatuslineUpdate.self, from: data) {
-            await hookRouter.routeStatuslineUpdate(update)
-            await MainActor.run {
-                viewModel.refreshSessions()
-                viewModel.todayStats = TodayTokenStats.loadFromDisk()
-            }
-            return nil
-        }
-
         return nil
+    }
+
+    #if DEBUG
+    nonisolated static func processSocketMessageForTesting(
+        bytes: [UInt8],
+        hookRouter: HookRouter,
+        viewModel: AppViewModel
+    ) async -> Data? {
+        await processSocketMessage(bytes: bytes, hookRouter: hookRouter, viewModel: viewModel)
+    }
+    #endif
+
+    nonisolated private static func isStatuslineUpdateMessage(_ data: Data) -> Bool {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = json["type"] as? String else {
+            return false
+        }
+        return type == "StatuslineUpdate"
     }
 
     private func setupPanel(viewModel: AppViewModel) {

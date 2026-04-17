@@ -60,6 +60,38 @@ struct InteractionResponseTests {
         #expect(decision?["behavior"] as? String == "deny")
     }
 
+    @Test("PermissionRequest allow 可携带 updatedPermissions")
+    func permissionAllowBuildsUpdatedPermissions() {
+        let payload = HookPayload(sessionId: "sess-b2", hookEventName: "PermissionRequest")
+        let response = buildInteractionResponse(
+            payload: payload,
+            decision: .init(
+                decision: "allow",
+                updatedPermissions: [
+                    PermissionUpdateEntry(
+                        type: "addRules",
+                        rules: [PermissionRule(toolName: "Bash", ruleContent: "git status")],
+                        behavior: "allow",
+                        destination: "localSettings"
+                    ),
+                ]
+            )
+        )
+
+        let hookOutput = response?["hookSpecificOutput"] as? [String: Any]
+        let decision = hookOutput?["decision"] as? [String: Any]
+        let updatedPermissions = decision?["updatedPermissions"] as? [[String: Any]]
+        let first = updatedPermissions?.first
+        let rules = first?["rules"] as? [[String: Any]]
+
+        #expect(decision?["behavior"] as? String == "allow")
+        #expect(first?["type"] as? String == "addRules")
+        #expect(first?["behavior"] as? String == "allow")
+        #expect(first?["destination"] as? String == "localSettings")
+        #expect(rules?.first?["toolName"] as? String == "Bash")
+        #expect(rules?.first?["ruleContent"] as? String == "git status")
+    }
+
     @Test("PermissionRequest passthrough 返回 nil")
     func permissionPassthroughReturnsNil() {
         let payload = HookPayload(sessionId: "sess-c", hookEventName: "PermissionRequest")
@@ -100,6 +132,55 @@ struct InteractionResponseTests {
         #expect(decisionObject?["behavior"] as? String == "allow")
         #expect(updatedInput?["question"] as? String == "pick")
         #expect(updatedInput?["answers"] as? [String] == ["a"])
+    }
+
+    @Test("AskUserQuestion allow 且带 responses 时注入 structured responses")
+    func askUserQuestionInjectsStructuredResponses() {
+        let payload = HookPayload(
+            sessionId: "sess-e2",
+            hookEventName: "PermissionRequest",
+            toolName: "AskUserQuestion",
+            toolInput: .object([
+                "questions": .array([
+                    .object([
+                        "id": .string("q1"),
+                        "question": .string("pick one"),
+                    ]),
+                    .object([
+                        "id": .string("q2"),
+                        "question": .string("pick many"),
+                    ]),
+                ]),
+            ])
+        )
+        let decision = PermissionDecision(
+            decision: "allow",
+            content: .object([
+                "responses": .array([
+                    .object([
+                        "id": .string("q1"),
+                        "answers": .array([.string("a")]),
+                    ]),
+                    .object([
+                        "id": .string("q2"),
+                        "answers": .array([.string("b"), .string("c")]),
+                    ]),
+                ]),
+            ])
+        )
+
+        let response = buildInteractionResponse(payload: payload, decision: decision)
+        let hookOutput = response?["hookSpecificOutput"] as? [String: Any]
+        let decisionObject = hookOutput?["decision"] as? [String: Any]
+        let updatedInput = decisionObject?["updatedInput"] as? [String: Any]
+        let responses = updatedInput?["responses"] as? [[String: Any]]
+
+        #expect(decisionObject?["behavior"] as? String == "allow")
+        #expect(responses?.count == 2)
+        #expect(responses?.first?["id"] as? String == "q1")
+        #expect(responses?.first?["answers"] as? [String] == ["a"])
+        #expect(responses?.last?["id"] as? String == "q2")
+        #expect(responses?.last?["answers"] as? [String] == ["b", "c"])
     }
 
     @Test("Elicitation accept 带 content")

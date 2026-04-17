@@ -20,6 +20,7 @@ public struct HookPayload: Codable, Sendable, Equatable {
     public var pid: UInt32?
     public var tty: String?
     public var status: String?
+    public var permissionSuggestions: [PermissionUpdateEntry]?
 
     private enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -41,6 +42,7 @@ public struct HookPayload: Codable, Sendable, Equatable {
         case pid
         case tty
         case status
+        case permissionSuggestions = "permission_suggestions"
     }
 
     private enum LegacyKeys: String, CodingKey {
@@ -75,7 +77,8 @@ public struct HookPayload: Codable, Sendable, Equatable {
         content: AnyCodable? = nil,
         pid: UInt32? = nil,
         tty: String? = nil,
-        status: String? = nil
+        status: String? = nil,
+        permissionSuggestions: [PermissionUpdateEntry]? = nil
     ) {
         self.sessionId = sessionId
         self.hookEventName = hookEventName
@@ -96,6 +99,7 @@ public struct HookPayload: Codable, Sendable, Equatable {
         self.pid = pid
         self.tty = tty
         self.status = status
+        self.permissionSuggestions = permissionSuggestions
     }
 
     public init(from decoder: Decoder) throws {
@@ -121,6 +125,7 @@ public struct HookPayload: Codable, Sendable, Equatable {
         self.pid = try container.decodeIfPresent(UInt32.self, forKey: .pid)
         self.tty = try container.decodeIfPresent(String.self, forKey: .tty)
         self.status = try container.decodeIfPresent(String.self, forKey: .status)
+        self.permissionSuggestions = try container.decodeIfPresent([PermissionUpdateEntry].self, forKey: .permissionSuggestions)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -144,6 +149,7 @@ public struct HookPayload: Codable, Sendable, Equatable {
         try container.encodeIfPresent(pid, forKey: .pid)
         try container.encodeIfPresent(tty, forKey: .tty)
         try container.encodeIfPresent(status, forKey: .status)
+        try container.encodeIfPresent(permissionSuggestions, forKey: .permissionSuggestions)
     }
 
     private static func decodeString(_ container: KeyedDecodingContainer<CodingKeys>, _ legacy: KeyedDecodingContainer<LegacyKeys>, _ key: CodingKeys) throws -> String {
@@ -198,7 +204,7 @@ public struct HookPayload: Codable, Sendable, Equatable {
             return .mcpServerName
         case .notificationType:
             return .notificationType
-        case .message, .mode, .url, .elicitationId, .requestedSchema, .action, .content, .pid, .tty, .status, .cwd:
+        case .message, .mode, .url, .elicitationId, .requestedSchema, .action, .content, .pid, .tty, .status, .cwd, .permissionSuggestions:
             return nil
         }
     }

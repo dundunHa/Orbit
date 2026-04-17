@@ -70,7 +70,7 @@ final class OverlayController: ObservableObject {
     func setupContent(viewModel: AppViewModel) {
         self.viewModel = viewModel
         stateMachine.hasPendingInteractions = { [weak viewModel] in
-            viewModel?.pendingInteraction != nil
+            viewModel?.hasPendingInteractions == true
         }
 
         bridge.activeStatus = viewModel.activeSession()?.status ?? .waitingForInput
@@ -183,10 +183,11 @@ final class OverlayController: ObservableObject {
 
     private func wirePanelHover() {
         panel.onMouseEnter = { [weak self] in
-            self?.stateMachine.requestExpand()
+            guard let self, !self.hasPendingInteraction() else { return }
+            self.stateMachine.requestExpand()
         }
         panel.onMouseExit = { [weak self] in
-            guard let self, !self.isScreenTransitioning else { return }
+            guard let self, !self.isScreenTransitioning, !self.hasPendingInteraction() else { return }
             // Space 切换时 macOS 触发合成 mouseExited，但鼠标物理位置不变。
             // 仅在稳态阶段（collapsed/expanded）做 isMouseInsidePanel 检查，
             // 因为此时 panel.frame（模型值）与视觉位置一致。
@@ -203,6 +204,10 @@ final class OverlayController: ObservableObject {
     private func isMouseInsidePanel() -> Bool {
         let mouseLocation = NSEvent.mouseLocation
         return panel.frame.contains(mouseLocation)
+    }
+
+    private func hasPendingInteraction() -> Bool {
+        stateMachine.hasPendingInteractions?() == true
     }
 
     private func setExpanded(_ value: Bool) {
@@ -234,7 +239,11 @@ final class OverlayController: ObservableObject {
                 // 展开动画期间，.inVisibleRect tracking area 跟随模型 frame
                 // 立即扩大，可能吞没鼠标导致 mouseExited 从未触发。
                 // 动画结束后检查鼠标是否仍在面板内，不在则补发折叠。
-                if self.stateMachine.phase == .expanded, !self.isMouseInsidePanel() {
+                // 交互请求会强制保持展开，不应再走 hover 收起链路。
+                if self.stateMachine.phase == .expanded,
+                   !self.hasPendingInteraction(),
+                   !self.isMouseInsidePanel()
+                {
                     self.stateMachine.scheduleCollapse()
                 }
             }

@@ -132,6 +132,57 @@ struct OverlayControllerTests {
         #expect(fixture.controller.stateMachine.wantExpanded)
     }
 
+    @Test("pending interaction ignores hover collapse arming")
+    func pendingInteractionIgnoresHoverCollapseArming() throws {
+        let fixture = try makeFixture()
+        defer { fixture.controller.panel.close() }
+
+        fixture.viewModel.pendingInteraction = PendingInteraction(
+            id: "req-1",
+            kind: "permission",
+            sessionId: "s1",
+            toolName: "Bash",
+            toolInput: .null,
+            message: "allow?",
+            requestedSchema: nil
+        )
+
+        fixture.controller.requestExpand()
+        pumpMainRunLoop(seconds: 0.35)
+
+        fixture.controller.panel.onMouseExit?()
+        fixture.viewModel.pendingInteraction = nil
+        pumpMainRunLoop(seconds: 0.26)
+
+        #expect(fixture.controller.stateMachine.phase == .expanded)
+        #expect(fixture.controller.stateMachine.wantExpanded)
+    }
+
+    @Test("pending interaction expand does not arm post expand collapse")
+    func pendingInteractionExpandDoesNotArmPostExpandCollapse() throws {
+        let fixture = try makeFixture()
+        defer { fixture.controller.panel.close() }
+
+        fixture.viewModel.pendingInteraction = PendingInteraction(
+            id: "req-1",
+            kind: "permission",
+            sessionId: "s1",
+            toolName: "Bash",
+            toolInput: .null,
+            message: "allow?",
+            requestedSchema: nil
+        )
+
+        fixture.controller.requestExpand()
+        pumpMainRunLoop(seconds: 0.30)
+
+        fixture.viewModel.pendingInteraction = nil
+        pumpMainRunLoop(seconds: 0.26)
+
+        #expect(fixture.controller.stateMachine.phase == .expanded)
+        #expect(fixture.controller.stateMachine.wantExpanded)
+    }
+
     @Test("resolved interaction releases hover-blocked collapse")
     func resolvedInteractionReleasesHoverBlockedCollapse() throws {
         let fixture = try makeFixture()
@@ -161,6 +212,46 @@ struct OverlayControllerTests {
 
         #expect(fixture.controller.stateMachine.phase == .collapsing)
         #expect(!fixture.controller.stateMachine.wantExpanded)
+    }
+
+    @Test("queued interaction keeps collapse blocked after head resolves")
+    func queuedInteractionKeepsCollapseBlockedAfterHeadResolves() throws {
+        let fixture = try makeFixture()
+        defer { fixture.controller.panel.close() }
+
+        fixture.viewModel.enqueuePendingInteraction(
+            PendingInteraction(
+                id: "req-1",
+                kind: "permission",
+                sessionId: "s1",
+                toolName: "Bash",
+                toolInput: .null,
+                message: "allow?",
+                requestedSchema: nil
+            )
+        )
+        fixture.viewModel.enqueuePendingInteraction(
+            PendingInteraction(
+                id: "req-2",
+                kind: "permission",
+                sessionId: "s2",
+                toolName: "Edit",
+                toolInput: .null,
+                message: "allow?",
+                requestedSchema: nil
+            )
+        )
+
+        fixture.controller.requestExpand()
+        pumpMainRunLoop(seconds: 0.35)
+
+        fixture.viewModel.clearPendingInteraction(requestId: "req-1")
+        fixture.controller.scheduleCollapse()
+        pumpMainRunLoop(seconds: 0.26)
+
+        #expect(fixture.viewModel.pendingInteraction?.id == "req-2")
+        #expect(fixture.controller.stateMachine.phase == .expanded)
+        #expect(fixture.controller.stateMachine.wantExpanded)
     }
 
     @Test("transitionDidEnd advances phase")

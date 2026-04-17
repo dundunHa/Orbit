@@ -1,17 +1,28 @@
 import SwiftUI
 
 public struct PermissionView: View {
+    private static let actionButtonCornerRadius: CGFloat = 14
+    private static let actionButtonMinHeight: CGFloat = 56
+
     public let toolName: String
     public let toolInput: AnyCodable
+    public let permissionSuggestions: [PermissionUpdateEntry]?
     public let onDecision: (PermissionDecision) -> Void
 
-    @State private var selectedOptions: Set<String> = []
+    @State private var drafts = AskUserQuestionDrafts()
+    @State private var currentQuestionIndex = 0
     @State private var hoveredButton: String?
     @State private var hoveredOption: String?
 
-    public init(toolName: String, toolInput: AnyCodable, onDecision: @escaping (PermissionDecision) -> Void) {
+    public init(
+        toolName: String,
+        toolInput: AnyCodable,
+        permissionSuggestions: [PermissionUpdateEntry]? = nil,
+        onDecision: @escaping (PermissionDecision) -> Void
+    ) {
         self.toolName = toolName
         self.toolInput = toolInput
+        self.permissionSuggestions = permissionSuggestions
         self.onDecision = onDecision
     }
 
@@ -52,6 +63,21 @@ public struct PermissionView: View {
                 primaryButton(title: "Allow", id: "allow") {
                     onDecision(PermissionDecision(decision: "allow"))
                 }
+                if let suggestions = relevantPermissionSuggestions {
+                    ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
+                        secondaryButton(
+                            title: permissionSuggestionTitle(suggestion, totalCount: suggestions.count),
+                            id: "always-allow-\(index)"
+                        ) {
+                            onDecision(
+                                PermissionDecision(
+                                    decision: "allow",
+                                    updatedPermissions: [suggestion]
+                                )
+                            )
+                        }
+                    }
+                }
                 secondaryButton(title: "Deny", id: "deny") {
                     onDecision(PermissionDecision(decision: "deny"))
                 }
@@ -66,58 +92,69 @@ public struct PermissionView: View {
 
     @ViewBuilder
     private var askUserQuestionBody: some View {
-        if let questions = extractQuestions(from: toolInput), let firstQ = questions.first {
+        let questions = extractAskUserQuestions(from: toolInput) ?? []
+        if let question = activeQuestion(in: questions) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(firstQ.question)
+                if questions.count > 1 {
+                    HStack(spacing: 8) {
+                        Text("Question \(currentQuestionIndex + 1) of \(questions.count)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.45))
+                        if let header = question.header, !header.isEmpty {
+                            Text(header)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.32))
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                    }
+                }
+
+                Text(question.question)
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.9))
 
-                if let options = firstQ.options {
-                    if firstQ.isMultiSelect {
-                        multiSelectOptions(options)
-                    } else {
-                        singleSelectOptions(options)
-                    }
+                if !question.options.isEmpty {
+                    questionOptions(question, submitsImmediately: questions.count == 1)
                 }
 
-                VStack(spacing: 4) {
-                    if firstQ.isMultiSelect {
-                        let count = selectedOptions.count
-                        primaryButton(
-                            title: count > 0 ? "Submit (\(count) selected)" : "Submit",
-                            id: "allow",
-                            disabled: selectedOptions.isEmpty
-                        ) {
-                            let answers = Array(selectedOptions)
-                            let content = AnyCodable.object(["answers": .array(answers.map { .string($0) })])
-                            onDecision(PermissionDecision(decision: "allow", content: content))
-                        }
-                    }
-                    secondaryButton(title: "Deny", id: "deny") {
-                        onDecision(PermissionDecision(decision: "deny"))
-                    }
-                    tertiaryButton(title: "Continue in terminal", id: "passthrough") {
-                        onDecision(PermissionDecision(decision: "passthrough"))
-                    }
+                if questions.count == 1 {
+                    singleQuestionActions(question)
+                } else {
+                    multiQuestionActions(question, questions: questions)
                 }
             }
+        } else {
+            fallbackQuestionActions
         }
     }
 
-    // MARK: - Single Select (tap to submit)
+    // MARK: - AskUserQuestion Options
 
-    private func singleSelectOptions(_ options: [ExtractedOption]) -> some View {
+    @ViewBuilder
+    private func questionOptions(_ question: AskUserQuestionQuestion, submitsImmediately: Bool) -> some View {
+        if question.isMultiSelect {
+            multiSelectOptions(question)
+        } else {
+            singleSelectOptions(question, submitsImmediately: submitsImmediately)
+        }
+    }
+
+    private func singleSelectOptions(_ question: AskUserQuestionQuestion, submitsImmediately: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(options, id: \.label) { opt in
+            ForEach(question.options, id: \.label) { opt in
+                let isSelected = drafts.answers(for: question).first == opt.label
                 Button(action: {
-                    let content = AnyCodable.object(["answers": .array([.string(opt.label)])])
-                    onDecision(PermissionDecision(decision: "allow", content: content))
+                    drafts.selectSingle(opt.label, for: question)
+                    if submitsImmediately {
+                        submitQuestionnaire([question])
+                    }
                 }) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(opt.label)
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(hoveredOption == opt.label ? .white.opacity(0.9) : .white.opacity(0.7))
+                                .foregroundColor(textColor(isSelected: isSelected, optionLabel: opt.label))
                             if let desc = opt.description {
                                 Text(desc)
                                     .font(.system(size: 11))
@@ -127,7 +164,7 @@ public struct PermissionView: View {
                         Spacer()
                     }
                     .padding(8)
-                    .background(hoveredOption == opt.label ? Color.white.opacity(0.07) : Color.white.opacity(0.04))
+                    .background(backgroundColor(isSelected: isSelected, optionLabel: opt.label))
                     .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
@@ -140,16 +177,12 @@ public struct PermissionView: View {
 
     // MARK: - Multi Select (checkbox + submit)
 
-    private func multiSelectOptions(_ options: [ExtractedOption]) -> some View {
+    private func multiSelectOptions(_ question: AskUserQuestionQuestion) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(options, id: \.label) { opt in
-                let isSelected = selectedOptions.contains(opt.label)
+            ForEach(question.options, id: \.label) { opt in
+                let isSelected = drafts.contains(opt.label, for: question)
                 Button(action: {
-                    if isSelected {
-                        selectedOptions.remove(opt.label)
-                    } else {
-                        selectedOptions.insert(opt.label)
-                    }
+                    drafts.toggleMulti(opt.label, for: question)
                 }) {
                     HStack(spacing: 8) {
                         checkboxIndicator(checked: isSelected)
@@ -187,6 +220,75 @@ public struct PermissionView: View {
         }
     }
 
+    // MARK: - AskUserQuestion Actions
+
+    private func singleQuestionActions(_ question: AskUserQuestionQuestion) -> some View {
+        VStack(spacing: 4) {
+            if question.isMultiSelect {
+                let count = drafts.answers(for: question).count
+                primaryButton(
+                    title: count > 0 ? "Submit (\(count) selected)" : "Submit",
+                    id: "allow",
+                    disabled: count == 0
+                ) {
+                    submitQuestionnaire([question])
+                }
+            }
+            secondaryButton(title: "Deny", id: "deny") {
+                onDecision(PermissionDecision(decision: "deny"))
+            }
+            tertiaryButton(title: "Continue in terminal", id: "passthrough") {
+                onDecision(PermissionDecision(decision: "passthrough"))
+            }
+        }
+    }
+
+    private func multiQuestionActions(_ question: AskUserQuestionQuestion, questions: [AskUserQuestionQuestion]) -> some View {
+        VStack(spacing: 4) {
+            if currentQuestionIndex > 0 {
+                secondaryButton(title: "Back", id: "back") {
+                    currentQuestionIndex -= 1
+                }
+            }
+
+            primaryButton(
+                title: currentQuestionIndex == questions.count - 1 ? "Submit" : "Next",
+                id: "allow",
+                disabled: !drafts.hasAnswer(for: question)
+            ) {
+                if currentQuestionIndex == questions.count - 1 {
+                    submitQuestionnaire(questions)
+                } else {
+                    currentQuestionIndex += 1
+                }
+            }
+
+            secondaryButton(title: "Deny", id: "deny") {
+                onDecision(PermissionDecision(decision: "deny"))
+            }
+            tertiaryButton(title: "Continue in terminal", id: "passthrough") {
+                onDecision(PermissionDecision(decision: "passthrough"))
+            }
+        }
+    }
+
+    private var fallbackQuestionActions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Question data unavailable.")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.9))
+
+            VStack(spacing: 4) {
+                secondaryButton(title: "Deny", id: "deny") {
+                    onDecision(PermissionDecision(decision: "deny"))
+                }
+                tertiaryButton(title: "Continue in terminal", id: "passthrough") {
+                    onDecision(PermissionDecision(decision: "passthrough"))
+                }
+            }
+        }
+    }
+
     private func checkboxIndicator(checked: Bool) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 3)
@@ -206,15 +308,15 @@ public struct PermissionView: View {
     // MARK: - Button Styles
 
     private func primaryButton(title: String, id: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(disabled ? .white.opacity(0.25) : .white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(disabled ? Color.white.opacity(0.04) : (hoveredButton == id ? Color.white.opacity(0.18) : Color.white.opacity(0.12)))
-                .cornerRadius(8)
-        }
+        actionButton(
+            title: title,
+            id: id,
+            disabled: disabled,
+            foregroundColor: disabled ? .white.opacity(0.25) : .white,
+            fillColor: disabled ? Color.white.opacity(0.04) : (hoveredButton == id ? Color.white.opacity(0.18) : Color.white.opacity(0.12)),
+            borderColor: disabled ? Color.white.opacity(0.04) : Color.white.opacity(0.06),
+            action: action
+        )
         .buttonStyle(.plain)
         .disabled(disabled)
         .onHover { isHovering in
@@ -223,15 +325,14 @@ public struct PermissionView: View {
     }
 
     private func secondaryButton(title: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(hoveredButton == id ? Color.white.opacity(0.10) : Color.white.opacity(0.06))
-                .cornerRadius(8)
-        }
+        actionButton(
+            title: title,
+            id: id,
+            foregroundColor: .white.opacity(0.68),
+            fillColor: hoveredButton == id ? Color.white.opacity(0.10) : Color.white.opacity(0.06),
+            borderColor: hoveredButton == id ? Color.white.opacity(0.10) : Color.white.opacity(0.05),
+            action: action
+        )
         .buttonStyle(.plain)
         .onHover { isHovering in
             if isHovering { hoveredButton = id } else if hoveredButton == id { hoveredButton = nil }
@@ -239,17 +340,45 @@ public struct PermissionView: View {
     }
 
     private func tertiaryButton(title: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(hoveredButton == id ? .white.opacity(0.6) : .white.opacity(0.4))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-        }
+        actionButton(
+            title: title,
+            id: id,
+            foregroundColor: hoveredButton == id ? .white.opacity(0.58) : .white.opacity(0.42),
+            fillColor: hoveredButton == id ? Color.white.opacity(0.06) : Color.white.opacity(0.02),
+            borderColor: hoveredButton == id ? Color.white.opacity(0.08) : Color.white.opacity(0.04),
+            action: action
+        )
         .buttonStyle(.plain)
         .onHover { isHovering in
             if isHovering { hoveredButton = id } else if hoveredButton == id { hoveredButton = nil }
         }
+    }
+
+    private func actionButton(
+        title: String,
+        id: String,
+        disabled: Bool = false,
+        foregroundColor: Color,
+        fillColor: Color,
+        borderColor: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(foregroundColor)
+                .frame(maxWidth: .infinity, minHeight: Self.actionButtonMinHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: Self.actionButtonCornerRadius, style: .continuous)
+                        .fill(fillColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Self.actionButtonCornerRadius, style: .continuous)
+                        .stroke(borderColor, lineWidth: 0.5)
+                )
+        }
+        .disabled(disabled)
+        .accessibilityIdentifier(id)
     }
 
     // MARK: - Helpers
@@ -264,55 +393,224 @@ public struct PermissionView: View {
         return "Unknown Input"
     }
 
-    private struct ExtractedQuestion {
-        let question: String
-        let options: [ExtractedOption]?
-        let isMultiSelect: Bool
+    private func activeQuestion(in questions: [AskUserQuestionQuestion]) -> AskUserQuestionQuestion? {
+        guard questions.indices.contains(currentQuestionIndex) else { return questions.first }
+        return questions[currentQuestionIndex]
     }
 
-    private struct ExtractedOption {
-        let label: String
-        let description: String?
+    private func submitQuestionnaire(_ questions: [AskUserQuestionQuestion]) {
+        onDecision(
+            PermissionDecision(
+                decision: "allow",
+                content: drafts.content(for: questions)
+            )
+        )
     }
 
-    private func extractQuestions(from anyCodable: AnyCodable) -> [ExtractedQuestion]? {
-        guard case .object(let dict) = anyCodable,
-              case .array(let questionsArray) = dict["questions"] else {
+    private func textColor(isSelected: Bool, optionLabel: String) -> Color {
+        if isSelected {
+            return .white.opacity(0.9)
+        }
+        return hoveredOption == optionLabel ? .white.opacity(0.9) : .white.opacity(0.7)
+    }
+
+    private func backgroundColor(isSelected: Bool, optionLabel: String) -> Color {
+        if isSelected {
+            return Color.white.opacity(0.10)
+        }
+        return hoveredOption == optionLabel ? Color.white.opacity(0.07) : Color.white.opacity(0.04)
+    }
+
+    private var relevantPermissionSuggestions: [PermissionUpdateEntry]? {
+        guard let permissionSuggestions else {
             return nil
         }
-
-        var questions: [ExtractedQuestion] = []
-        for qAny in questionsArray {
-            guard case .object(let qDict) = qAny,
-                  case .string(let questionText) = qDict["question"] else {
-                continue
+        let filtered = permissionSuggestions.filter { suggestion in
+            if suggestion.type == "setMode" {
+                return true
             }
-
-            var isMultiSelect = false
-            if let multiSelectAny = qDict["multiSelect"], case .bool(let ms) = multiSelectAny {
-                isMultiSelect = ms
-            }
-
-            var options: [ExtractedOption]? = nil
-            if let optionsAny = qDict["options"], case .array(let optsArray) = optionsAny {
-                var extractedOpts: [ExtractedOption] = []
-                for optAny in optsArray {
-                    if case .object(let optDict) = optAny,
-                       case .string(let label) = optDict["label"] {
-                        var desc: String? = nil
-                        if let descAny = optDict["description"], case .string(let d) = descAny {
-                            desc = d
-                        }
-                        extractedOpts.append(ExtractedOption(label: label, description: desc))
-                    } else if case .string(let strOpt) = optAny {
-                        extractedOpts.append(ExtractedOption(label: strOpt, description: nil))
-                    }
-                }
-                options = extractedOpts
-            }
-
-            questions.append(ExtractedQuestion(question: questionText, options: options, isMultiSelect: isMultiSelect))
+            return suggestion.behavior == nil || suggestion.behavior == "allow"
         }
-        return questions
+        return filtered.isEmpty ? nil : filtered
     }
+
+    private func permissionSuggestionTitle(_ suggestion: PermissionUpdateEntry, totalCount: Int) -> String {
+        let scope = permissionSuggestionScope(suggestion)
+        if suggestion.type == "setMode", let mode = suggestion.mode {
+            let base = permissionModeTitle(mode)
+            return totalCount > 1 && !scope.isEmpty ? "\(base) (\(scope))" : base
+        }
+
+        let base: String
+        switch suggestion.behavior {
+        case "deny":
+            base = "Always Deny"
+        case "ask":
+            base = "Always Ask"
+        default:
+            base = "Always Allow"
+        }
+
+        return totalCount > 1 && !scope.isEmpty ? "\(base) (\(scope))" : base
+    }
+
+    private func permissionSuggestionScope(_ suggestion: PermissionUpdateEntry) -> String {
+        switch suggestion.destination {
+        case "session":
+            return "Session"
+        case "localSettings":
+            return "Local"
+        case "projectSettings":
+            return "Project"
+        case "userSettings":
+            return "User"
+        default:
+            return ""
+        }
+    }
+
+    private func permissionModeTitle(_ mode: String) -> String {
+        switch mode {
+        case "acceptEdits":
+            return "Always Allow Edits"
+        case "dontAsk":
+            return "Don't Ask Again"
+        case "bypassPermissions":
+            return "Bypass Permissions"
+        case "plan":
+            return "Stay in Plan Mode"
+        default:
+            return "Set Mode: \(mode)"
+        }
+    }
+}
+
+struct AskUserQuestionOption: Equatable {
+    let label: String
+    let description: String?
+}
+
+struct AskUserQuestionQuestion: Identifiable, Equatable {
+    let id: String
+    let header: String?
+    let question: String
+    let options: [AskUserQuestionOption]
+    let isMultiSelect: Bool
+}
+
+struct AskUserQuestionDrafts: Equatable {
+    private var singleSelections: [String: String] = [:]
+    private var multiSelections: [String: Set<String>] = [:]
+
+    mutating func selectSingle(_ option: String, for question: AskUserQuestionQuestion) {
+        singleSelections[question.id] = option
+    }
+
+    mutating func toggleMulti(_ option: String, for question: AskUserQuestionQuestion) {
+        var selected = multiSelections[question.id, default: []]
+        if selected.contains(option) {
+            selected.remove(option)
+        } else {
+            selected.insert(option)
+        }
+        multiSelections[question.id] = selected
+    }
+
+    func contains(_ option: String, for question: AskUserQuestionQuestion) -> Bool {
+        multiSelections[question.id]?.contains(option) == true
+    }
+
+    func hasAnswer(for question: AskUserQuestionQuestion) -> Bool {
+        !answers(for: question).isEmpty
+    }
+
+    func answers(for question: AskUserQuestionQuestion) -> [String] {
+        if question.isMultiSelect {
+            let selected = multiSelections[question.id] ?? []
+            return question.options.map(\.label).filter { selected.contains($0) }
+        }
+        if let single = singleSelections[question.id] {
+            return [single]
+        }
+        return []
+    }
+
+    func content(for questions: [AskUserQuestionQuestion]) -> AnyCodable {
+        if questions.count == 1, let question = questions.first {
+            return .object([
+                "answers": .array(answers(for: question).map(AnyCodable.string))
+            ])
+        }
+
+        return .object([
+            "responses": .array(
+                questions.map { question in
+                    .object([
+                        "id": .string(question.id),
+                        "answers": .array(answers(for: question).map(AnyCodable.string))
+                    ])
+                }
+            )
+        ])
+    }
+}
+
+func extractAskUserQuestions(from anyCodable: AnyCodable) -> [AskUserQuestionQuestion]? {
+    guard case .object(let dict) = anyCodable,
+          case .array(let questionsArray) = dict["questions"] else {
+        return nil
+    }
+
+    var questions: [AskUserQuestionQuestion] = []
+    for (index, qAny) in questionsArray.enumerated() {
+        guard case .object(let qDict) = qAny,
+              case .string(let questionText) = qDict["question"] else {
+            continue
+        }
+
+        let id: String
+        if let idAny = qDict["id"], case .string(let explicitId) = idAny, !explicitId.isEmpty {
+            id = explicitId
+        } else {
+            id = "question-\(index + 1)"
+        }
+
+        var header: String?
+        if let headerAny = qDict["header"], case .string(let explicitHeader) = headerAny {
+            header = explicitHeader
+        }
+
+        var isMultiSelect = false
+        if let multiSelectAny = qDict["multiSelect"], case .bool(let ms) = multiSelectAny {
+            isMultiSelect = ms
+        }
+
+        var options: [AskUserQuestionOption] = []
+        if let optionsAny = qDict["options"], case .array(let optsArray) = optionsAny {
+            for optAny in optsArray {
+                if case .object(let optDict) = optAny,
+                   case .string(let label) = optDict["label"] {
+                    var desc: String?
+                    if let descAny = optDict["description"], case .string(let explicitDescription) = descAny {
+                        desc = explicitDescription
+                    }
+                    options.append(AskUserQuestionOption(label: label, description: desc))
+                } else if case .string(let label) = optAny {
+                    options.append(AskUserQuestionOption(label: label, description: nil))
+                }
+            }
+        }
+
+        questions.append(
+            AskUserQuestionQuestion(
+                id: id,
+                header: header,
+                question: questionText,
+                options: options,
+                isMultiSelect: isMultiSelect
+            )
+        )
+    }
+
+    return questions
 }

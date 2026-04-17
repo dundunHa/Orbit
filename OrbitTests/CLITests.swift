@@ -247,6 +247,127 @@ struct CLITests {
         await server.stop()
     }
 
+    @Test("CLI approval clears pending interaction in UI")
+    @MainActor
+    func cliApprovalClearsPendingInteractionInUi() async throws {
+        let fixture = makeAppDelegateFixture()
+        let payload = #"{"hook_event_name":"PermissionRequest","session_id":"cli-ui","cwd":"/repo","tool_name":"Bash","tool_use_id":"tool-42"}"#
+        let bytes = Array(payload.utf8)
+
+        let responseTask = Task {
+            await AppDelegate.processSocketMessageForTesting(
+                bytes: bytes,
+                hookRouter: fixture.router,
+                viewModel: fixture.viewModel
+            )
+        }
+
+        #expect(await waitUntil {
+            await MainActor.run {
+                fixture.viewModel.pendingInteraction?.id == "tool-42"
+            }
+        })
+
+        await fixture.router.resolvePermissionFromCli(sessionId: "cli-ui", toolUseId: "tool-42")
+        let responseData = try #require(await responseTask.value)
+        let responseText = String(decoding: responseData, as: UTF8.self)
+
+        #expect(responseText.contains("\"behavior\":\"allow\""))
+        #expect(fixture.viewModel.pendingInteraction?.id == nil)
+    }
+
+    @Test("CLI approval advances to next queued interaction")
+    @MainActor
+    func cliApprovalAdvancesToNextQueuedInteraction() async throws {
+        let fixture = makeAppDelegateFixture()
+        let firstPayload = #"{"hook_event_name":"PermissionRequest","session_id":"queue-1","cwd":"/repo","tool_name":"Bash","tool_use_id":"tool-1"}"#
+        let secondPayload = #"{"hook_event_name":"PermissionRequest","session_id":"queue-2","cwd":"/repo","tool_name":"Edit","tool_use_id":"tool-2"}"#
+
+        let firstResponseTask = Task {
+            await AppDelegate.processSocketMessageForTesting(
+                bytes: Array(firstPayload.utf8),
+                hookRouter: fixture.router,
+                viewModel: fixture.viewModel
+            )
+        }
+        let secondResponseTask = Task {
+            await AppDelegate.processSocketMessageForTesting(
+                bytes: Array(secondPayload.utf8),
+                hookRouter: fixture.router,
+                viewModel: fixture.viewModel
+            )
+        }
+
+        #expect(await waitUntil {
+            await MainActor.run {
+                fixture.viewModel.pendingInteractions.map(\.id) == ["tool-1", "tool-2"]
+            }
+        })
+
+        await fixture.router.resolvePermissionFromCli(sessionId: "queue-1", toolUseId: "tool-1")
+
+        #expect(await waitUntil {
+            await MainActor.run {
+                fixture.viewModel.pendingInteraction?.id == "tool-2"
+                    && fixture.viewModel.pendingInteractions.map(\.id) == ["tool-2"]
+            }
+        })
+
+        let firstResponse = try #require(await firstResponseTask.value)
+        #expect(String(decoding: firstResponse, as: UTF8.self).contains("\"behavior\":\"allow\""))
+
+        await fixture.router.resolvePermissionFromCli(sessionId: "queue-2", toolUseId: "tool-2")
+        let secondResponse = try #require(await secondResponseTask.value)
+        #expect(String(decoding: secondResponse, as: UTF8.self).contains("\"behavior\":\"allow\""))
+        #expect(fixture.viewModel.pendingInteraction == nil)
+    }
+
+    @Test("CLI approval of queued tail keeps active head visible")
+    @MainActor
+    func cliApprovalOfQueuedTailKeepsActiveHeadVisible() async throws {
+        let fixture = makeAppDelegateFixture()
+        let firstPayload = #"{"hook_event_name":"PermissionRequest","session_id":"tail-1","cwd":"/repo","tool_name":"Bash","tool_use_id":"tool-1"}"#
+        let secondPayload = #"{"hook_event_name":"PermissionRequest","session_id":"tail-2","cwd":"/repo","tool_name":"Edit","tool_use_id":"tool-2"}"#
+
+        let firstResponseTask = Task {
+            await AppDelegate.processSocketMessageForTesting(
+                bytes: Array(firstPayload.utf8),
+                hookRouter: fixture.router,
+                viewModel: fixture.viewModel
+            )
+        }
+        let secondResponseTask = Task {
+            await AppDelegate.processSocketMessageForTesting(
+                bytes: Array(secondPayload.utf8),
+                hookRouter: fixture.router,
+                viewModel: fixture.viewModel
+            )
+        }
+
+        #expect(await waitUntil {
+            await MainActor.run {
+                fixture.viewModel.pendingInteractions.map(\.id) == ["tool-1", "tool-2"]
+            }
+        })
+
+        await fixture.router.resolvePermissionFromCli(sessionId: "tail-2", toolUseId: "tool-2")
+
+        #expect(await waitUntil {
+            await MainActor.run {
+                fixture.viewModel.pendingInteraction?.id == "tool-1"
+                    && fixture.viewModel.pendingInteractions.map(\.id) == ["tool-1"]
+            }
+        })
+
+        let secondResponse = try #require(await secondResponseTask.value)
+        #expect(String(decoding: secondResponse, as: UTF8.self).contains("\"behavior\":\"allow\""))
+
+        await fixture.router.resolvePermissionFromCli(sessionId: "tail-1", toolUseId: "tool-1")
+        let firstResponse = try #require(await firstResponseTask.value)
+        #expect(String(decoding: firstResponse, as: UTF8.self).contains("\"behavior\":\"allow\""))
+        #expect(fixture.viewModel.pendingInteraction == nil)
+    }
+
     // MARK: - Install/Uninstall via Installer
 
     @Test("Install and Uninstall via Installer with temp homeDir")
@@ -481,4 +602,31 @@ private actor MessageRecorder {
         guard let first = items.first else { return nil }
         return String(decoding: Data(first), as: UTF8.self)
     }
+}
+
+@MainActor
+private func makeAppDelegateFixture() -> (router: HookRouter, viewModel: AppViewModel) {
+    let sessionStore = SessionStore()
+    let historyStore = HistoryStore(filePath: tempFilePath(prefix: "cli-history"))
+    let debugLogger = HookDebugLogger(filePath: tempFilePath(prefix: "cli-debug"))
+    let router = HookRouter(
+        sessionStore: sessionStore,
+        historyStore: historyStore,
+        todayStats: TodayTokenStats(),
+        debugLogger: debugLogger,
+        todayStatsFilePath: tempFilePath(prefix: "cli-stats")
+    )
+    let viewModel = AppViewModel(
+        sessionStore: sessionStore,
+        historyStore: historyStore,
+        hookRouter: router,
+        onboardingManager: nil
+    )
+    return (router, viewModel)
+}
+
+private func tempFilePath(prefix: String) -> String {
+    URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("\(prefix)-\(UUID().uuidString).json")
+        .path
 }

@@ -57,6 +57,16 @@ struct ModelTests {
         #expect(payload.pid == 123)
         #expect(payload.tty == "ttys001")
         #expect(payload.status == "running")
+        #expect(
+            payload.permissionSuggestions == [
+                PermissionUpdateEntry(
+                    type: "addRules",
+                    rules: [PermissionRule(toolName: "Bash", ruleContent: "git status")],
+                    behavior: "allow",
+                    destination: "localSettings"
+                ),
+            ]
+        )
     }
 
     @Test("HookPayload decodes camelCase JSON")
@@ -127,6 +137,171 @@ struct ModelTests {
         #expect(update.model == nil)
     }
 
+    @Test("AppViewModel enqueue exposes active item and preserves FIFO order")
+    @MainActor
+    func appViewModelEnqueueExposesActiveItemAndPreservesFifoOrder() {
+        let fixture = makeAppViewModelFixture()
+        let first = makePendingInteraction(id: "req-1", toolName: "Bash")
+        let second = makePendingInteraction(id: "req-2", toolName: "Edit")
+
+        fixture.viewModel.enqueuePendingInteraction(first)
+        fixture.viewModel.enqueuePendingInteraction(second)
+
+        #expect(fixture.viewModel.pendingInteraction == first)
+        #expect(fixture.viewModel.pendingInteractions == [first, second])
+    }
+
+    @Test("AppViewModel clear removes head and promotes next interaction")
+    @MainActor
+    func appViewModelClearRemovesHeadAndPromotesNextInteraction() {
+        let fixture = makeAppViewModelFixture()
+        let first = makePendingInteraction(id: "req-1", toolName: "Bash")
+        let second = makePendingInteraction(id: "req-2", toolName: "Edit")
+
+        fixture.viewModel.enqueuePendingInteraction(first)
+        fixture.viewModel.enqueuePendingInteraction(second)
+        fixture.viewModel.clearPendingInteraction(requestId: "req-1")
+
+        #expect(fixture.viewModel.pendingInteraction == second)
+        #expect(fixture.viewModel.pendingInteractions == [second])
+    }
+
+    @Test("AppViewModel clear removes queued tail without disturbing active interaction")
+    @MainActor
+    func appViewModelClearRemovesQueuedTailWithoutDisturbingActiveInteraction() {
+        let fixture = makeAppViewModelFixture()
+        let first = makePendingInteraction(id: "req-1", toolName: "Bash")
+        let second = makePendingInteraction(id: "req-2", toolName: "Edit")
+
+        fixture.viewModel.enqueuePendingInteraction(first)
+        fixture.viewModel.enqueuePendingInteraction(second)
+        fixture.viewModel.clearPendingInteraction(requestId: "req-2")
+
+        #expect(fixture.viewModel.pendingInteraction == first)
+        #expect(fixture.viewModel.pendingInteractions == [first])
+    }
+
+    @Test("AppViewModel clear ignores unknown request ids")
+    @MainActor
+    func appViewModelClearIgnoresUnknownRequestIds() {
+        let fixture = makeAppViewModelFixture()
+        let first = makePendingInteraction(id: "req-1", toolName: "Bash")
+
+        fixture.viewModel.enqueuePendingInteraction(first)
+        fixture.viewModel.clearPendingInteraction(requestId: "missing")
+
+        #expect(fixture.viewModel.pendingInteraction == first)
+        #expect(fixture.viewModel.pendingInteractions == [first])
+    }
+
+    @Test("extractAskUserQuestions parses ids headers and options")
+    func extractAskUserQuestionsParsesIdsHeadersAndOptions() {
+        let questions = extractAskUserQuestions(
+            from: .object([
+                "questions": .array([
+                    .object([
+                        "id": .string("q1"),
+                        "header": .string("First"),
+                        "question": .string("Pick one"),
+                        "options": .array([
+                            .object([
+                                "label": .string("A"),
+                                "description": .string("Option A"),
+                            ]),
+                            .string("B"),
+                        ]),
+                    ]),
+                    .object([
+                        "question": .string("Pick many"),
+                        "multiSelect": .bool(true),
+                        "options": .array([
+                            .string("X"),
+                            .string("Y"),
+                        ]),
+                    ]),
+                ]),
+            ])
+        )
+
+        #expect(questions?.count == 2)
+        #expect(questions?.first?.id == "q1")
+        #expect(questions?.first?.header == "First")
+        #expect(questions?.first?.options == [
+            AskUserQuestionOption(label: "A", description: "Option A"),
+            AskUserQuestionOption(label: "B", description: nil),
+        ])
+        #expect(questions?.last?.id == "question-2")
+        #expect(questions?.last?.isMultiSelect == true)
+    }
+
+    @Test("AskUserQuestionDrafts returns single-question legacy answers")
+    func askUserQuestionDraftsReturnsSingleQuestionLegacyAnswers() {
+        let question = AskUserQuestionQuestion(
+            id: "q1",
+            header: nil,
+            question: "Pick one",
+            options: [
+                AskUserQuestionOption(label: "A", description: nil),
+                AskUserQuestionOption(label: "B", description: nil),
+            ],
+            isMultiSelect: false
+        )
+        var drafts = AskUserQuestionDrafts()
+        drafts.selectSingle("B", for: question)
+
+        #expect(drafts.answers(for: question) == ["B"])
+        #expect(
+            drafts.content(for: [question]) == .object([
+                "answers": .array([.string("B")])
+            ])
+        )
+    }
+
+    @Test("AskUserQuestionDrafts builds structured responses and preserves option order")
+    func askUserQuestionDraftsBuildsStructuredResponsesAndPreservesOptionOrder() {
+        let first = AskUserQuestionQuestion(
+            id: "q1",
+            header: nil,
+            question: "Pick one",
+            options: [
+                AskUserQuestionOption(label: "A", description: nil),
+                AskUserQuestionOption(label: "B", description: nil),
+            ],
+            isMultiSelect: false
+        )
+        let second = AskUserQuestionQuestion(
+            id: "q2",
+            header: nil,
+            question: "Pick many",
+            options: [
+                AskUserQuestionOption(label: "X", description: nil),
+                AskUserQuestionOption(label: "Y", description: nil),
+                AskUserQuestionOption(label: "Z", description: nil),
+            ],
+            isMultiSelect: true
+        )
+        var drafts = AskUserQuestionDrafts()
+        drafts.selectSingle("B", for: first)
+        drafts.toggleMulti("Z", for: second)
+        drafts.toggleMulti("X", for: second)
+
+        #expect(drafts.answers(for: second) == ["X", "Z"])
+        #expect(
+            drafts.content(for: [first, second]) == .object([
+                "responses": .array([
+                    .object([
+                        "id": .string("q1"),
+                        "answers": .array([.string("B")]),
+                    ]),
+                    .object([
+                        "id": .string("q2"),
+                        "answers": .array([.string("X"), .string("Z")]),
+                    ]),
+                ]),
+            ])
+        )
+    }
+
     private func assertSessionStatusRoundTrips(_ status: SessionStatus) throws {
         let data = try JSONEncoder().encode(status)
         let decoded = try JSONDecoder().decode(SessionStatus.self, from: data)
@@ -159,7 +334,15 @@ struct ModelTests {
           "content": {"nested": [1, true]},
           "pid": 123,
           "tty": "ttys001",
-          "status": "running"
+          "status": "running",
+          "permission_suggestions": [
+            {
+              "type": "addRules",
+              "rules": [{"toolName": "Bash", "ruleContent": "git status"}],
+              "behavior": "allow",
+              "destination": "localSettings"
+            }
+          ]
         }
         """#.utf8)
     }
@@ -198,5 +381,44 @@ struct ModelTests {
           "tokens_out": 20
         }
         """#.utf8)
+    }
+
+    @MainActor
+    private func makeAppViewModelFixture() -> (router: HookRouter, viewModel: AppViewModel) {
+        let sessionStore = SessionStore()
+        let historyStore = HistoryStore(filePath: tempFilePath(prefix: "appvm-history"))
+        let debugLogger = HookDebugLogger(filePath: tempFilePath(prefix: "appvm-debug"))
+        let router = HookRouter(
+            sessionStore: sessionStore,
+            historyStore: historyStore,
+            todayStats: TodayTokenStats(),
+            debugLogger: debugLogger,
+            todayStatsFilePath: tempFilePath(prefix: "appvm-stats")
+        )
+        let viewModel = AppViewModel(
+            sessionStore: sessionStore,
+            historyStore: historyStore,
+            hookRouter: router,
+            onboardingManager: nil
+        )
+        return (router, viewModel)
+    }
+
+    private func makePendingInteraction(id: String, toolName: String) -> PendingInteraction {
+        PendingInteraction(
+            id: id,
+            kind: "permission",
+            sessionId: "sess-\(id)",
+            toolName: toolName,
+            toolInput: .object(["command": .string("echo \(id)")]),
+            message: "pending \(id)",
+            requestedSchema: nil
+        )
+    }
+
+    private func tempFilePath(prefix: String) -> String {
+        URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString).json")
+            .path
     }
 }

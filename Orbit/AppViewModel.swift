@@ -7,7 +7,7 @@ final class AppViewModel: ObservableObject {
     @Published var historyEntries: [HistoryEntry] = []
     @Published var selectedSessionId: String?
     @Published var onboardingState: OnboardingState = .welcome
-    @Published var pendingInteraction: PendingInteraction? {
+    @Published private(set) var pendingInteractions: [PendingInteraction] = [] {
         didSet {
             onPendingInteractionChanged?()
         }
@@ -22,6 +22,25 @@ final class AppViewModel: ObservableObject {
 
     var onRetryOnboarding: (() -> Void)?
     var onPendingInteractionChanged: (() -> Void)?
+
+    var pendingInteraction: PendingInteraction? {
+        get { pendingInteractions.first }
+        set {
+            if let newValue {
+                pendingInteractions = [newValue]
+            } else {
+                pendingInteractions.removeAll()
+            }
+        }
+    }
+
+    var hasPendingInteractions: Bool {
+        !pendingInteractions.isEmpty
+    }
+
+    var waitingPendingInteractions: [PendingInteraction] {
+        Array(pendingInteractions.dropFirst())
+    }
 
     init(
         sessionStore: SessionStore,
@@ -65,7 +84,7 @@ final class AppViewModel: ObservableObject {
 
     func handlePermissionDecision(_ decision: PermissionDecision) {
         guard let pending = pendingInteraction else { return }
-        pendingInteraction = nil
+        clearPendingInteraction(requestId: pending.id)
 
         Task {
             await hookRouter.resolvePermission(requestId: pending.id, decision: decision)
@@ -73,6 +92,19 @@ final class AppViewModel: ObservableObject {
                 self.refreshSessions()
             }
         }
+    }
+
+    func enqueuePendingInteraction(_ interaction: PendingInteraction) {
+        if let existingIndex = pendingInteractions.firstIndex(where: { $0.id == interaction.id }) {
+            pendingInteractions[existingIndex] = interaction
+            return
+        }
+        pendingInteractions.append(interaction)
+    }
+
+    func clearPendingInteraction(requestId: String) {
+        guard let index = pendingInteractions.firstIndex(where: { $0.id == requestId }) else { return }
+        pendingInteractions.remove(at: index)
     }
 
     func activeSession() -> Session? {
