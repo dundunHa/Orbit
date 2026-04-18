@@ -1,8 +1,34 @@
 import SwiftUI
 
+private struct OverlayPayloadHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private extension View {
+    func reportOverlayPayloadHeight(_ onChange: @escaping (CGFloat) -> Void) -> some View {
+        background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: OverlayPayloadHeightPreferenceKey.self,
+                    value: proxy.size.height
+                )
+            }
+        )
+        .onPreferenceChange(OverlayPayloadHeightPreferenceKey.self) { height in
+            guard height > 0.5 else { return }
+            onChange(height)
+        }
+    }
+}
+
 struct OverlayPayloadSlot: View {
     @ObservedObject var viewModel: AppViewModel
     let geometry: NotchGeometry
+    let onContentHeightChange: (CGFloat) -> Void
 
     var body: some View {
         Group {
@@ -15,7 +41,9 @@ struct OverlayPayloadSlot: View {
                         .id(interaction.id)
                 }
                     .padding(.top, 8)
-                    .padding(.bottom, 16)
+                    // 给最外层 shell 预留更多底部留白，让已有的底部圆角更容易被看见。
+                    .padding(.bottom, 24)
+                    .reportOverlayPayloadHeight(onContentHeightChange)
             } else if shouldShowOnboarding {
                 OnboardingView(
                     state: viewModel.onboardingState,
@@ -26,6 +54,7 @@ struct OverlayPayloadSlot: View {
                 )
                 .padding(.top, 8)
                 .padding(.bottom, 16)
+                .reportOverlayPayloadHeight(onContentHeightChange)
             } else {
                 ExpandedView(
                     sessions: sortedSessions,
@@ -33,6 +62,9 @@ struct OverlayPayloadSlot: View {
                     selectedSessionId: viewModel.selectedSessionId,
                     geometry: geometry
                 )
+                .onAppear {
+                    onContentHeightChange(0)
+                }
             }
         }
         .padding(.horizontal, 10)

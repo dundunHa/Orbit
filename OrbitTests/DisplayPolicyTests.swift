@@ -11,10 +11,16 @@ struct DisplayPolicyTests {
     private final class MockScreen: NSScreen {
         private let topInset: CGFloat
         private let mockedFrame: NSRect
+        private let mockedVisibleFrame: NSRect
 
-        init(topInset: CGFloat, frame: NSRect = NSRect(x: 0, y: 0, width: 1440, height: 900)) {
+        init(
+            topInset: CGFloat,
+            frame: NSRect = NSRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: NSRect? = nil
+        ) {
             self.topInset = topInset
             self.mockedFrame = frame
+            self.mockedVisibleFrame = visibleFrame ?? frame
             super.init()
         }
 
@@ -24,6 +30,10 @@ struct DisplayPolicyTests {
 
         override var frame: NSRect {
             mockedFrame
+        }
+
+        override var visibleFrame: NSRect {
+            mockedVisibleFrame
         }
     }
 
@@ -102,6 +112,31 @@ struct DisplayPolicyTests {
         #expect(geometry.notchHeight == 44)
         #expect(geometry.screenWidth == 1600)
         #expect(geometry.notchWidth == 0)
+    }
+
+    @Test("overlayTopMaxY keeps notch screens pinned to full frame")
+    func overlayTopMaxY_usesScreenTopOnNotchScreens() {
+        let frame = NSRect(x: 10, y: 20, width: 1600, height: 1000)
+        let visible = NSRect(x: 10, y: 20, width: 1600, height: 968)
+        let screen = MockScreen(topInset: 40, frame: frame, visibleFrame: visible)
+
+        let topMaxY = DisplayPolicy.overlayTopMaxY(for: screen)
+
+        #expect(topMaxY == frame.maxY)
+    }
+
+    @Test("overlayOriginY restores the reserved top band on regular screens")
+    func overlayOriginY_restoresReservedTopBandOnRegularScreens() {
+        let frame = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 876)
+        let screen = MockScreen(topInset: 0, frame: frame, visibleFrame: visible)
+        let panelHeight: CGFloat = 40
+
+        let topMaxY = DisplayPolicy.overlayTopMaxY(for: screen)
+        let originY = DisplayPolicy.overlayOriginY(for: screen, panelHeight: panelHeight)
+
+        #expect(topMaxY == frame.maxY)
+        #expect(originY == frame.maxY - panelHeight)
     }
 }
 

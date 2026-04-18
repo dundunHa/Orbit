@@ -11,7 +11,12 @@ struct ContentView: View {
             bridge: bridge,
             geometry: geometry,
             payload: {
-                AnyView(OverlayPayloadSlot(viewModel: viewModel, geometry: geometry))
+                AnyView(
+                    OverlayPayloadSlot(
+                        viewModel: viewModel,
+                        geometry: geometry
+                    ) { _ in }
+                )
             }
         )
         .onAppear {

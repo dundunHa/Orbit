@@ -34,7 +34,8 @@ struct HookDebugLoggerTests {
             requestId: "req-1",
             decision: "allow",
             responseJson: "{\"ok\":true}",
-            payloadSummary: "summary"
+            payloadSummary: "summary",
+            payloadDetails: ["tool_name": "Bash", "tool_use_id": "tool-1"]
         )
 
         let line = try String(contentsOf: fileURL, encoding: .utf8)
@@ -51,6 +52,9 @@ struct HookDebugLoggerTests {
         #expect(json?["decision"] as? String == "allow")
         #expect(json?["response_json"] as? String == "{\"ok\":true}")
         #expect(json?["payload_summary"] as? String == "summary")
+        let payloadDetails = json?["payload_details"] as? [String: String]
+        #expect(payloadDetails?["tool_name"] == "Bash")
+        #expect(payloadDetails?["tool_use_id"] == "tool-1")
     }
 
     @Test("multiple logs append separate JSONL lines")

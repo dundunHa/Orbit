@@ -326,6 +326,89 @@ struct HookRouterTests {
         #expect(decision.reason == "approved via CLI")
     }
 
+    @Test("resolveInteractionFromCli maps elicitation result back to waiting request")
+    func resolveInteractionFromCliMapsElicitationResultBackToWaitingRequest() async throws {
+        let clock = MutableNow(Date(timeIntervalSince1970: 11_500))
+        let fixture = makeFixture(clock: clock)
+
+        _ = await fixture.router.routeHookEvent(
+            makePayload(
+                sessionId: "cli-elicitation",
+                hookEventName: "Elicitation",
+                cwd: "/repo",
+                message: "Need confirmation",
+                elicitationId: "eli-42",
+                mcpServerName: "notion"
+            )
+        )
+
+        let waitTask = Task { await fixture.router.awaitPermissionDecision(requestId: "eli-42") }
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        let resolvedRequestId = await fixture.router.resolveInteractionFromCli(
+            payload: makePayload(
+                sessionId: "cli-elicitation",
+                hookEventName: "ElicitationResult",
+                cwd: "/repo",
+                elicitationId: "eli-42",
+                mcpServerName: "notion",
+                action: "accept",
+                content: .object(["answer": .string("yes")])
+            )
+        )
+
+        let decision = await waitTask.value
+        #expect(resolvedRequestId == "eli-42")
+        #expect(decision.decision == "accept")
+        #expect(decision.reason == "answered via CLI")
+        #expect(decision.content == .object(["answer": .string("yes")]))
+    }
+
+    @Test("resolveInteractionFromCli matches permission request by tool fingerprint")
+    func resolveInteractionFromCliMatchesPermissionRequestByToolFingerprint() async throws {
+        let clock = MutableNow(Date(timeIntervalSince1970: 11_800))
+        let fixture = makeFixture(clock: clock)
+        let toolInput: AnyCodable = .object(["command": .string("git status")])
+
+        let result = await fixture.router.routeHookEvent(
+            makePayload(
+                sessionId: "cli-posttool",
+                hookEventName: "PermissionRequest",
+                cwd: "/repo",
+                toolName: "Bash",
+                toolInput: toolInput
+            )
+        )
+
+        let requestId: String
+        switch result {
+        case .awaitPermissionDecision(let id):
+            requestId = id
+        case .noResponse:
+            Issue.record("expected awaitPermissionDecision")
+            return
+        }
+
+        let waitTask = Task { await fixture.router.awaitPermissionDecision(requestId: requestId) }
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        let resolvedRequestId = await fixture.router.resolveInteractionFromCli(
+            payload: makePayload(
+                sessionId: "cli-posttool",
+                hookEventName: "PostToolUse",
+                cwd: "/repo",
+                toolName: "Bash",
+                toolInput: toolInput,
+                toolUseId: "tool-404"
+            )
+        )
+
+        let decision = await waitTask.value
+        #expect(resolvedRequestId == requestId)
+        #expect(decision.decision == "allow")
+        #expect(decision.reason == "approved via CLI")
+    }
+
     @Test("anomaly status is not overwritten by non-mutating normal event")
     func anomalyStatusIsNotOverwrittenByNonMutatingNormalEvent() async throws {
         let clock = MutableNow(Date(timeIntervalSince1970: 12_000))

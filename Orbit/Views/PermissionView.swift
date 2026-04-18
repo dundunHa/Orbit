@@ -556,8 +556,13 @@ struct AskUserQuestionDrafts: Equatable {
 }
 
 func extractAskUserQuestions(from anyCodable: AnyCodable) -> [AskUserQuestionQuestion]? {
-    guard case .object(let dict) = anyCodable,
-          case .array(let questionsArray) = dict["questions"] else {
+    guard case .object(let dict) = anyCodable else { return nil }
+
+    if let legacy = extractLegacyAskUserQuestion(from: dict) {
+        return legacy
+    }
+
+    guard case .array(let questionsArray) = dict["questions"] else {
         return nil
     }
 
@@ -585,21 +590,7 @@ func extractAskUserQuestions(from anyCodable: AnyCodable) -> [AskUserQuestionQue
             isMultiSelect = ms
         }
 
-        var options: [AskUserQuestionOption] = []
-        if let optionsAny = qDict["options"], case .array(let optsArray) = optionsAny {
-            for optAny in optsArray {
-                if case .object(let optDict) = optAny,
-                   case .string(let label) = optDict["label"] {
-                    var desc: String?
-                    if let descAny = optDict["description"], case .string(let explicitDescription) = descAny {
-                        desc = explicitDescription
-                    }
-                    options.append(AskUserQuestionOption(label: label, description: desc))
-                } else if case .string(let label) = optAny {
-                    options.append(AskUserQuestionOption(label: label, description: nil))
-                }
-            }
-        }
+        let options = extractAskUserQuestionOptions(from: qDict["options"])
 
         questions.append(
             AskUserQuestionQuestion(
@@ -613,4 +604,55 @@ func extractAskUserQuestions(from anyCodable: AnyCodable) -> [AskUserQuestionQue
     }
 
     return questions
+}
+
+private func extractLegacyAskUserQuestion(from dict: [String: AnyCodable]) -> [AskUserQuestionQuestion]? {
+    guard case .string(let questionText) = dict["question"] else {
+        return nil
+    }
+
+    return [
+        AskUserQuestionQuestion(
+            id: {
+                if let idAny = dict["id"], case .string(let explicitId) = idAny, !explicitId.isEmpty {
+                    return explicitId
+                }
+                return "question-1"
+            }(),
+            header: {
+                if case .string(let header) = dict["header"] {
+                    return header
+                }
+                return nil
+            }(),
+            question: questionText,
+            options: extractAskUserQuestionOptions(from: dict["choices"]),
+            isMultiSelect: {
+                if let multiSelectAny = dict["multiSelect"], case .bool(let multiSelect) = multiSelectAny {
+                    return multiSelect
+                }
+                return false
+            }()
+        )
+    ]
+}
+
+private func extractAskUserQuestionOptions(from value: AnyCodable?) -> [AskUserQuestionOption] {
+    guard let value else { return [] }
+    guard case .array(let optionsAny) = value else { return [] }
+
+    var options: [AskUserQuestionOption] = []
+    for option in optionsAny {
+        if case .object(let optDict) = option,
+           case .string(let label) = optDict["label"] {
+            var desc: String?
+            if case .string(let explicitDescription) = optDict["description"] {
+                desc = explicitDescription
+            }
+            options.append(AskUserQuestionOption(label: label, description: desc))
+        } else if case .string(let label) = option {
+            options.append(AskUserQuestionOption(label: label, description: nil))
+        }
+    }
+    return options
 }

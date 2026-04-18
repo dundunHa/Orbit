@@ -6,6 +6,16 @@ public enum HookRouteResult: Sendable, Equatable {
 }
 
 public actor HookRouter {
+    private struct PendingInteractionContext: Sendable {
+        let requestId: String
+        let sessionId: String
+        let hookEventName: String
+        let toolName: String?
+        let toolInput: AnyCodable?
+        let toolUseId: String?
+        let elicitationId: String?
+    }
+
     private let sessionStore: SessionStore
     private let historyStore: HistoryStore
     private var todayStats: TodayTokenStats
@@ -19,6 +29,7 @@ public actor HookRouter {
     // [requestId: continuation]
     private var pendingPermissions: [String: CheckedContinuation<PermissionDecision, Never>] = [:]
     private var resolvedPermissions: [String: PermissionDecision] = [:]
+    private var pendingInteractionContexts: [String: PendingInteractionContext] = [:]
 
     public init(
         sessionStore: SessionStore,
@@ -123,6 +134,15 @@ public actor HookRouter {
         }
 
         if let requestId {
+            pendingInteractionContexts[requestId] = PendingInteractionContext(
+                requestId: requestId,
+                sessionId: payload.sessionId,
+                hookEventName: payload.hookEventName,
+                toolName: payload.toolName,
+                toolInput: payload.toolInput,
+                toolUseId: payload.toolUseId,
+                elicitationId: payload.elicitationId
+            )
             await debugLogger.log(
                 source: "hook",
                 sessionId: payload.sessionId,
@@ -182,6 +202,7 @@ public actor HookRouter {
     }
 
     public func resolvePermission(requestId: String, decision: PermissionDecision) {
+        pendingInteractionContexts.removeValue(forKey: requestId)
         if let continuation = pendingPermissions.removeValue(forKey: requestId) {
             continuation.resume(returning: decision)
         } else {
@@ -202,20 +223,39 @@ public actor HookRouter {
     }
 
     public func resolvePermissionFromCli(sessionId: String, toolUseId: String) {
-        if pendingPermissions[toolUseId] != nil {
-            resolvePermission(
-                requestId: toolUseId,
-                decision: PermissionDecision(decision: "allow", reason: "approved via CLI")
+        _ = resolveInteractionFromCli(
+            payload: HookPayload(
+                sessionId: sessionId,
+                hookEventName: "PostToolUse",
+                cwd: "",
+                toolUseId: toolUseId
             )
-            return
+        )
+    }
+
+    @discardableResult
+    public func resolveInteractionFromCli(payload: HookPayload) -> String? {
+        guard let requestId = matchingPendingInteractionRequestId(for: payload) else {
+            return nil
         }
 
-        if let fallback = pendingPermissions.keys.first(where: { $0.hasPrefix("\(sessionId)-") }) {
-            resolvePermission(
-                requestId: fallback,
-                decision: PermissionDecision(decision: "allow", reason: "approved via CLI")
+        let decision: PermissionDecision
+        switch payload.hookEventName {
+        case "ElicitationResult":
+            decision = PermissionDecision(
+                decision: payload.action ?? "accept",
+                reason: "answered via CLI",
+                content: payload.content
+            )
+        default:
+            decision = PermissionDecision(
+                decision: "allow",
+                reason: "approved via CLI"
             )
         }
+
+        resolvePermission(requestId: requestId, decision: decision)
+        return requestId
     }
 
     public func awaitPermissionDecision(requestId: String) async -> PermissionDecision {
@@ -279,6 +319,62 @@ public actor HookRouter {
 
     private func cleanupPendingSpawns(now: Date) {
         pendingSpawns.removeAll { now.timeIntervalSince($0.2) > 30 }
+    }
+
+    private func matchingPendingInteractionRequestId(for payload: HookPayload) -> String? {
+        let sessionCandidates = pendingInteractionContexts.values.filter { $0.sessionId == payload.sessionId }
+        guard !sessionCandidates.isEmpty else { return nil }
+
+        switch payload.hookEventName {
+        case "ElicitationResult":
+            let elicitationCandidates = sessionCandidates.filter { $0.hookEventName == "Elicitation" }
+            guard !elicitationCandidates.isEmpty else { return nil }
+
+            if let elicitationId = payload.elicitationId {
+                if let exact = elicitationCandidates.first(where: {
+                    $0.elicitationId == elicitationId || requestId($0.requestId, matchesRawId: elicitationId, sessionId: payload.sessionId)
+                }) {
+                    return exact.requestId
+                }
+            }
+
+            return elicitationCandidates.count == 1 ? elicitationCandidates[0].requestId : nil
+
+        case "PostToolUse", "PostToolUseFailure":
+            let permissionCandidates = sessionCandidates.filter { $0.hookEventName == "PermissionRequest" }
+            guard !permissionCandidates.isEmpty else { return nil }
+
+            if let toolUseId = payload.toolUseId {
+                if let exact = permissionCandidates.first(where: {
+                    $0.toolUseId == toolUseId || requestId($0.requestId, matchesRawId: toolUseId, sessionId: payload.sessionId)
+                }) {
+                    return exact.requestId
+                }
+            }
+
+            if let toolName = payload.toolName,
+               let exact = permissionCandidates.first(where: {
+                   $0.toolName == toolName && $0.toolInput == payload.toolInput
+               }) {
+                return exact.requestId
+            }
+
+            if let toolName = payload.toolName {
+                let sameToolCandidates = permissionCandidates.filter { $0.toolName == toolName }
+                if sameToolCandidates.count == 1 {
+                    return sameToolCandidates[0].requestId
+                }
+            }
+
+            return permissionCandidates.count == 1 ? permissionCandidates[0].requestId : nil
+
+        default:
+            return nil
+        }
+    }
+
+    private func requestId(_ requestId: String, matchesRawId rawId: String, sessionId: String) -> Bool {
+        requestId == rawId || requestId == "\(sessionId)-\(rawId)"
     }
 
     #if DEBUG

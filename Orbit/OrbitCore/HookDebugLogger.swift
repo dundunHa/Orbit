@@ -14,7 +14,8 @@ public actor HookDebugLogger {
         requestId: String?,
         decision: String,
         responseJson: String?,
-        payloadSummary: String?
+        payloadSummary: String?,
+        payloadDetails: [String: String]? = nil
     ) async {
         let line = makeJSONLine(
             source: source,
@@ -23,7 +24,8 @@ public actor HookDebugLogger {
             requestId: requestId,
             decision: decision,
             responseJson: responseJson,
-            payloadSummary: payloadSummary
+            payloadSummary: payloadSummary,
+            payloadDetails: payloadDetails
         )
 
         guard let data = (line + "\n").data(using: .utf8) else {
@@ -77,12 +79,13 @@ public actor HookDebugLogger {
         requestId: String?,
         decision: String,
         responseJson: String?,
-        payloadSummary: String?
+        payloadSummary: String?,
+        payloadDetails: [String: String]?
     ) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-        var payload: [String: String] = [
+        var payload: [String: Any] = [
             "timestamp": formatter.string(from: Date()),
             "source": source,
             "decision": decision,
@@ -103,6 +106,10 @@ public actor HookDebugLogger {
 
         if let payloadSummary {
             payload["payload_summary"] = payloadSummary
+        }
+
+        if let payloadDetails, !payloadDetails.isEmpty {
+            payload["payload_details"] = payloadDetails
         }
 
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),

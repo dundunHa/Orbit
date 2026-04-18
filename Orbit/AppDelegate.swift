@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         self.viewModel = viewModel
 
-        startMessageProcessor(hookRouter: hookRouter, viewModel: viewModel)
+        startMessageProcessor(hookRouter: hookRouter, viewModel: viewModel, debugLogger: debugLogger)
 
         viewModel.onRetryOnboarding = { [weak self] in
             guard let self, let onboardingManager = self.onboardingManager else { return }
@@ -206,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func startMessageProcessor(hookRouter: HookRouter, viewModel: AppViewModel) {
+    private func startMessageProcessor(hookRouter: HookRouter, viewModel: AppViewModel, debugLogger: HookDebugLogger) {
         let processorTask = Task.detached {
             while !Task.isCancelled {
                 let (messageId, bytes) = await MessageBridge.shared.dequeue()
@@ -217,7 +217,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let response = await AppDelegate.processSocketMessage(
                         bytes: bytes,
                         hookRouter: hookRouter,
-                        viewModel: viewModel
+                        viewModel: viewModel,
+                        debugLogger: debugLogger
                     )
                     await MessageBridge.shared.respond(id: messageId, data: response)
                 }
@@ -229,7 +230,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated private static func processSocketMessage(
         bytes: [UInt8],
         hookRouter: HookRouter,
-        viewModel: AppViewModel
+        viewModel: AppViewModel,
+        debugLogger: HookDebugLogger
     ) async -> Data? {
         if bytes.allSatisfy({ $0 == 0 }) { return nil }
 
@@ -260,6 +262,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let payload {
             NSLog("[Orbit] Hook event: %@ session=%@", payload.hookEventName, payload.sessionId)
+            await debugLogger.log(
+                source: "socket",
+                sessionId: payload.sessionId,
+                hookEventName: payload.hookEventName,
+                requestId: nil,
+                decision: "received",
+                responseJson: nil,
+                payloadSummary: payload.debugSummary,
+                payloadDetails: payload.debugDetails
+            )
+
+            if let resolvedRequestId = await hookRouter.resolveInteractionFromCli(payload: payload) {
+                await debugLogger.log(
+                    source: "socket",
+                    sessionId: payload.sessionId,
+                    hookEventName: payload.hookEventName,
+                    requestId: resolvedRequestId,
+                    decision: "resolved_via_cli_event",
+                    responseJson: nil,
+                    payloadSummary: payload.debugSummary,
+                    payloadDetails: payload.debugDetails
+                )
+            }
+
             let result = await hookRouter.routeHookEvent(payload)
 
             switch result {
@@ -267,6 +293,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     viewModel.refreshSessions()
                     viewModel.todayStats = TodayTokenStats.loadFromDisk()
+                }
+                if payload.hookEventName == "ElicitationResult" {
+                    return Data("{}".utf8)
                 }
                 return nil
 
@@ -321,9 +350,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated static func processSocketMessageForTesting(
         bytes: [UInt8],
         hookRouter: HookRouter,
-        viewModel: AppViewModel
+        viewModel: AppViewModel,
+        debugLogger: HookDebugLogger
     ) async -> Data? {
-        await processSocketMessage(bytes: bytes, hookRouter: hookRouter, viewModel: viewModel)
+        await processSocketMessage(bytes: bytes, hookRouter: hookRouter, viewModel: viewModel, debugLogger: debugLogger)
     }
     #endif
 
@@ -409,5 +439,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return Installer.FALLBACK_ORBIT_HELPER_PATH
+    }
+}
+
+private extension HookPayload {
+    var debugSummary: String? {
+        toolName ?? mcpServerName ?? notificationType ?? action
+    }
+
+    var debugDetails: [String: String]? {
+        var details: [String: String] = [:]
+
+        if !cwd.isEmpty {
+            details["cwd"] = cwd
+        }
+        if let toolName {
+            details["tool_name"] = toolName
+        }
+        if let toolUseId {
+            details["tool_use_id"] = toolUseId
+        }
+        if let mcpServerName {
+            details["mcp_server_name"] = mcpServerName
+        }
+        if let notificationType {
+            details["notification_type"] = notificationType
+        }
+        if let action {
+            details["action"] = action
+        }
+        if let elicitationId {
+            details["elicitation_id"] = elicitationId
+        }
+        if let mode {
+            details["mode"] = mode
+        }
+        if let status {
+            details["status"] = status
+        }
+        if let message, !message.isEmpty {
+            details["message"] = String(message.prefix(120))
+        }
+        if let toolInput {
+            details["tool_input"] = toolInput.debugString(maxLength: 240)
+        }
+        if let content {
+            details["content"] = content.debugString(maxLength: 240)
+        }
+
+        return details.isEmpty ? nil : details
+    }
+}
+
+private extension AnyCodable {
+    func debugString(maxLength: Int) -> String {
+        let rendered: String
+        switch self {
+        case .null:
+            rendered = "null"
+        case .bool(let value):
+            rendered = value ? "true" : "false"
+        case .int(let value):
+            rendered = String(value)
+        case .double(let value):
+            rendered = String(value)
+        case .string(let value):
+            rendered = value
+        case .array(let values):
+            rendered = "[\(values.map { $0.debugString(maxLength: maxLength / max(1, values.count)) }.joined(separator: ","))]"
+        case .object(let values):
+            let pairs = values.keys.sorted().map { key in
+                "\(key)=\(values[key]?.debugString(maxLength: maxLength) ?? "")"
+            }
+            rendered = "{\(pairs.joined(separator: ","))}"
+        }
+
+        if rendered.count <= maxLength {
+            return rendered
+        }
+
+        return String(rendered.prefix(max(0, maxLength - 1))) + "…"
     }
 }

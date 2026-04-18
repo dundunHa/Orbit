@@ -8,6 +8,31 @@ import Testing
 @Suite("OverlayController")
 @MainActor
 struct OverlayControllerTests {
+    private final class MockScreen: NSScreen {
+        private let topInset: CGFloat
+        private let mockedFrame: NSRect
+        private let mockedVisibleFrame: NSRect
+
+        init(topInset: CGFloat, frame: NSRect, visibleFrame: NSRect) {
+            self.topInset = topInset
+            self.mockedFrame = frame
+            self.mockedVisibleFrame = visibleFrame
+            super.init()
+        }
+
+        override var safeAreaInsets: NSEdgeInsets {
+            NSEdgeInsets(top: topInset, left: 0, bottom: 0, right: 0)
+        }
+
+        override var frame: NSRect {
+            mockedFrame
+        }
+
+        override var visibleFrame: NSRect {
+            mockedVisibleFrame
+        }
+    }
+
     @Test("init creates panel and state machine")
     func initCreatesPanelAndStateMachine() throws {
         let fixture = try makeFixture()
@@ -16,8 +41,39 @@ struct OverlayControllerTests {
         #expect(fixture.controller.stateMachine.phase == .collapsed)
         #expect(!fixture.controller.isExpanded)
 
-        let expected = ParityGeometry.collapsedFrame(geometry: fixture.geometry, screenFrame: fixture.screen.frame)
+        let expected = ParityGeometry.collapsedFrame(
+            geometry: fixture.geometry,
+            screenFrame: DisplayPolicy.overlayAnchorFrame(for: fixture.screen)
+        )
         expectRectClose(fixture.controller.panel.frame, expected)
+    }
+
+    @Test("regular screens anchor collapsed panel to the physical top edge")
+    func regularScreensAnchorCollapsedPanelToPhysicalTopEdge() {
+        let frame = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 876)
+        let screen = MockScreen(topInset: 0, frame: frame, visibleFrame: visible)
+        let geometry = NotchGeometry(
+            notchHeight: 40,
+            screenWidth: 1440,
+            notchLeft: 620,
+            notchRight: 820,
+            notchWidth: 200,
+            leftSafeWidth: 620,
+            rightSafeWidth: 620,
+            leftZoneWidth: 35,
+            rightZoneWidth: 25
+        )
+
+        let controller = OverlayController(screen: screen, geometry: geometry)
+        defer { controller.panel.close() }
+
+        let expected = ParityGeometry.collapsedFrame(
+            geometry: geometry,
+            screenFrame: DisplayPolicy.overlayAnchorFrame(for: screen)
+        )
+        expectRectClose(controller.panel.frame, expected)
+        #expect(controller.panel.frame.maxY == frame.maxY)
     }
 
     @Test("mouse enter triggers requestExpand")
@@ -55,7 +111,7 @@ struct OverlayControllerTests {
 
         let expected = ParityGeometry.expandedFrame(
             geometry: fixture.geometry,
-            screenFrame: fixture.screen.frame,
+            screenFrame: DisplayPolicy.overlayAnchorFrame(for: fixture.screen),
             height: ParityGeometry.minExpandedHeight
         )
         expectRectClose(fixture.controller.panel.frame, expected)
@@ -73,7 +129,10 @@ struct OverlayControllerTests {
         fixture.controller.scheduleCollapse()
         pumpMainRunLoop(seconds: 0.80)
 
-        let expected = ParityGeometry.collapsedFrame(geometry: fixture.geometry, screenFrame: fixture.screen.frame)
+        let expected = ParityGeometry.collapsedFrame(
+            geometry: fixture.geometry,
+            screenFrame: DisplayPolicy.overlayAnchorFrame(for: fixture.screen)
+        )
         expectRectClose(fixture.controller.panel.frame, expected)
         #expect(fixture.controller.stateMachine.phase == .collapsed)
     }
@@ -102,7 +161,10 @@ struct OverlayControllerTests {
         let newGeometry = shiftedGeometry(from: fixture.geometry, screen: fixture.screen, shift: 20)
         fixture.controller.handleScreenChange(geometry: newGeometry, screen: fixture.screen)
 
-        let expected = ParityGeometry.collapsedFrame(geometry: newGeometry, screenFrame: fixture.screen.frame)
+        let expected = ParityGeometry.collapsedFrame(
+            geometry: newGeometry,
+            screenFrame: DisplayPolicy.overlayAnchorFrame(for: fixture.screen)
+        )
         expectRectClose(fixture.controller.panel.frame, expected)
         #expect(changed)
     }
@@ -287,7 +349,7 @@ struct OverlayControllerTests {
 
         let expected = ParityGeometry.expandedFrame(
             geometry: fixture.geometry,
-            screenFrame: fixture.screen.frame,
+            screenFrame: DisplayPolicy.overlayAnchorFrame(for: fixture.screen),
             height: expectedHeight
         )
         expectRectClose(fixture.controller.panel.frame, expected)
@@ -314,7 +376,7 @@ struct OverlayControllerTests {
         )
         let expected = ParityGeometry.expandedFrame(
             geometry: newGeometry,
-            screenFrame: fixture.screen.frame,
+            screenFrame: DisplayPolicy.overlayAnchorFrame(for: fixture.screen),
             height: expectedHeight
         )
         expectRectClose(fixture.controller.panel.frame, expected)

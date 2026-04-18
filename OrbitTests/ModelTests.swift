@@ -234,6 +234,34 @@ struct ModelTests {
         #expect(questions?.last?.isMultiSelect == true)
     }
 
+    @Test("extractAskUserQuestions supports legacy single-question payload")
+    func extractAskUserQuestionsSupportsLegacySingleQuestionPayload() {
+        let questions = extractAskUserQuestions(
+            from: .object([
+                "question": .string("Legacy pick"),
+                "choices": .array([
+                    .string("A"),
+                    .object([
+                        "label": .string("B"),
+                        "description": .string("Second"),
+                    ]),
+                ]),
+                "id": .string("legacy-1"),
+                "header": .string("Legacy Header"),
+            ])
+        )
+
+        #expect(questions?.count == 1)
+        #expect(questions?.first?.id == "legacy-1")
+        #expect(questions?.first?.header == "Legacy Header")
+        #expect(questions?.first?.question == "Legacy pick")
+        #expect(questions?.first?.options == [
+            AskUserQuestionOption(label: "A", description: nil),
+            AskUserQuestionOption(label: "B", description: "Second"),
+        ])
+        #expect(questions?.first?.isMultiSelect == false)
+    }
+
     @Test("AskUserQuestionDrafts returns single-question legacy answers")
     func askUserQuestionDraftsReturnsSingleQuestionLegacyAnswers() {
         let question = AskUserQuestionQuestion(

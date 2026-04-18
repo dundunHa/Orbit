@@ -50,11 +50,14 @@ final class OverlayController: ObservableObject {
     init(screen: NSScreen, geometry: NotchGeometry) {
         self.geometry = geometry
         self.currentScreen = screen
-        self.currentScreenFrame = screen.frame
+        self.currentScreenFrame = DisplayPolicy.overlayAnchorFrame(for: screen)
         self.stateMachine = OverlayStateMachine()
         self.bridge = OverlayBridge()
 
-        let collapsed = ParityGeometry.collapsedFrame(geometry: geometry, screenFrame: screen.frame)
+        let collapsed = ParityGeometry.collapsedFrame(
+            geometry: geometry,
+            screenFrame: currentScreenFrame
+        )
         self.panel = FloatingPanel(contentRect: collapsed)
         self.panel.anchoredFrame = collapsed
 
@@ -88,7 +91,14 @@ final class OverlayController: ObservableObject {
             geometry: geometry,
             payload: { [weak viewModel, weak self] in
                 guard let viewModel, let self else { return AnyView(EmptyView()) }
-                return AnyView(OverlayPayloadSlot(viewModel: viewModel, geometry: self.geometry))
+                return AnyView(
+                    OverlayPayloadSlot(
+                        viewModel: viewModel,
+                        geometry: self.geometry
+                    ) { [weak self] contentHeight in
+                        self?.updateExpandedHeight(contentScrollHeight: contentHeight)
+                    }
+                )
             }
         )
         let host = NSHostingView(rootView: root)
@@ -113,7 +123,7 @@ final class OverlayController: ObservableObject {
     func handleScreenChange(geometry: NotchGeometry, screen: NSScreen) {
         self.geometry = geometry
         self.currentScreen = screen
-        self.currentScreenFrame = screen.frame
+        self.currentScreenFrame = DisplayPolicy.overlayAnchorFrame(for: screen)
 
         // 场景 A 根治: 折叠流水线(~580ms)可能在本通知之前完全结束，
         // 此时 isExpanded/phase 都已重置为 collapsed。用 lastExpandedAt
@@ -169,9 +179,11 @@ final class OverlayController: ObservableObject {
             notchHeight: CGFloat(geometry.notchHeight),
             contentScrollHeight: contentScrollHeight
         )
-        expandedHeight = ParityGeometry.clampExpandedHeight(computed)
+        let nextHeight = ParityGeometry.clampExpandedHeight(computed)
+        let shouldResize = abs(nextHeight - expandedHeight) > 0.5
+        expandedHeight = nextHeight
 
-        guard stateMachine.phase == .expanded || stateMachine.phase == .expanding else {
+        guard shouldResize, stateMachine.phase == .expanded || stateMachine.phase == .expanding else {
             return
         }
 
@@ -305,13 +317,20 @@ final class OverlayController: ObservableObject {
     }
 
     private func expandedFrame(height: CGFloat) -> NSRect {
-        let frame = currentScreen?.frame ?? currentScreenFrame
+        let frame = overlayAnchorFrame(for: currentScreen)
         return ParityGeometry.expandedFrame(geometry: geometry, screenFrame: frame, height: height)
     }
 
     private func collapsedFrame() -> NSRect {
-        let frame = currentScreen?.frame ?? currentScreenFrame
+        let frame = overlayAnchorFrame(for: currentScreen)
         return ParityGeometry.collapsedFrame(geometry: geometry, screenFrame: frame)
+    }
+
+    private func overlayAnchorFrame(for screen: NSScreen?) -> NSRect {
+        guard let screen else {
+            return currentScreenFrame
+        }
+        return DisplayPolicy.overlayAnchorFrame(for: screen)
     }
 
     private func reanchorPanel(display: Bool) {

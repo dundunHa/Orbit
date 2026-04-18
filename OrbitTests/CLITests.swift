@@ -258,7 +258,8 @@ struct CLITests {
             await AppDelegate.processSocketMessageForTesting(
                 bytes: bytes,
                 hookRouter: fixture.router,
-                viewModel: fixture.viewModel
+                viewModel: fixture.viewModel,
+                debugLogger: fixture.debugLogger
             )
         }
 
@@ -287,14 +288,16 @@ struct CLITests {
             await AppDelegate.processSocketMessageForTesting(
                 bytes: Array(firstPayload.utf8),
                 hookRouter: fixture.router,
-                viewModel: fixture.viewModel
+                viewModel: fixture.viewModel,
+                debugLogger: fixture.debugLogger
             )
         }
         let secondResponseTask = Task {
             await AppDelegate.processSocketMessageForTesting(
                 bytes: Array(secondPayload.utf8),
                 hookRouter: fixture.router,
-                viewModel: fixture.viewModel
+                viewModel: fixture.viewModel,
+                debugLogger: fixture.debugLogger
             )
         }
 
@@ -333,14 +336,16 @@ struct CLITests {
             await AppDelegate.processSocketMessageForTesting(
                 bytes: Array(firstPayload.utf8),
                 hookRouter: fixture.router,
-                viewModel: fixture.viewModel
+                viewModel: fixture.viewModel,
+                debugLogger: fixture.debugLogger
             )
         }
         let secondResponseTask = Task {
             await AppDelegate.processSocketMessageForTesting(
                 bytes: Array(secondPayload.utf8),
                 hookRouter: fixture.router,
-                viewModel: fixture.viewModel
+                viewModel: fixture.viewModel,
+                debugLogger: fixture.debugLogger
             )
         }
 
@@ -366,6 +371,47 @@ struct CLITests {
         let firstResponse = try #require(await firstResponseTask.value)
         #expect(String(decoding: firstResponse, as: UTF8.self).contains("\"behavior\":\"allow\""))
         #expect(fixture.viewModel.pendingInteraction == nil)
+    }
+
+    @Test("CLI elicitation result clears pending interaction and returns empty override")
+    @MainActor
+    func cliElicitationResultClearsPendingInteractionAndReturnsEmptyOverride() async throws {
+        let fixture = makeAppDelegateFixture()
+        let elicitationPayload = #"{"hook_event_name":"Elicitation","session_id":"cli-eli","cwd":"/repo","mcp_server_name":"notion","message":"Need answer","elicitation_id":"eli-7","requested_schema":{"type":"object"}}"#
+        let resultPayload = #"{"hook_event_name":"ElicitationResult","session_id":"cli-eli","cwd":"/repo","mcp_server_name":"notion","elicitation_id":"eli-7","action":"accept","content":{"answer":"yes"}}"#
+
+        let elicitationTask = Task {
+            await AppDelegate.processSocketMessageForTesting(
+                bytes: Array(elicitationPayload.utf8),
+                hookRouter: fixture.router,
+                viewModel: fixture.viewModel,
+                debugLogger: fixture.debugLogger
+            )
+        }
+
+        #expect(await waitUntil {
+            await MainActor.run {
+                fixture.viewModel.pendingInteraction?.id == "eli-7"
+            }
+        })
+
+        let resultResponse = try #require(
+            await AppDelegate.processSocketMessageForTesting(
+                bytes: Array(resultPayload.utf8),
+                hookRouter: fixture.router,
+                viewModel: fixture.viewModel,
+                debugLogger: fixture.debugLogger
+            )
+        )
+        let elicitationResponse = try #require(await elicitationTask.value)
+
+        #expect(String(decoding: resultResponse, as: UTF8.self) == "{}")
+        #expect(String(decoding: elicitationResponse, as: UTF8.self).contains("\"action\":\"accept\""))
+        #expect(await waitUntil {
+            await MainActor.run {
+                fixture.viewModel.pendingInteraction == nil
+            }
+        })
     }
 
     // MARK: - Install/Uninstall via Installer
@@ -605,7 +651,7 @@ private actor MessageRecorder {
 }
 
 @MainActor
-private func makeAppDelegateFixture() -> (router: HookRouter, viewModel: AppViewModel) {
+private func makeAppDelegateFixture() -> (router: HookRouter, viewModel: AppViewModel, debugLogger: HookDebugLogger) {
     let sessionStore = SessionStore()
     let historyStore = HistoryStore(filePath: tempFilePath(prefix: "cli-history"))
     let debugLogger = HookDebugLogger(filePath: tempFilePath(prefix: "cli-debug"))
@@ -622,7 +668,7 @@ private func makeAppDelegateFixture() -> (router: HookRouter, viewModel: AppView
         hookRouter: router,
         onboardingManager: nil
     )
-    return (router, viewModel)
+    return (router, viewModel, debugLogger)
 }
 
 private func tempFilePath(prefix: String) -> String {

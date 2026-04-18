@@ -183,6 +183,34 @@ struct InteractionResponseTests {
         #expect(responses?.last?["answers"] as? [String] == ["b", "c"])
     }
 
+    @Test("AskUserQuestion deny 不应注入 updatedInput")
+    func askUserQuestionDenyOmitsUpdatedInput() {
+        let payload = HookPayload(
+            sessionId: "sess-e3",
+            hookEventName: "PermissionRequest",
+            toolName: "AskUserQuestion",
+            toolInput: .object([
+                "question": .string("pick"),
+                "choices": .array([.string("a"), .string("b")]),
+            ])
+        )
+
+        let response = buildInteractionResponse(
+            payload: payload,
+            decision: PermissionDecision(
+                decision: "deny",
+                content: .object([
+                    "answers": .array([.string("a")]),
+                ])
+            )
+        )
+        let hookOutput = response?["hookSpecificOutput"] as? [String: Any]
+        let decision = hookOutput?["decision"] as? [String: Any]
+
+        #expect(decision?["behavior"] as? String == "deny")
+        #expect(decision?["updatedInput"] == nil)
+    }
+
     @Test("Elicitation accept 带 content")
     func elicitationAcceptWithContent() {
         let payload = HookPayload(sessionId: "sess-f", hookEventName: "Elicitation")
