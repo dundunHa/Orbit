@@ -50,6 +50,16 @@ export function formatTokenCount(tokens) {
   return `${(value / 1000000).toFixed(1)}M tok`;
 }
 
+export function formatCompactTokenCount(tokens) {
+  const value = Math.max(0, Number(tokens) || 0);
+
+  if (value < 1000) return `${Math.round(value)}`;
+  if (value < 10000) return `${(value / 1000).toFixed(1)}k`;
+  if (value < 1000000) return `${Math.round(value / 1000)}k`;
+
+  return `${(value / 1000000).toFixed(1)}M`;
+}
+
 export function formatTokenRate(tokensPerSecond) {
   const value = Math.max(0, Number(tokensPerSecond) || 0);
 
@@ -59,19 +69,28 @@ export function formatTokenRate(tokensPerSecond) {
   return `${value.toFixed(2)} tok/s`;
 }
 
+export function formatCompactTokenRate(tokensPerSecond) {
+  const value = Math.max(0, Number(tokensPerSecond) || 0);
+
+  if (value >= 100) return `${Math.round(value)}/s`;
+  if (value >= 10) return `${value.toFixed(1)}/s`;
+
+  return `${value.toFixed(2)}/s`;
+}
+
 export function getSessionTokenStats(session) {
   const input = Math.max(0, Number(session.tokens_in) || 0);
   const output = Math.max(0, Number(session.tokens_out) || 0);
   const total = input + output;
   const durationSecs = getSessionDurationSeconds(session);
-  const averageTotalTps = durationSecs > 0 ? total / durationSecs : 0;
+  const averageOutputTps = durationSecs > 0 ? output / durationSecs : 0;
 
   return {
     input,
     output,
     total,
     durationSecs,
-    averageTotalTps,
+    averageOutputTps,
     hasTokens: total > 0,
   };
 }
@@ -92,7 +111,10 @@ function transformSession(session, level = 0) {
       tokensIn: formatTokenCount(tokenStats.input),
       tokensOut: formatTokenCount(tokenStats.output),
       tokensTotal: formatTokenCount(tokenStats.total),
-      averageTps: formatTokenRate(tokenStats.averageTotalTps),
+      tokensInCompact: formatCompactTokenCount(tokenStats.input),
+      tokensOutCompact: formatCompactTokenCount(tokenStats.output),
+      outputRateCompact: formatCompactTokenRate(tokenStats.averageOutputTps),
+      averageTps: formatTokenRate(tokenStats.averageOutputTps),
     },
     started_at: session.started_at || null,
     level,

@@ -17,4 +17,5 @@ DESIGN.md
 
 # Session context and docs
 .context/
+.sisyphus/
 docs/

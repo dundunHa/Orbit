@@ -77,7 +77,7 @@ async fn test_full_session_lifecycle_with_statusline_tokens() {
         guard.insert(session_id.to_string(), session);
     }
 
-        let history_entry = {
+    let history_entry = {
         let guard = sessions.lock().await;
         let session = guard.get(session_id).unwrap();
 

@@ -1,6 +1,6 @@
 use log::{debug, error, info};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
@@ -15,6 +15,7 @@ use crate::state::{
 };
 
 type PendingSpawns = Arc<tokio::sync::Mutex<Vec<(String, String, chrono::DateTime<chrono::Utc>)>>>;
+static INTERACTION_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn cleanup_pending_spawns(
     pending_spawns: &mut Vec<(String, String, chrono::DateTime<chrono::Utc>)>,
@@ -61,7 +62,8 @@ fn interaction_request_id(payload: &HookPayload) -> String {
     }
 
     let ts = chrono::Utc::now().timestamp_millis();
-    format!("{}-interaction-{}", payload.session_id, ts)
+    let seq = INTERACTION_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{}-interaction-{}-{}", payload.session_id, ts, seq)
 }
 
 fn build_interaction_response(
@@ -74,9 +76,7 @@ fn build_interaction_response(
             payload.tool_name.as_deref(),
             payload.tool_input.as_ref(),
         ),
-        "Elicitation" | "ElicitationResult" => {
-            build_elicitation_response(&payload.hook_event_name, decision)
-        }
+        "Elicitation" => build_elicitation_response(&payload.hook_event_name, decision),
         _ => None,
     }
 }
@@ -182,6 +182,19 @@ fn hook_debug_payload_summary(input: &str) -> String {
         summary.push_str("…<truncated>");
     }
     summary
+}
+
+async fn clear_session_waiting_for_approval(
+    sessions: &SessionMap,
+    app_handle: &tauri::AppHandle,
+    session_id: &str,
+) {
+    let mut sessions = sessions.lock().await;
+    if let Some(session) = sessions.get_mut(session_id)
+        && session.clear_waiting_for_approval()
+    {
+        let _ = app_handle.emit("session-update", session.clone());
+    }
 }
 
 pub async fn start(
@@ -293,10 +306,14 @@ async fn handle_connection(
 
             info!("[Orbit] Permission handled by helper: {}", perm_id);
 
-            let mut pending = pending.lock().await;
-            if pending.remove(&perm_id).is_some() {
+            let removed = {
+                let mut pending = pending.lock().await;
+                pending.remove(&perm_id).is_some()
+            };
+            if removed {
                 let _ = app_handle.emit("interaction-resolved", &perm_id);
             }
+            clear_session_waiting_for_approval(&sessions, app_handle, session_id).await;
             return;
         }
 
@@ -436,7 +453,9 @@ async fn handle_connection(
     // Write history outside the lock to avoid blocking tokio worker
     let history_entry = if is_session_end {
         let sessions_guard = sessions.lock().await;
-        sessions_guard.get(&session_id).map(|s| s.to_history_entry())
+        sessions_guard
+            .get(&session_id)
+            .map(|s| s.to_history_entry())
     } else {
         None
     };
@@ -449,7 +468,8 @@ async fn handle_connection(
     if is_permission_request || is_elicitation_request {
         let (tx, rx) = oneshot::channel::<PermissionDecision>();
 
-        let perm_id = interaction_request_id(&payload);
+        let base_perm_id = interaction_request_id(&payload);
+        let mut perm_id = base_perm_id.clone();
 
         let kind = if is_permission_request {
             "permission"
@@ -478,8 +498,15 @@ async fn handle_connection(
             })
         };
 
+        let mut id_collision = false;
         {
             let mut pending = pending.lock().await;
+            while pending.contains_key(&perm_id) {
+                id_collision = true;
+                let seq = INTERACTION_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                perm_id = format!("{base_perm_id}-collision-{seq}");
+            }
+
             pending.insert(
                 perm_id.clone(),
                 PendingPermission {
@@ -488,6 +515,18 @@ async fn handle_connection(
                     tool_input: tool_input.clone(),
                     responder: tx,
                 },
+            );
+        }
+
+        if id_collision {
+            hook_debug::append_hook_debug_log(
+                "socket_server",
+                Some(&payload.session_id),
+                Some(&payload.hook_event_name),
+                Some(&perm_id),
+                "request-id-collision",
+                None,
+                None,
             );
         }
 
@@ -527,11 +566,39 @@ async fn handle_connection(
 
                 write_optional_hook_response(&mut writer, response.as_ref()).await;
             }
-            _ => {
-                // Timeout or error, remove pending and notify frontend.
-                let mut pending = pending.lock().await;
-                pending.remove(&perm_id);
-                let _ = app_handle.emit("interaction-timeout", &perm_id);
+            Ok(Err(_)) => {
+                // The responder was dropped before a UI decision arrived.
+                let removed = {
+                    let mut pending = pending.lock().await;
+                    pending.remove(&perm_id).is_some()
+                };
+                if removed {
+                    let _ = app_handle.emit("interaction-timeout", &perm_id);
+                    clear_session_waiting_for_approval(&sessions, app_handle, &payload.session_id)
+                        .await;
+                }
+                hook_debug::append_hook_debug_log(
+                    "socket_server",
+                    Some(&payload.session_id),
+                    Some(&payload.hook_event_name),
+                    Some(&perm_id),
+                    "channel-closed",
+                    None,
+                    None,
+                );
+                write_optional_hook_response(&mut writer, None).await;
+            }
+            Err(_) => {
+                // Timeout, remove pending and notify frontend.
+                let removed = {
+                    let mut pending = pending.lock().await;
+                    pending.remove(&perm_id).is_some()
+                };
+                if removed {
+                    let _ = app_handle.emit("interaction-timeout", &perm_id);
+                    clear_session_waiting_for_approval(&sessions, app_handle, &payload.session_id)
+                        .await;
+                }
                 hook_debug::append_hook_debug_log(
                     "socket_server",
                     Some(&payload.session_id),
@@ -772,6 +839,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_interaction_request_id_prefers_elicitation_id() {
+        let mut payload = create_hook_payload("Elicitation", "session-xyz");
+        payload.tool_use_id = Some("toolu_abc123".to_string());
+        payload.elicitation_id = Some("elicit_123".to_string());
+
+        assert_eq!(
+            interaction_request_id(&payload),
+            "session-xyz-elicit_123".to_string()
+        );
+    }
+
+    #[test]
+    fn test_interaction_request_id_prefers_tool_use_id() {
+        let mut payload = create_hook_payload("PermissionRequest", "session-xyz");
+        payload.tool_use_id = Some("toolu_abc123".to_string());
+
+        assert_eq!(
+            interaction_request_id(&payload),
+            "session-xyz-toolu_abc123".to_string()
+        );
+    }
+
+    #[test]
+    fn test_interaction_request_id_generates_unique_fallback_ids() {
+        let payload = create_hook_payload("PermissionRequest", "session-xyz");
+        let ids: std::collections::HashSet<_> =
+            (0..512).map(|_| interaction_request_id(&payload)).collect();
+
+        assert_eq!(ids.len(), 512);
+        assert!(
+            ids.iter()
+                .all(|id| id.starts_with("session-xyz-interaction-"))
+        );
+    }
+
     fn make_decision(decision: &str) -> PermissionDecision {
         PermissionDecision {
             decision: decision.to_string(),
@@ -880,14 +983,10 @@ mod tests {
     }
 
     #[test]
-    fn test_build_interaction_response_uses_elicitation_result_hook_name() {
+    fn test_build_interaction_response_ignores_elicitation_result() {
         let payload = create_hook_payload("ElicitationResult", "test-elicitation-result");
-        let response = build_interaction_response(&payload, &make_decision("cancel")).unwrap();
+        let response = build_interaction_response(&payload, &make_decision("cancel"));
 
-        assert_eq!(
-            response["hookSpecificOutput"]["hookEventName"],
-            "ElicitationResult"
-        );
-        assert_eq!(response["hookSpecificOutput"]["action"], "cancel");
+        assert!(response.is_none());
     }
 }

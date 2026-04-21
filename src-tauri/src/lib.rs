@@ -4,6 +4,8 @@ mod commands;
 mod history;
 pub mod hook_debug;
 pub mod installer;
+#[cfg(target_os = "macos")]
+mod macos_hover;
 mod notch;
 mod socket_server;
 mod state;
@@ -124,6 +126,7 @@ pub fn run() {
             commands::permission_decision,
             commands::expand_window,
             commands::set_expanded_height,
+            commands::set_expanded_frame,
             commands::collapse_window,
             commands::retry_onboarding_install,
             commands::resume_session,
@@ -193,6 +196,12 @@ pub fn run() {
                         Err(e) => {
                             eprintln!("[Orbit] Failed to get window handle: {}", e);
                         }
+                    }
+
+                    if let Err(e) =
+                        macos_hover::install_hover_tracking(&window, app.handle().clone())
+                    {
+                        eprintln!("[Orbit] Failed to install hover tracking: {}", e);
                     }
                 }
 

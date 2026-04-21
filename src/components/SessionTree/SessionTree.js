@@ -24,69 +24,8 @@ export class SessionTree {
       throw new Error("SessionTree: Container not found");
     }
 
-    this.tooltip = this._createTooltip();
     this._setupKeyboardShortcuts();
     this.render();
-  }
-
-  /**
-   * Create tooltip element
-   * @returns {HTMLElement}
-   */
-  _createTooltip() {
-    const tooltip = document.createElement("div");
-    tooltip.className = "session-tooltip hidden";
-    document.body.appendChild(tooltip);
-    return tooltip;
-  }
-
-  /**
-   * Show tooltip for a session
-   * @param {import('../../types/session.js').SessionNode} session
-   * @param {MouseEvent} event
-   */
-  _showTooltip(session, event) {
-    const statusConfig = getStatusConfig(session.status);
-
-    this.tooltip.innerHTML = `
-      <div class="tooltip-header">${session.id}</div>
-      <div class="tooltip-desc">${session.description}</div>
-      <div class="tooltip-meta">
-        <span class="tooltip-label">Status:</span>
-        <span style="color: ${statusConfig.color}">${statusConfig.label}</span>
-        <span class="tooltip-label">Duration:</span>
-        <span>${session.metadata?.duration || "N/A"}</span>
-        <span class="tooltip-label">Input:</span>
-        <span>${session.metadata?.tokensIn || "0 tok"}</span>
-        <span class="tooltip-label">Output:</span>
-        <span>${session.metadata?.tokensOut || "0 tok"}</span>
-        <span class="tooltip-label">Total:</span>
-        <span>${session.metadata?.tokensTotal || session.metadata?.tokens || "0 tok"}</span>
-        <span class="tooltip-label">Avg rate:</span>
-        <span>${session.metadata?.averageTps || "0.00 tok/s"}</span>
-        ${session.agent ? `<span class="tooltip-label">Agent:</span><span>${session.agent}</span>` : ""}
-        ${session.dependencies?.length ? `<span class="tooltip-label">Depends on:</span><span>${session.dependencies.join(", ")}</span>` : ""}
-      </div>
-    `;
-
-    this.tooltip.classList.remove("hidden");
-
-    const x = event.clientX + 15;
-    const y = event.clientY + 15;
-
-    const rect = this.tooltip.getBoundingClientRect();
-    const maxX = window.innerWidth - rect.width - 10;
-    const maxY = window.innerHeight - rect.height - 10;
-
-    this.tooltip.style.left = `${Math.min(x, maxX)}px`;
-    this.tooltip.style.top = `${Math.min(y, maxY)}px`;
-  }
-
-  /**
-   * Hide tooltip
-   */
-  _hideTooltip() {
-    this.tooltip.classList.add("hidden");
   }
 
   /**
@@ -171,6 +110,23 @@ export class SessionTree {
   }
 
   /**
+   * Render compact token metrics for a row.
+   * @param {import('../../types/session.js').SessionNode['metadata']} metadata
+   * @returns {string}
+   */
+  _renderTokenMetrics(metadata) {
+    if (!metadata) return "";
+
+    return `
+      <span class="metadata-info token-metrics" aria-label="Token metrics">
+        <span class="token-metric token-metric-in">↑${metadata.tokensInCompact}</span>
+        <span class="token-metric token-metric-out">↓${metadata.tokensOutCompact}</span>
+        <span class="token-metric token-metric-rate">↓${metadata.outputRateCompact}</span>
+      </span>
+    `;
+  }
+
+  /**
    * Render a single session node
    * @param {import('../../types/session.js').SessionNode} session
    * @param {number} level
@@ -198,13 +154,11 @@ export class SessionTree {
         ${isParent ? '<span class="parent-tag">Parent</span>' : ""}
         ${session.agent ? `<span class="agent-tag">${session.agent}</span>` : ""}
         ${session.dependencies?.length ? `<span class="dependency-tag">Depends: ${session.dependencies.join(", ")}</span>` : ""}
-        ${!this.compact && session.metadata ? `<span class="metadata-info">${session.metadata.duration} • ${session.metadata.tokens}</span>` : ""}
+        ${!this.compact ? this._renderTokenMetrics(session.metadata) : ""}
       </div>
     `;
 
     item.addEventListener("click", () => this._activateSession(session));
-    item.addEventListener("mouseenter", (e) => this._showTooltip(session, e));
-    item.addEventListener("mouseleave", () => this._hideTooltip());
 
     const container = document.createElement("div");
     container.appendChild(item);
@@ -246,11 +200,7 @@ export class SessionTree {
   /**
    * Destroy the component and cleanup
    */
-  destroy() {
-    if (this.tooltip && this.tooltip.parentNode) {
-      this.tooltip.parentNode.removeChild(this.tooltip);
-    }
-  }
+  destroy() {}
 }
 
 export default SessionTree;

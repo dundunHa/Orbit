@@ -116,42 +116,22 @@
   padding-top: 1px;
 }
 
-/* Tooltip styles */
-.session-tooltip {
-  position: fixed;
-  z-index: 9999;
-  pointer-events: none;
-  background-color: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  padding: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-  color: #c9d1d9;
-  font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", monospace;
-  font-size: 12px;
-  max-width: 300px;
+.metadata-info.token-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.session-tooltip.hidden {
-  display: none;
+.token-metric-in {
+  color: var(--text-muted);
 }
 
-.tooltip-header {
-  font-weight: 600;
-  margin-bottom: 4px;
+.token-metric-out {
+  color: var(--text-main);
 }
 
-.tooltip-desc {
-  color: #8b949e;
-  margin-bottom: 8px;
-}
-
-.tooltip-meta {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-}
-
-.tooltip-label {
-  color: #6e7681;
+.token-metric-rate {
+  color: var(--text-muted);
 }

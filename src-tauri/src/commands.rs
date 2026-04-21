@@ -5,12 +5,15 @@ use crate::state::{PendingPermissions, PermissionDecision, Session, SessionMap};
 use parking_lot::RwLock;
 use serde_json::Value;
 use std::sync::LazyLock;
+use tauri::Emitter;
 
 pub const LEFT_ZONE_WIDTH: f64 = 35.0;
 pub const RIGHT_ZONE_WIDTH: f64 = 25.0;
 pub const MASCOT_LEFT_INSET: f64 = 8.0;
 const MIN_EXPANDED_HEIGHT: f64 = 168.0;
-const MAX_EXPANDED_HEIGHT: f64 = 320.0;
+const DEFAULT_EXPANDED_HEIGHT: f64 = 320.0;
+const MAX_EXPANDED_HEIGHT: f64 = 560.0;
+const WINDOW_EDGE_MARGIN: f64 = 24.0;
 
 pub static NOTCH_GEOMETRY: LazyLock<RwLock<NotchGeometry>> =
     LazyLock::new(|| RwLock::new(NotchGeometry::fallback()));
@@ -37,6 +40,16 @@ fn pill_left(notch: NotchGeometry) -> f64 {
     (notch.notch_left - LEFT_ZONE_WIDTH).clamp(0.0, (notch.screen_width - width).max(0.0))
 }
 
+fn window_left_for_width(notch: NotchGeometry, width: f64) -> f64 {
+    let default_width = pill_width(notch);
+    if (width - default_width).abs() < 0.1 {
+        return pill_left(notch);
+    }
+
+    let notch_center = (notch.notch_left + notch.notch_right) / 2.0;
+    (notch_center - width / 2.0).clamp(0.0, (notch.screen_width - width).max(0.0))
+}
+
 pub fn current_pill_width() -> f64 {
     pill_width(current_notch_geometry())
 }
@@ -47,6 +60,13 @@ pub fn pill_width_for_geometry(notch: NotchGeometry) -> f64 {
 
 fn clamp_expanded_height(height: f64) -> f64 {
     height.clamp(MIN_EXPANDED_HEIGHT, MAX_EXPANDED_HEIGHT)
+}
+
+fn clamp_expanded_width(width: f64) -> f64 {
+    let notch = current_notch_geometry();
+    let min_width = pill_width(notch);
+    let max_width = (notch.screen_width - WINDOW_EDGE_MARGIN * 2.0).max(min_width);
+    width.clamp(min_width, max_width)
 }
 
 /// Apply frame to NSWindow using native macOS coordinates (bottom-left origin).
@@ -195,7 +215,7 @@ fn set_window_frame_for_geometry(
     width: f64,
     height: f64,
 ) {
-    let x = pill_left(notch);
+    let x = window_left_for_width(notch, width);
 
     #[cfg(target_os = "macos")]
     {
@@ -267,27 +287,63 @@ pub async fn permission_decision(
     reason: Option<String>,
     content: Option<Value>,
     pending: tauri::State<'_, PendingPermissions>,
+    sessions: tauri::State<'_, SessionMap>,
+    app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    let mut pending = pending.lock().await;
-    if let Some(perm) = pending.remove(&perm_id) {
+    let perm = {
+        let mut pending = pending.lock().await;
+        pending.remove(&perm_id)
+    };
+
+    if let Some(perm) = perm {
+        let session_id = perm.session_id.clone();
         let _ = perm.responder.send(PermissionDecision {
             decision,
             reason,
             content,
         });
+        let _ = app_handle.emit("interaction-resolved", &perm_id);
+        clear_session_waiting_for_approval(&sessions, &app_handle, &session_id).await;
     }
     Ok(())
 }
 
+async fn clear_session_waiting_for_approval(
+    sessions: &SessionMap,
+    app_handle: &tauri::AppHandle,
+    session_id: &str,
+) {
+    let mut sessions = sessions.lock().await;
+    if let Some(session) = sessions.get_mut(session_id)
+        && session.clear_waiting_for_approval()
+    {
+        let _ = app_handle.emit("session-update", session.clone());
+    }
+}
+
 #[tauri::command]
 pub async fn expand_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    set_window_frame(&window, current_pill_width(), MAX_EXPANDED_HEIGHT);
+    set_window_frame(&window, current_pill_width(), DEFAULT_EXPANDED_HEIGHT);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn set_expanded_height(window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
     set_window_frame(&window, current_pill_width(), clamp_expanded_height(height));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_expanded_frame(
+    window: tauri::WebviewWindow,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    set_window_frame(
+        &window,
+        clamp_expanded_width(width),
+        clamp_expanded_height(height),
+    );
     Ok(())
 }
 
@@ -463,8 +519,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn build_resume_launch_spec_terminal_app_uses_applescript() {
-        let spec =
-            build_resume_launch_spec(ResumeTerminal::TerminalApp, "/tmp", "session-xyz");
+        let spec = build_resume_launch_spec(ResumeTerminal::TerminalApp, "/tmp", "session-xyz");
 
         match spec {
             ResumeLaunchSpec::AppleScript(script) => {
@@ -511,10 +566,7 @@ const ALACRITTY_BINARY: &str = "/Applications/Alacritty.app/Contents/MacOS/alacr
 #[cfg(target_os = "macos")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ResumeTerminal {
-    Tmux {
-        binary: String,
-        target_pane: String,
-    },
+    Tmux { binary: String, target_pane: String },
     Alacritty,
     TerminalApp,
 }
@@ -523,24 +575,18 @@ enum ResumeTerminal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ResumeLaunchSpec {
     AppleScript(String),
-    Process {
-        program: String,
-        args: Vec<String>,
-    },
+    Process { program: String, args: Vec<String> },
 }
 
 #[cfg(target_os = "macos")]
 const TMUX_CANDIDATES: &[&str] = &[
-    "/opt/homebrew/bin/tmux",  // Apple Silicon homebrew
-    "/usr/local/bin/tmux",     // Intel homebrew / manual
-    "/opt/local/bin/tmux",     // MacPorts
+    "/opt/homebrew/bin/tmux", // Apple Silicon homebrew
+    "/usr/local/bin/tmux",    // Intel homebrew / manual
+    "/opt/local/bin/tmux",    // MacPorts
 ];
 
 #[cfg(target_os = "macos")]
-const CLAUDE_CANDIDATES: &[&str] = &[
-    "/opt/homebrew/bin/claude",
-    "/usr/local/bin/claude",
-];
+const CLAUDE_CANDIDATES: &[&str] = &["/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
 
 #[cfg(target_os = "macos")]
 fn find_tmux_binary() -> Option<&'static str> {
@@ -725,7 +771,10 @@ fn build_resume_launch_spec(
     let shell_command = build_resume_shell_command(cwd, session_id);
 
     match terminal {
-        ResumeTerminal::Tmux { binary, target_pane } => ResumeLaunchSpec::Process {
+        ResumeTerminal::Tmux {
+            binary,
+            target_pane,
+        } => ResumeLaunchSpec::Process {
             program: binary,
             args: vec![
                 "split-window".to_string(),

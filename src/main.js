@@ -4,6 +4,8 @@
 import { SessionTree } from "./components/SessionTree/index.js";
 import {
   buildSessionTree,
+  formatCompactTokenCount,
+  formatCompactTokenRate,
   formatTokenCount,
   formatTokenRate,
   getSessionCounts,
@@ -25,8 +27,22 @@ let onboardingState = null;
 let onboardingRetryPending = false;
 let collapseDebounceTimer = null;
 let wantExpanded = false; // 鼠标期望状态，动画结束后据此对账
+let hoverInside = false;
 const COLLAPSE_DELAY = 200; // ms, hover 离开后延迟收起防抖
 let cachedHistory = null; // 预取的 history，expand 时直接渲染避免 IPC 延迟
+let lastExpandedFrame = { width: null, height: null };
+
+const DEFAULT_EXPANDED_HEIGHT = 320;
+const FOCUS_EXPANDED_HEIGHT = 560;
+const FOCUS_WIDTH_BASE = 640;
+const FOCUS_WIDTH_WIDE = 720;
+const WINDOW_EDGE_MARGIN = 24;
+const QUESTION_OPTION_MAX_WIDTH = 260;
+const QUESTION_OPTION_MIN_WIDTH = 168;
+const QUESTION_OPTION_LONG_MIN_WIDTH = 220;
+const QUESTION_OPTION_GAP = 6;
+const QUESTION_OPTION_LAYOUT_LEFT_INSET = 16;
+const QUESTION_OPTION_LAYOUT_RIGHT_INSET = 16;
 
 listen("screen-changed", (event) => {
   const info = event.payload;
@@ -86,6 +102,7 @@ const permissionActions = document.querySelector(".permission-actions");
 const historyList = document.querySelector(".history-list");
 const mascot = document.querySelector(".mascot");
 const DEFAULT_PROVIDER = "claude-code";
+let currentStatusText = "";
 
 const ONBOARDING_STATUS_MAP = {
   Welcome: {
@@ -170,6 +187,149 @@ function requestExpand() {
   wantExpanded = true;
   if (!isExpanded && !isAnimating) {
     expandIsland();
+  }
+}
+
+function settleAfterInteractionsComplete() {
+  wantExpanded = hoverInside;
+  if (!hoverInside && isExpanded && !isAnimating) {
+    collapseIsland();
+  }
+}
+
+function clampInteractionWidth(width) {
+  const baseWidth = notchInfo.pill_width || 480;
+  const screenWidth = notchInfo.screen_width || baseWidth;
+  const maxWidth = Math.max(baseWidth, screenWidth - WINDOW_EDGE_MARGIN * 2);
+  return Math.round(Math.min(maxWidth, Math.max(baseWidth, width)));
+}
+
+function getExpandedWidth() {
+  if (island.classList.contains("interaction-focus")) {
+    const cssWidth = parseFloat(
+      document.documentElement.style.getPropertyValue("--interaction-width"),
+    );
+    if (Number.isFinite(cssWidth) && cssWidth > 0) {
+      return cssWidth;
+    }
+  }
+  return notchInfo.pill_width || 480;
+}
+
+function getExpandedMaxHeight() {
+  return island.classList.contains("interaction-focus")
+    ? FOCUS_EXPANDED_HEIGHT
+    : DEFAULT_EXPANDED_HEIGHT;
+}
+
+async function applyExpandedFrame(width, height) {
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+  if (
+    Math.abs((lastExpandedFrame.width || 0) - width) < 0.5 &&
+    Math.abs((lastExpandedFrame.height || 0) - height) < 0.5
+  ) {
+    return;
+  }
+
+  lastExpandedFrame = { width, height };
+  try {
+    await invokeCommand("set_expanded_frame", { width, height });
+  } catch (e) {
+    console.error("[Orbit] Failed to resize expanded frame:", e);
+  }
+}
+
+function estimateInteractionWidth(request) {
+  const textLength =
+    (request.message || "").length +
+    (request.questionGroups || []).reduce((total, question) => {
+      const optionText = question.options
+        .map((option) => `${option.label} ${option.description || ""}`)
+        .join(" ");
+      return total + question.prompt.length + optionText.length;
+    }, 0);
+  const questionCount = request.questionGroups?.length || 0;
+  const optionCount = (request.questionGroups || []).reduce(
+    (total, question) => total + question.options.length,
+    request.options?.length || 0,
+  );
+
+  const target =
+    textLength > 520 || questionCount > 1 || optionCount > 4
+      ? FOCUS_WIDTH_WIDE
+      : FOCUS_WIDTH_BASE;
+  return clampInteractionWidth(target);
+}
+
+function getQuestionOptionLayout(question) {
+  const optionCount = question.options.length;
+  const availableWidth = Math.max(
+    QUESTION_OPTION_MIN_WIDTH,
+    getExpandedWidth() -
+      QUESTION_OPTION_LAYOUT_LEFT_INSET -
+      QUESTION_OPTION_LAYOUT_RIGHT_INSET,
+  );
+  const longestOptionText = question.options.reduce((longest, option) => {
+    const textLength =
+      (option.label || "").length + (option.description || "").length;
+    return Math.max(longest, textLength);
+  }, 0);
+  const hasDescriptions = question.options.some((option) =>
+    Boolean(option.description),
+  );
+  const minOptionWidth =
+    hasDescriptions || longestOptionText > 34
+      ? QUESTION_OPTION_LONG_MIN_WIDTH
+      : QUESTION_OPTION_MIN_WIDTH;
+  const maxColumnsByWidth = Math.max(
+    1,
+    Math.floor(
+      (availableWidth + QUESTION_OPTION_GAP) /
+        (minOptionWidth + QUESTION_OPTION_GAP),
+    ),
+  );
+  const preferredColumns =
+    optionCount <= 1 ? 1 : optionCount <= 4 ? 2 : 3;
+  const columns = Math.max(
+    1,
+    Math.min(optionCount, preferredColumns, maxColumnsByWidth),
+  );
+  const optionWidth = Math.min(
+    QUESTION_OPTION_MAX_WIDTH,
+    Math.floor(
+      (availableWidth - QUESTION_OPTION_GAP * (columns - 1)) / columns,
+    ),
+  );
+
+  return {
+    columns,
+    optionWidth,
+    maxWidth: optionWidth * columns + QUESTION_OPTION_GAP * (columns - 1),
+  };
+}
+
+function applyInteractionFocus(request) {
+  if (!request.requiresFocus) {
+    clearInteractionFocus();
+    return;
+  }
+
+  const width = estimateInteractionWidth(request);
+  document.documentElement.style.setProperty("--interaction-width", `${width}px`);
+  island.classList.add("interaction-focus");
+
+  if (isExpanded) {
+    scheduleExpandedHeightUpdate();
+  }
+}
+
+function clearInteractionFocus() {
+  island.classList.remove("interaction-focus");
+  document.documentElement.style.removeProperty("--interaction-width");
+  lastExpandedFrame = { width: null, height: null };
+
+  if (isExpanded) {
+    scheduleExpandedHeightUpdate();
   }
 }
 
@@ -311,7 +471,10 @@ listen("session-update", (event) => {
     setTimeout(() => island.classList.remove("flash-complete"), 600);
   }
 
-  if (session.status.type === "WaitingForApproval") {
+  if (
+    session.status.type === "WaitingForApproval" &&
+    getPendingInteractionForSession(session.id)
+  ) {
     requestExpand();
   }
 
@@ -339,7 +502,9 @@ listen("interaction-request", (event) => {
 });
 
 listen("permission-prompt", () => {
-  requestExpand();
+  if (pendingInteractions.size > 0) {
+    requestExpand();
+  }
 });
 
 // Listen for interaction timeout — clean up stale UI
@@ -352,6 +517,7 @@ listen("interaction-timeout", (event) => {
       showInteraction(nextId, next);
     } else {
       hideInteractionSection();
+      settleAfterInteractionsComplete();
     }
   }
 });
@@ -359,17 +525,13 @@ listen("interaction-timeout", (event) => {
 listen("interaction-resolved", (event) => {
   const requestId = event.payload;
   pendingInteractions.delete(requestId);
-  // Clear synthetic expand intent to prevent auto-reexpand after collapse
-  wantExpanded = false;
   if (permissionSection.dataset.requestId === requestId) {
     if (pendingInteractions.size > 0) {
       const [nextId, next] = pendingInteractions.entries().next().value;
       showInteraction(nextId, next);
     } else {
       hideInteractionSection();
-      if (isExpanded) {
-        collapseIsland();
-      }
+      settleAfterInteractionsComplete();
     }
   }
 });
@@ -402,7 +564,14 @@ function applyPillStatus({ dotClass, mascotStatusType, text }) {
     statusDot.classList.add(dotClass);
   }
   setMascotVariant(null, mascotStatusType || "WaitingForInput");
-  statusText.textContent = text;
+  setStatusText(text);
+}
+
+function setStatusText(text) {
+  currentStatusText = text;
+  if (statusText) {
+    statusText.textContent = text;
+  }
 }
 
 function shouldShowOnboardingPill() {
@@ -528,35 +697,36 @@ function updateUI(session) {
   switch (statusType) {
     case "Processing":
       statusDot.classList.add("processing");
-      statusText.textContent = t("status.thinking");
+      setStatusText(t("status.thinking"));
       break;
     case "RunningTool":
       statusDot.classList.add("running-tool");
-      statusText.textContent = formatTool(status.tool_name, status.description);
+      setStatusText(formatTool(status.tool_name, status.description));
       break;
     case "WaitingForApproval":
       statusDot.classList.add("waiting-approval");
-      statusText.textContent =
+      setStatusText(
         pendingInteraction?.kind === "elicitation"
           ? t("status.respond")
-          : t("status.approve");
+          : t("status.approve"),
+      );
       break;
     case "Anomaly":
       statusDot.classList.add("anomaly");
-      statusText.textContent = t("status.stuck", { seconds: status.idle_seconds });
+      setStatusText(t("status.stuck", { seconds: status.idle_seconds }));
       break;
     case "Compacting":
       statusDot.classList.add("processing");
-      statusText.textContent = t("status.compacting");
+      setStatusText(t("status.compacting"));
       break;
     case "Ended":
       statusDot.classList.add("ended");
-      statusText.textContent = t("status.ended");
+      setStatusText(t("status.ended"));
       break;
     case "WaitingForInput":
     default:
       statusDot.classList.add("idle");
-      statusText.textContent = t("status.idle");
+      setStatusText(t("status.idle"));
       break;
   }
 
@@ -564,7 +734,7 @@ function updateUI(session) {
   if (isExpanded) {
     const cwdShort = session.cwd.split("/").slice(-2).join("/");
     // sessionCwd.textContent = cwdShort;
-    detailStatus.textContent = statusText.textContent;
+    detailStatus.textContent = currentStatusText;
     // detailTools.textContent = session.tool_count + ' tool calls this session';
 
     const tokenStats = getSessionTokenStats(session);
@@ -575,21 +745,14 @@ function updateUI(session) {
 
     const rateLabel =
       tokenStats.durationSecs > 0
-        ? `${formatTokenRate(tokenStats.averageTotalTps)} avg`
+        ? `${formatTokenRate(tokenStats.averageOutputTps)} avg`
         : "—";
     detailModel.textContent = `${rateLabel} · ${session.model || "—"}`;
   }
 
-  // Hide permission section if no pending perms for active session
-  if (statusType !== "WaitingForApproval") {
-    for (const [pid, p] of pendingInteractions) {
-      if (p.sessionId === session.id) {
-        pendingInteractions.delete(pid);
-      }
-    }
-    if (pendingInteractions.size === 0) {
-      hideInteractionSection();
-    }
+  // Pending interactions are resolved only by explicit lifecycle events.
+  if (statusType !== "WaitingForApproval" && pendingInteractions.size === 0) {
+    hideInteractionSection();
   }
 }
 
@@ -714,51 +877,66 @@ function extractElicitationOptions(schema) {
   return null;
 }
 
-function extractAskUserQuestionOptions(toolInput) {
+function extractAskUserQuestions(toolInput) {
   if (!toolInput || typeof toolInput !== "object") {
     return null;
   }
 
   const questions = toolInput.questions;
-  if (!Array.isArray(questions) || questions.length !== 1) {
+  if (!Array.isArray(questions) || questions.length === 0) {
     return null;
   }
 
-  const question = questions[0];
-  if (!question || typeof question !== "object") {
-    return null;
-  }
-
-  if (question.multiSelect) {
-    return null;
-  }
-
-  if (!Array.isArray(question.options) || question.options.length === 0) {
-    return null;
-  }
-
-  const options = question.options
-    .map((option) => {
-      if (!option || typeof option !== "object" || !option.label) {
+  const parsedQuestions = questions
+    .map((question, index) => {
+      if (!question || typeof question !== "object") {
         return null;
       }
+
+      if (!Array.isArray(question.options) || question.options.length === 0) {
+        return null;
+      }
+
+      if (typeof question.question !== "string" || !question.question.trim()) {
+        return null;
+      }
+
+      const options = question.options
+        .map((option) => {
+          if (!option || typeof option !== "object" || !option.label) {
+            return null;
+          }
+          return {
+            label: String(option.label),
+            value: String(option.label),
+            description:
+              typeof option.description === "string" ? option.description : "",
+          };
+        })
+        .filter(Boolean);
+
+      if (options.length === 0) {
+        return null;
+      }
+
       return {
-        label: String(option.label),
-        value: String(option.label),
-        description:
-          typeof option.description === "string" ? option.description : "",
+        key: question.question,
+        header: question.header || `${t("interaction.question")} ${index + 1}`,
+        prompt: question.question,
+        multiSelect: Boolean(question.multiSelect),
+        options,
       };
     })
     .filter(Boolean);
 
-  if (options.length === 0 || typeof question.question !== "string") {
+  if (parsedQuestions.length !== questions.length || parsedQuestions.length === 0) {
     return null;
   }
 
+  const firstQuestion = parsedQuestions[0];
   return {
-    title: question.header || payloadSafeToolTitle(toolInput),
-    question: question.question,
-    answers: options,
+    title: firstQuestion.header || payloadSafeToolTitle(toolInput),
+    questions: parsedQuestions,
   };
 }
 
@@ -786,21 +964,22 @@ function normalizeInteractionRequest(payload) {
     url: payload.url || null,
     requestedSchema: payload.requested_schema || null,
     fieldKey: null,
-    questionKey: null,
+    questionGroups: [],
     options: [],
     supported: kind === "permission",
     answerMode: kind === "permission" ? "permission" : "elicitation",
+    requiresFocus: false,
   };
 
   if (kind === "permission" && payload.tool_name === "AskUserQuestion") {
-    const parsedQuestion = extractAskUserQuestionOptions(toolInput);
+    const parsedQuestion = extractAskUserQuestions(toolInput);
     request.supported = Boolean(parsedQuestion);
-    request.answerMode = parsedQuestion ? "ask_user_question" : "permission";
+    request.answerMode = parsedQuestion ? "ask_user_question" : "unsupported";
+    request.requiresFocus = true;
     if (parsedQuestion) {
       request.title = parsedQuestion.title;
-      request.message = parsedQuestion.question;
-      request.questionKey = parsedQuestion.question;
-      request.options = parsedQuestion.answers;
+      request.message = "";
+      request.questionGroups = parsedQuestion.questions;
     }
     return request;
   }
@@ -812,7 +991,12 @@ function normalizeInteractionRequest(payload) {
     if (parsed) {
       request.fieldKey = parsed.fieldKey;
       request.options = parsed.options;
+      request.requiresFocus = parsed.options.length > 3;
     }
+  }
+
+  if (kind === "permission" && (request.message || "").length > 180) {
+    request.requiresFocus = true;
   }
 
   return request;
@@ -824,45 +1008,184 @@ function hideInteractionSection() {
   permissionMessage.textContent = "";
   delete permissionSection.dataset.requestId;
   delete permissionSection.dataset.kind;
+  delete permissionSection.dataset.mode;
+  delete permissionSection.dataset.density;
+  clearInteractionFocus();
   scheduleExpandedHeightUpdate();
 }
 
-function renderActionButton({ label, className, onClick }) {
+function renderActionButton({
+  label,
+  description,
+  className,
+  onClick,
+  parent = permissionActions,
+  disabled = false,
+}) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = className;
-  button.textContent = label;
+  button.disabled = disabled;
+
+  if (description) {
+    button.classList.add("has-desc");
+    const titleSpan = document.createElement("div");
+    titleSpan.className = "btn-title";
+    titleSpan.textContent = label;
+
+    const descSpan = document.createElement("div");
+    descSpan.className = "btn-desc";
+    descSpan.textContent = description;
+
+    button.appendChild(titleSpan);
+    button.appendChild(descSpan);
+  } else {
+    button.textContent = label;
+  }
+
   button.addEventListener("click", (event) => {
     event.stopPropagation();
-    onClick();
+    if (button.disabled) {
+      return;
+    }
+    button.classList.add("btn-clicked");
+    setTimeout(() => {
+      button.classList.remove("btn-clicked");
+      onClick();
+    }, 100);
   });
-  permissionActions.appendChild(button);
+  parent.appendChild(button);
+  return button;
+}
+
+function renderAskUserQuestion(request) {
+  const selections = new Map();
+
+  request.questionGroups.forEach((question, questionIndex) => {
+    const group = document.createElement("div");
+    group.className = "interaction-question";
+
+    const meta = document.createElement("div");
+    meta.className = "interaction-question-meta";
+    if (request.questionGroups.length > 1) {
+      meta.textContent = `${questionIndex + 1}/${request.questionGroups.length}`;
+      group.appendChild(meta);
+    }
+
+    const prompt = document.createElement("div");
+    prompt.className = "interaction-question-text";
+    prompt.textContent = question.prompt;
+    group.appendChild(prompt);
+
+    const options = document.createElement("div");
+    options.className = "interaction-options";
+    options.dataset.multiSelect = String(question.multiSelect);
+    const layout = getQuestionOptionLayout(question);
+    options.dataset.columns = String(layout.columns);
+    options.style.gridTemplateColumns =
+      `repeat(${layout.columns}, minmax(0, ${layout.optionWidth}px))`;
+    options.style.maxWidth = `${layout.maxWidth}px`;
+    options.style.setProperty(
+      "--question-option-gap",
+      `${QUESTION_OPTION_GAP}px`,
+    );
+    group.appendChild(options);
+
+    const selectedValues = new Set();
+
+    question.options.forEach((option) => {
+      const button = renderActionButton({
+        label: option.label,
+        description: option.description,
+        className: "btn-option",
+        parent: options,
+        onClick: () => {
+          if (question.multiSelect) {
+            if (selectedValues.has(option.value)) {
+              selectedValues.delete(option.value);
+              button.classList.remove("is-selected");
+            } else {
+              selectedValues.add(option.value);
+              button.classList.add("is-selected");
+            }
+          } else {
+            selectedValues.clear();
+            selectedValues.add(option.value);
+            options
+              .querySelectorAll(".btn-option")
+              .forEach((optionButton) =>
+                optionButton.classList.remove("is-selected"),
+              );
+            button.classList.add("is-selected");
+          }
+
+          selections.set(question.key, {
+            multiSelect: question.multiSelect,
+            values: Array.from(selectedValues),
+          });
+          updateSubmitState();
+        },
+      });
+    });
+
+    permissionActions.appendChild(group);
+  });
+
+  const footer = document.createElement("div");
+  footer.className = "interaction-footer";
+  permissionActions.appendChild(footer);
+
+  const submitButton = renderActionButton({
+    label: t("interaction.submit"),
+    className: "btn-submit",
+    parent: footer,
+    disabled: true,
+    onClick: () => {
+      const answers = {};
+      request.questionGroups.forEach((question) => {
+        const selection = selections.get(question.key);
+        answers[question.key] = question.multiSelect
+          ? selection.values
+          : selection.values[0];
+      });
+      handleInteraction("allow", { answers });
+    },
+  });
+
+  renderActionButton({
+    label: t("interaction.passThrough"),
+    className: "btn-pass",
+    parent: footer,
+    onClick: () => handleInteraction("passthrough"),
+  });
+
+  function updateSubmitState() {
+    submitButton.disabled = !request.questionGroups.every((question) => {
+      const selection = selections.get(question.key);
+      return Boolean(selection && selection.values.length > 0);
+    });
+  }
 }
 
 function showInteraction(requestId, request) {
+  applyInteractionFocus(request);
   permissionSection.style.display = "block";
   permissionSection.dataset.requestId = requestId;
   permissionSection.dataset.kind = request.kind;
+  permissionSection.dataset.mode = request.answerMode;
+  permissionSection.dataset.density = request.requiresFocus ? "focus" : "default";
   permissionTool.textContent = request.title;
   permissionMessage.textContent =
     request.message ||
     (request.supported ? "" : t("interaction.unsupported"));
   permissionActions.innerHTML = "";
 
-  if (request.answerMode === "ask_user_question" && request.supported && request.questionKey) {
-    request.options.forEach((option) => {
-      renderActionButton({
-        label: option.label,
-        className: "btn-option",
-        onClick: () =>
-          handleInteraction("allow", {
-            answers: {
-              [request.questionKey]: option.value,
-            },
-          }),
-      });
-    });
-  } else if (request.kind === "permission") {
+  let renderDefaultPass = true;
+
+  if (request.answerMode === "ask_user_question" && request.supported) {
+    renderAskUserQuestion(request);
+    renderDefaultPass = false;
+  } else if (request.kind === "permission" && request.answerMode === "permission") {
     renderActionButton({
       label: t("permission.allow"),
       className: "btn-allow",
@@ -891,11 +1214,13 @@ function showInteraction(requestId, request) {
     });
   }
 
-  renderActionButton({
-    label: t("interaction.passThrough"),
-    className: "btn-pass",
-    onClick: () => handleInteraction("passthrough"),
-  });
+  if (renderDefaultPass) {
+    renderActionButton({
+      label: t("interaction.passThrough"),
+      className: "btn-pass",
+      onClick: () => handleInteraction("passthrough"),
+    });
+  }
 
   scheduleExpandedHeightUpdate();
 }
@@ -921,11 +1246,13 @@ async function handleInteraction(decision, content = null) {
       content,
     });
     pendingInteractions.delete(requestId);
-    hideInteractionSection();
 
     if (pendingInteractions.size > 0) {
       const [nextId, next] = pendingInteractions.entries().next().value;
       showInteraction(nextId, next);
+    } else {
+      hideInteractionSection();
+      settleAfterInteractionsComplete();
     }
   } catch (e) {
     console.error("[Orbit] Failed to submit interaction decision:", e);
@@ -946,22 +1273,38 @@ async function handleOnboardingRetry() {
 }
 
 // Hover interaction: mouseenter to expand, mouseleave to collapse with debounce
-island.addEventListener("mouseenter", () => {
+function handleHoverEnter() {
+  hoverInside = true;
   requestExpand();
-});
+}
 
-island.addEventListener("mouseleave", () => {
+function handleHoverLeave() {
+  hoverInside = false;
   if (collapseDebounceTimer) {
     clearTimeout(collapseDebounceTimer);
   }
   collapseDebounceTimer = setTimeout(() => {
     collapseDebounceTimer = null;
+
+    if (hoverInside) {
+      return;
+    }
+
+    if (pendingInteractions.size > 0) {
+      return;
+    }
+
     wantExpanded = false;
     if (isExpanded && !isAnimating) {
       collapseIsland();
     }
   }, COLLAPSE_DELAY);
-});
+}
+
+island.addEventListener("mouseenter", handleHoverEnter);
+island.addEventListener("mouseleave", handleHoverLeave);
+listen("island-hover-enter", handleHoverEnter);
+listen("island-hover-leave", handleHoverLeave);
 
 async function expandIsland() {
   if (isAnimating) return;
@@ -970,12 +1313,8 @@ async function expandIsland() {
   collapseAfterTransition = false;
   clearAnimationFallback();
 
-  // Elevator: expand native window FIRST, then CSS animation fills it
-  try {
-    await invokeCommand("expand_window");
-  } catch (e) {
-    console.error("Failed to expand window:", e);
-  }
+  // Elevator: expand native window FIRST, then CSS animation fills it.
+  await applyExpandedFrame(getExpandedWidth(), getExpandedMaxHeight());
 
   // Wait one frame so the window resize is applied before CSS transition starts
   requestAnimationFrame(() => {
@@ -1024,6 +1363,7 @@ async function finishCollapse() {
   island.classList.add("collapsed");
   island.style.height = "";
   island.style.removeProperty("--expanded-height");
+  lastExpandedFrame = { width: null, height: null };
 
   // THEN shrink native window (elevator: door closes after you're inside)
   try {
@@ -1039,7 +1379,7 @@ function scheduleExpandedHeightUpdate() {
 
     const notchHeight = notchInfo.notch_height || 37;
     const minExpandedHeight = notchHeight + 152;
-    const maxExpandedHeight = 320;
+    const maxExpandedHeight = getExpandedMaxHeight();
     const contentHeight = notchHeight + detail.scrollHeight;
     const nextHeight = Math.min(
       maxExpandedHeight,
@@ -1047,6 +1387,7 @@ function scheduleExpandedHeightUpdate() {
     );
 
     island.style.setProperty("--expanded-height", `${nextHeight}px`);
+    applyExpandedFrame(getExpandedWidth(), nextHeight);
   });
 }
 
@@ -1139,7 +1480,6 @@ function renderHistory(entries) {
     const div = document.createElement("div");
     div.className = "history-item";
     div.style.cursor = "pointer";
-    div.title = `Click to resume session in ${entry.cwd}`;
 
     const cwdSpan = document.createElement("span");
     cwdSpan.className = "history-cwd";
@@ -1150,13 +1490,11 @@ function renderHistory(entries) {
     titleSpan.className = "history-title";
     titleSpan.textContent = entry.title || t("session.untitled");
 
-    const timeSpan = document.createElement("span");
-    timeSpan.className = "history-time";
-    timeSpan.textContent = formatDuration(entry.duration_secs);
+    const metricsSpan = createHistoryTokenMetrics(entry);
 
     div.appendChild(cwdSpan);
     div.appendChild(titleSpan);
-    div.appendChild(timeSpan);
+    div.appendChild(metricsSpan);
 
     // Click to resume session in terminal
     div.addEventListener("click", () =>
@@ -1167,6 +1505,31 @@ function renderHistory(entries) {
   });
 
   scheduleExpandedHeightUpdate();
+}
+
+function createHistoryTokenMetrics(entry) {
+  const input = Math.max(0, Number(entry.tokens_in) || 0);
+  const output = Math.max(0, Number(entry.tokens_out) || 0);
+  const durationSecs = Math.max(0, Number(entry.duration_secs) || 0);
+  const outputRate = durationSecs > 0 ? output / durationSecs : 0;
+  const metrics = [
+    ["token-metric-in", `↑${formatCompactTokenCount(input)}`],
+    ["token-metric-out", `↓${formatCompactTokenCount(output)}`],
+    ["token-metric-rate", `↓${formatCompactTokenRate(outputRate)}`],
+  ];
+
+  const metricsSpan = document.createElement("span");
+  metricsSpan.className = "history-metrics token-metrics";
+  metricsSpan.setAttribute("aria-label", "Token metrics");
+
+  metrics.forEach(([className, text]) => {
+    const metric = document.createElement("span");
+    metric.className = `token-metric ${className}`;
+    metric.textContent = text;
+    metricsSpan.appendChild(metric);
+  });
+
+  return metricsSpan;
 }
 
 async function resumeSession(sessionId, cwd) {
@@ -1180,13 +1543,6 @@ async function resumeSession(sessionId, cwd) {
     console.error("Failed to resume session:", e);
     alert(`Failed to resume session: ${e.message || e}`);
   }
-}
-
-function formatDuration(secs) {
-  if (!secs || secs < 0) return "0s";
-  if (secs < 60) return secs + "s";
-  if (secs < 3600) return Math.floor(secs / 60) + "m";
-  return Math.floor(secs / 3600) + "h " + Math.floor((secs % 3600) / 60) + "m";
 }
 
 // Connection state tracking (IMPL-07)
@@ -1203,5 +1559,4 @@ init();
 
 // Export functions for HTML inline event handlers (ES6 module scope isolation)
 window.collapseIsland = collapseIsland;
-window.handlePermission = handlePermission;
 window.handleOnboardingRetry = handleOnboardingRetry;

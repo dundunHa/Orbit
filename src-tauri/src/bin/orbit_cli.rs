@@ -187,7 +187,7 @@ fn expected_hook_response(input: &str) -> HookResponseMode {
                 .and_then(|v| v.as_str())
                 .map(|s| match s {
                     "PermissionRequest" => HookResponseMode::PermissionRequest,
-                    "Elicitation" | "ElicitationResult" => HookResponseMode::Elicitation,
+                    "Elicitation" => HookResponseMode::Elicitation,
                     _ => HookResponseMode::None,
                 })
         })
@@ -371,13 +371,10 @@ mod tests {
     }
 
     #[test]
-    fn expected_hook_response_treats_elicitation_result_like_elicitation() {
+    fn expected_hook_response_forwards_elicitation_result_without_waiting() {
         let payload = r#"{"session_id":"session-elicit-3","hook_event_name":"ElicitationResult","cwd":"/tmp"}"#;
 
-        assert_eq!(
-            expected_hook_response(payload),
-            HookResponseMode::Elicitation
-        );
+        assert_eq!(expected_hook_response(payload), HookResponseMode::None);
     }
 
     #[test]

@@ -59,6 +59,8 @@ const zh = {
   // Permission
   "permission.allow": "允许",
   "permission.deny": "拒绝",
+  "interaction.question": "问题",
+  "interaction.submit": "提交选择",
   "interaction.passThrough": "回到终端处理",
   "interaction.cancel": "取消",
   "interaction.unsupported": "这个请求需要更复杂的输入，Orbit 先让 Claude/Codex 在终端继续处理。",
@@ -115,6 +117,8 @@ const en = {
 
   "permission.allow": "Allow",
   "permission.deny": "Deny",
+  "interaction.question": "Question",
+  "interaction.submit": "Submit",
   "interaction.passThrough": "Continue in terminal",
   "interaction.cancel": "Cancel",
   "interaction.unsupported": "This request needs a richer form, so Orbit will hand it back to Claude/Codex in the terminal.",

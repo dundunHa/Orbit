@@ -409,9 +409,11 @@ impl Session {
     }
 
     pub fn refresh_title_from_claude(&mut self) -> Option<String> {
-        Self::fetch_title_from_claude_sessions(&self.id).inspect(|(title, source)| {
-            self.set_title_if_higher_priority(title.clone(), *source);
-        }).map(|(title, _)| title)
+        Self::fetch_title_from_claude_sessions(&self.id)
+            .inspect(|(title, source)| {
+                self.set_title_if_higher_priority(title.clone(), *source);
+            })
+            .map(|(title, _)| title)
     }
 
     /// Apply cumulative token data from statusline
@@ -423,6 +425,16 @@ impl Session {
             self.model = Some(model.clone());
         }
         self.last_event_at = Utc::now();
+    }
+
+    pub fn clear_waiting_for_approval(&mut self) -> bool {
+        if matches!(self.status, SessionStatus::WaitingForApproval { .. }) {
+            self.status = SessionStatus::Processing;
+            self.last_event_at = Utc::now();
+            return true;
+        }
+
+        false
     }
 
     pub fn apply_event(&mut self, payload: &HookPayload) {
@@ -516,9 +528,7 @@ impl Session {
     }
 
     pub fn to_history_entry(&self) -> crate::history::HistoryEntry {
-        let duration = (self.last_event_at - self.started_at)
-            .num_seconds()
-            .max(0);
+        let duration = (self.last_event_at - self.started_at).num_seconds().max(0);
         crate::history::HistoryEntry {
             session_id: self.id.clone(),
             parent_session_id: self.parent_session_id.clone(),
@@ -799,6 +809,16 @@ mod tests {
     }
 
     #[test]
+    fn test_clear_waiting_for_approval_sets_processing() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        session.apply_event(&make_hook_payload("PermissionRequest"));
+
+        assert!(session.clear_waiting_for_approval());
+        assert!(matches!(session.status, SessionStatus::Processing));
+        assert!(!session.clear_waiting_for_approval());
+    }
+
+    #[test]
     fn test_today_token_stats_load_ignores_persisted_rate_fields() {
         let home = TestHome::new();
         let path = home.baselines_path();
@@ -860,7 +880,10 @@ mod tests {
 
     #[test]
     fn test_normalize_title_normal_text() {
-        assert_eq!(normalize_title("hello world"), Some("hello world".to_string()));
+        assert_eq!(
+            normalize_title("hello world"),
+            Some("hello world".to_string())
+        );
     }
 
     #[test]
@@ -876,7 +899,10 @@ mod tests {
     #[test]
     fn test_normalize_title_cjk_truncation() {
         let long_cjk = "修复中文bug测试一下多字节字符截断是否正确处理不会panic产生问题扩展更多的中文字符达到四十字以上";
-        assert!(long_cjk.chars().count() > 40, "test string must exceed 40 chars");
+        assert!(
+            long_cjk.chars().count() > 40,
+            "test string must exceed 40 chars"
+        );
         let result = normalize_title(long_cjk).unwrap();
         assert_eq!(result.chars().count(), 40);
         assert!(result.starts_with("修复中文bug测试"));
@@ -899,13 +925,22 @@ mod tests {
 
     #[test]
     fn test_normalize_title_slash_with_content_kept() {
-        assert_eq!(normalize_title("/openspec:apply foo"), Some("/openspec:apply foo".to_string()));
-        assert_eq!(normalize_title("/ship this feature"), Some("/ship this feature".to_string()));
+        assert_eq!(
+            normalize_title("/openspec:apply foo"),
+            Some("/openspec:apply foo".to_string())
+        );
+        assert_eq!(
+            normalize_title("/ship this feature"),
+            Some("/ship this feature".to_string())
+        );
     }
 
     #[test]
     fn test_normalize_title_trims_whitespace() {
-        assert_eq!(normalize_title("  hello world  "), Some("hello world".to_string()));
+        assert_eq!(
+            normalize_title("  hello world  "),
+            Some("hello world".to_string())
+        );
     }
 
     // --- TitleSource priority tests ---
@@ -915,12 +950,18 @@ mod tests {
         let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
 
         // Simulate UserPrompt setting a low-priority title
-        session.set_title_if_higher_priority("low priority title".to_string(), TitleSource::UserPrompt);
+        session.set_title_if_higher_priority(
+            "low priority title".to_string(),
+            TitleSource::UserPrompt,
+        );
         assert_eq!(session.title, Some("low priority title".to_string()));
         assert_eq!(session.title_source, Some(TitleSource::UserPrompt));
 
         // Higher priority should override
-        session.set_title_if_higher_priority("high priority title".to_string(), TitleSource::SessionsMetadata);
+        session.set_title_if_higher_priority(
+            "high priority title".to_string(),
+            TitleSource::SessionsMetadata,
+        );
         assert_eq!(session.title, Some("high priority title".to_string()));
         assert_eq!(session.title_source, Some(TitleSource::SessionsMetadata));
     }
@@ -929,7 +970,8 @@ mod tests {
     fn test_title_priority_lower_does_not_override_higher() {
         let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
 
-        session.set_title_if_higher_priority("good title".to_string(), TitleSource::SessionsMetadata);
+        session
+            .set_title_if_higher_priority("good title".to_string(), TitleSource::SessionsMetadata);
         session.set_title_if_higher_priority("bad title".to_string(), TitleSource::UserPrompt);
 
         assert_eq!(session.title, Some("good title".to_string()));
@@ -1009,7 +1051,10 @@ mod tests {
         let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
 
         let mut payload = make_hook_payload("UserPromptSubmit");
-        payload.message = Some("这是一个非常长的中文消息用来测试多字节字符截断是否会导致运行时panic崩溃问题".to_string());
+        payload.message = Some(
+            "这是一个非常长的中文消息用来测试多字节字符截断是否会导致运行时panic崩溃问题"
+                .to_string(),
+        );
 
         session.apply_event(&payload);
 
