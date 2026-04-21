@@ -1,0 +1,65 @@
+{
+  "reviewer": "maintainability+project-standards",
+  "findings": [
+    {
+      "title": "UI automation harness forks app-owned accessibility and diagnostics contracts",
+      "severity": "P2",
+      "file": "OrbitUITests/Support/OrbitUITestCase.swift",
+      "line": 5,
+      "confidence": 0.92,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Make the UI test target consume the shared contract instead of re-declaring it: reuse `OrbitAccessibilityID` and a shared diagnostics DTO (either by importing `Orbit` or by moving the schema into a small source file compiled into both targets), then delete `UIID` and `DiagnosticsPayload` from `OrbitUITestCase`.",
+      "why_it_matters": "This diff already introduced `OrbitAccessibilityID` and `OrbitRuntimeDiagnostics` as the canonical app-side contracts, but the UI harness still hardcodes the same identifiers and JSON keys locally. That creates two sources of truth for the same automation surface, so the next rename of an accessibility id or diagnostics field can compile cleanly and only break later as a flaky UI failure.",
+      "evidence": [
+        "OrbitUITests/Support/OrbitUITestCase.swift:5-23 hardcodes the pill/expanded/onboarding/permission/session/history accessibility ids.",
+        "Orbit/Views/OrbitAccessibilityID.swift:3-84 already centralizes the same accessibility-id namespace for the app.",
+        "OrbitUITests/Support/OrbitUITestCase.swift:26-107 re-declares the diagnostics JSON schema used by the harness.",
+        "Orbit/OrbitCore/Diagnostics/OrbitRuntimeDiagnostics.swift:3-102 already defines the app-owned diagnostics payload shape."
+      ]
+    },
+    {
+      "title": "OverlayController now carries scenario-only expansion overrides inside the shipping state machine",
+      "severity": "P2",
+      "file": "Orbit/Overlay/OverlayController.swift",
+      "line": 23,
+      "confidence": 0.88,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Move scenario-specific pin/suppress behavior behind a dedicated debug/testing policy injected only for automation runs, or wrap the override paths in `#if DEBUG`, so the production overlay controller keeps a single hover/collapse path.",
+      "why_it_matters": "The stated goal was to avoid polluting the normal runtime path, but the controller now has two test-only flags that alter request-expand, collapse scheduling, interaction resolution, hover handling, and post-animation collapse checks. That makes future overlay work harder to reason about because normal behavior and automation-only behavior are interleaved in the same production control flow.",
+      "evidence": [
+        "Orbit/Overlay/OverlayController.swift:23-24 adds `isExpansionPinnedForTesting` and `isExpansionSuppressedForTesting` to the production controller state.",
+        "Orbit/Overlay/OverlayController.swift:119-180 threads those flags through `requestExpand`, `scheduleCollapse`, and `interactionResolved`.",
+        "Orbit/Overlay/OverlayController.swift:258-273 and 322-327 also branch hover and post-expand collapse behavior on the testing flags.",
+        "Orbit/AppDelegate.swift:227-230 sets those overrides from scenario mode, confirming they exist only to support automation."
+      ]
+    },
+    {
+      "title": "The diff carries a generated `default.profraw` coverage artifact in tracked state",
+      "severity": "P2",
+      "file": "default.profraw",
+      "line": 1,
+      "confidence": 0.99,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": false,
+      "pre_existing": false,
+      "suggested_fix": "Drop `default.profraw` from the tracked diff before landing this branch, and add a `*.profraw` ignore rule if local coverage generation is part of the workflow.",
+      "why_it_matters": "`.profraw` files are machine-generated coverage outputs, not reviewable source. Keeping one in the tracked diff adds binary churn to every future coverage run and makes the branch noisier without increasing test signal.",
+      "evidence": [
+        "git diff 764911760c7ec1ca0887b4f07a2d7d53fa347d34 -- default.profraw shows the file changing from the empty tracked placeholder to a binary blob.",
+        "git ls-files --stage default.profraw shows `default.profraw` is currently tracked.",
+        ".gitignore:1-4 ignores `.build/` and other local artifacts but has no `*.profraw` rule."
+      ]
+    }
+  ],
+  "residual_risks": [],
+  "testing_gaps": [
+    "There is still no compile-time guard that forces OrbitUITests to stay aligned with the app-owned automation contracts; until the duplicated `UIID`/`DiagnosticsPayload` layer is removed, drift will surface only when UI tests start failing at runtime."
+  ]
+}

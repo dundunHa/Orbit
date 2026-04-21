@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "fixture_name": "pending-permission",
+  "description": "One live session waiting on a permission prompt with reusable suggestion metadata.",
+  "seed": {
+    "sessions": [
+      {
+        "id": "sess-live-permission",
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "has_spawned_subagent": false,
+        "parent_session_id": null,
+        "status": {
+          "type": "WaitingForApproval",
+          "tool_name": "Bash",
+          "tool_input": {
+            "cmd": "mkdir -p .tmp/ui-diagnostics",
+            "workdir": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit"
+          }
+        },
+        "started_at": "2026-04-19T09:21:00Z",
+        "last_event_at": "2026-04-19T09:21:08Z",
+        "tool_count": 7,
+        "pid": 4242,
+        "tty": "ttys021",
+        "title": "Create diagnostics workspace",
+        "tokens_in": 1220,
+        "tokens_out": 410,
+        "cost_usd": 0.03,
+        "model": "gpt-5"
+      }
+    ],
+    "history_entries": [],
+    "selected_session_id": "sess-live-permission",
+    "onboarding_state": {
+      "type": "Connected",
+      "detail": null
+    },
+    "pending_interaction": {
+      "id": "perm-request-001",
+      "kind": "permission",
+      "session_id": "sess-live-permission",
+      "tool_name": "Bash",
+      "tool_input": {
+        "cmd": "mkdir -p .tmp/ui-diagnostics",
+        "workdir": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit"
+      },
+      "message": "Allow Bash to create a local diagnostics workspace?",
+      "requested_schema": null,
+      "permission_suggestions": [
+        {
+          "type": "setMode",
+          "destination": "projectSettings",
+          "mode": "acceptEdits"
+        }
+      ]
+    },
+    "today_stats": {
+      "date": 20260419,
+      "tokens_in": 1220,
+      "tokens_out": 410,
+      "session_baselines": {
+        "sess-live-permission": [
+          1180,
+          395
+        ]
+      }
+    },
+    "overlay": {
+      "initial_intent": "expanded"
+    }
+  },
+  "expected": {
+    "ui": {
+      "overlay_mode": "expanded",
+      "permission_visible": true,
+      "action_buttons": [
+        "allow",
+        "deny",
+        "passthrough"
+      ],
+      "suggestion_buttons_visible": true
+    },
+    "diagnostics": {
+      "overlay": {
+        "phase": "expanded",
+        "want_expanded": true,
+        "is_expanded": true
+      },
+      "counts": {
+        "sessions": 1,
+        "history_entries": 0
+      },
+      "selected_session_id": "sess-live-permission",
+      "pending_interaction": {
+        "id": "perm-request-001",
+        "kind": "permission",
+        "tool_name": "Bash"
+      },
+      "onboarding": {
+        "type": "Connected",
+        "needs_attention": false
+      }
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "fixture_name": "onboarding-drift",
+  "description": "No live sessions and onboarding drift detected, showing the setup recovery path.",
+  "seed": {
+    "sessions": [],
+    "history_entries": [],
+    "selected_session_id": null,
+    "onboarding_state": {
+      "type": "DriftDetected",
+      "detail": null
+    },
+    "pending_interaction": null,
+    "today_stats": {
+      "date": 20260419,
+      "tokens_in": 512,
+      "tokens_out": 128,
+      "session_baselines": {}
+    },
+    "overlay": {
+      "initial_intent": "expanded"
+    }
+  },
+  "expected": {
+    "ui": {
+      "overlay_mode": "expanded",
+      "onboarding_visible": true,
+      "retry_visible": true,
+      "permission_visible": false
+    },
+    "diagnostics": {
+      "overlay": {
+        "phase": "expanded",
+        "want_expanded": true,
+        "is_expanded": true
+      },
+      "counts": {
+        "sessions": 0,
+        "history_entries": 0
+      },
+      "pending_interaction": null,
+      "onboarding": {
+        "type": "DriftDetected",
+        "needs_attention": true,
+        "can_retry": true
+      }
+    }
+  }
+}

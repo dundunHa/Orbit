@@ -141,6 +141,15 @@ public actor HistoryStore {
         await loadAll().first { $0.sessionId == sessionId }
     }
 
+    public func replaceAll(_ entries: [HistoryEntry]) async {
+        do {
+            try ensureParentDirectoryExists()
+            let data = try encoder.encode(entries)
+            try data.write(to: fileURL, options: [.atomic])
+        } catch {
+        }
+    }
+
     private func ensureParentDirectoryExists() throws {
         let directoryURL = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)

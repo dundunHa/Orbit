@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "fixture_name": "idle",
+  "description": "No live sessions, no history, connected onboarding, overlay stays collapsed.",
+  "seed": {
+    "sessions": [],
+    "history_entries": [],
+    "selected_session_id": null,
+    "onboarding_state": {
+      "type": "Connected",
+      "detail": null
+    },
+    "pending_interaction": null,
+    "today_stats": {
+      "date": 20260419,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "session_baselines": {}
+    },
+    "overlay": {
+      "initial_intent": "collapsed"
+    }
+  },
+  "expected": {
+    "ui": {
+      "overlay_mode": "pill",
+      "expanded_visible": false,
+      "permission_visible": false,
+      "onboarding_visible": false
+    },
+    "diagnostics": {
+      "overlay": {
+        "phase": "collapsed",
+        "want_expanded": false,
+        "is_expanded": false
+      },
+      "counts": {
+        "sessions": 0,
+        "history_entries": 0
+      },
+      "pending_interaction": null,
+      "onboarding": {
+        "type": "Connected",
+        "needs_attention": false
+      }
+    }
+  }
+}

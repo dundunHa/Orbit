@@ -31,7 +31,10 @@ public struct ExpandedView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         SectionHeaderView(title: "Active")
                         SessionTreeView(sessions: sessions, selectedSessionId: selectedSessionId)
+                            .accessibilityIdentifier(OrbitAccessibilityID.Expanded.sessionTree)
                     }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier(OrbitAccessibilityID.Expanded.activeSection)
                     .padding(.top, kActiveSectionTopInset)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 16)
@@ -45,6 +48,7 @@ public struct ExpandedView: View {
                                 .foregroundColor(Color.white.opacity(0.3))
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.vertical, 8)
+                                .accessibilityIdentifier(OrbitAccessibilityID.Expanded.recentEmptyState)
                         } else {
                             ForEach(Array(historyEntries.prefix(visibleRecentCount)), id: \.sessionId) { entry in
                                 HistoryRowView(entry: entry)
@@ -67,18 +71,25 @@ public struct ExpandedView: View {
                                         .font(.system(size: 10, weight: .regular))
                                         .foregroundColor(Color.white.opacity(0.45))
                                 }
+                                .accessibilityIdentifier(OrbitAccessibilityID.Expanded.recentLoadMoreButton)
                                 .buttonStyle(.plain)
                                 .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.vertical, 8)
                             }
                         }
                     }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier(OrbitAccessibilityID.Expanded.recentSection)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 14)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: geometry.notchHeight + 152)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(OrbitAccessibilityID.Expanded.historyList)
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(OrbitAccessibilityID.Expanded.root)
             .onAppear {
                 visibleRecentCount = min(kDefaultRecentSessionLimit, historyEntries.count)
             }

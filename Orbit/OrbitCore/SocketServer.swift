@@ -87,7 +87,11 @@ public final class SocketServer: @unchecked Sendable {
         let existed = FileManager.default.fileExists(atPath: socketPath)
         let unlinkResult = unlink(socketPath)
         if existed {
-            NSLog("[Orbit] Cleaned up stale socket (unlink=%d)", unlinkResult)
+            OrbitDiagnostics.shared.debug(
+                .launch,
+                "socketServer.cleanedStaleSocket",
+                metadata: ["unlinkResult": "\(unlinkResult)"]
+            )
         }
 
         let listenFD = socket(AF_UNIX, SOCK_STREAM, 0)

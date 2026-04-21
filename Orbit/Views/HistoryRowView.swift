@@ -32,6 +32,7 @@ public struct HistoryRowView: View {
         }
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier(OrbitAccessibilityID.History.row(sessionID: entry.sessionId))
     }
     
     private func relativeDate(from date: Date) -> String {

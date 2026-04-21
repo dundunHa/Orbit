@@ -1,0 +1,289 @@
+{
+  "schema_version": 1,
+  "fixture_name": "active-and-history",
+  "description": "Expanded overlay with a small active tree and more than one page of recent history.",
+  "seed": {
+    "sessions": [
+      {
+        "id": "sess-root-running",
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "has_spawned_subagent": true,
+        "parent_session_id": null,
+        "status": {
+          "type": "RunningTool",
+          "tool_name": "apply_patch",
+          "description": "Updating diagnostics fixtures"
+        },
+        "started_at": "2026-04-19T08:55:00Z",
+        "last_event_at": "2026-04-19T09:26:30Z",
+        "tool_count": 19,
+        "pid": 5120,
+        "tty": "ttys030",
+        "title": "Diagnostics fixture update",
+        "tokens_in": 4880,
+        "tokens_out": 2140,
+        "cost_usd": 0.18,
+        "model": "gpt-5"
+      },
+      {
+        "id": "sess-child-processing",
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/docs",
+        "has_spawned_subagent": false,
+        "parent_session_id": "sess-root-running",
+        "status": {
+          "type": "Processing"
+        },
+        "started_at": "2026-04-19T09:03:10Z",
+        "last_event_at": "2026-04-19T09:25:44Z",
+        "tool_count": 6,
+        "pid": 5128,
+        "tty": "ttys031",
+        "title": "Draft UI automation playbook",
+        "tokens_in": 1680,
+        "tokens_out": 540,
+        "cost_usd": 0.06,
+        "model": "gpt-5"
+      },
+      {
+        "id": "sess-review-waiting",
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "has_spawned_subagent": false,
+        "parent_session_id": null,
+        "status": {
+          "type": "WaitingForInput"
+        },
+        "started_at": "2026-04-19T09:10:00Z",
+        "last_event_at": "2026-04-19T09:18:11Z",
+        "tool_count": 2,
+        "pid": 5135,
+        "tty": "ttys032",
+        "title": "Review history pagination",
+        "tokens_in": 320,
+        "tokens_out": 96,
+        "cost_usd": 0.01,
+        "model": "gpt-5"
+      }
+    ],
+    "history_entries": [
+      {
+        "session_id": "hist-011",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "started_at": "2026-04-19T08:00:00Z",
+        "ended_at": "2026-04-19T08:14:00Z",
+        "tool_count": 11,
+        "duration_secs": 840,
+        "title": "Triage overlay collapse",
+        "tokens_in": 1320,
+        "tokens_out": 601,
+        "cost_usd": 0.04,
+        "model": "gpt-5",
+        "tty": "ttys010"
+      },
+      {
+        "session_id": "hist-010",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "started_at": "2026-04-19T07:35:00Z",
+        "ended_at": "2026-04-19T07:58:00Z",
+        "tool_count": 14,
+        "duration_secs": 1380,
+        "title": "Fix permission responder",
+        "tokens_in": 1820,
+        "tokens_out": 720,
+        "cost_usd": 0.06,
+        "model": "gpt-5",
+        "tty": "ttys011"
+      },
+      {
+        "session_id": "hist-009",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/docs",
+        "started_at": "2026-04-19T07:10:00Z",
+        "ended_at": "2026-04-19T07:29:00Z",
+        "tool_count": 8,
+        "duration_secs": 1140,
+        "title": "Review diagnostics schema",
+        "tokens_in": 980,
+        "tokens_out": 350,
+        "cost_usd": 0.03,
+        "model": "gpt-5",
+        "tty": "ttys012"
+      },
+      {
+        "session_id": "hist-008",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "started_at": "2026-04-19T06:40:00Z",
+        "ended_at": "2026-04-19T07:01:00Z",
+        "tool_count": 9,
+        "duration_secs": 1260,
+        "title": "Investigate onboarding drift",
+        "tokens_in": 1102,
+        "tokens_out": 438,
+        "cost_usd": 0.03,
+        "model": "gpt-5",
+        "tty": "ttys013"
+      },
+      {
+        "session_id": "hist-007",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "started_at": "2026-04-19T06:12:00Z",
+        "ended_at": "2026-04-19T06:31:00Z",
+        "tool_count": 7,
+        "duration_secs": 1140,
+        "title": "Adjust session tree rows",
+        "tokens_in": 864,
+        "tokens_out": 275,
+        "cost_usd": 0.02,
+        "model": "gpt-5",
+        "tty": "ttys014"
+      },
+      {
+        "session_id": "hist-006",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "started_at": "2026-04-19T05:44:00Z",
+        "ended_at": "2026-04-19T06:02:00Z",
+        "tool_count": 5,
+        "duration_secs": 1080,
+        "title": "Validate fixture naming",
+        "tokens_in": 710,
+        "tokens_out": 201,
+        "cost_usd": 0.02,
+        "model": "gpt-5",
+        "tty": "ttys015"
+      },
+      {
+        "session_id": "hist-005",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/docs",
+        "started_at": "2026-04-19T05:18:00Z",
+        "ended_at": "2026-04-19T05:37:00Z",
+        "tool_count": 6,
+        "duration_secs": 1140,
+        "title": "Draft smoke checklist",
+        "tokens_in": 744,
+        "tokens_out": 220,
+        "cost_usd": 0.02,
+        "model": "gpt-5",
+        "tty": "ttys016"
+      },
+      {
+        "session_id": "hist-004",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "started_at": "2026-04-19T04:50:00Z",
+        "ended_at": "2026-04-19T05:08:00Z",
+        "tool_count": 4,
+        "duration_secs": 1080,
+        "title": "Check history rendering",
+        "tokens_in": 532,
+        "tokens_out": 188,
+        "cost_usd": 0.01,
+        "model": "gpt-5",
+        "tty": "ttys017"
+      },
+      {
+        "session_id": "hist-003",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "started_at": "2026-04-19T04:22:00Z",
+        "ended_at": "2026-04-19T04:41:00Z",
+        "tool_count": 10,
+        "duration_secs": 1140,
+        "title": "Seed active sessions",
+        "tokens_in": 1224,
+        "tokens_out": 422,
+        "cost_usd": 0.03,
+        "model": "gpt-5",
+        "tty": "ttys018"
+      },
+      {
+        "session_id": "hist-002",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "started_at": "2026-04-19T03:58:00Z",
+        "ended_at": "2026-04-19T04:13:00Z",
+        "tool_count": 3,
+        "duration_secs": 900,
+        "title": "Collect diagnostics evidence",
+        "tokens_in": 430,
+        "tokens_out": 140,
+        "cost_usd": 0.01,
+        "model": "gpt-5",
+        "tty": "ttys019"
+      },
+      {
+        "session_id": "hist-001",
+        "parent_session_id": null,
+        "cwd": "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
+        "started_at": "2026-04-19T03:25:00Z",
+        "ended_at": "2026-04-19T03:48:00Z",
+        "tool_count": 12,
+        "duration_secs": 1380,
+        "title": "Initial UI test scaffolding",
+        "tokens_in": 1502,
+        "tokens_out": 566,
+        "cost_usd": 0.05,
+        "model": "gpt-5",
+        "tty": "ttys020"
+      }
+    ],
+    "selected_session_id": "sess-root-running",
+    "onboarding_state": {
+      "type": "Connected",
+      "detail": null
+    },
+    "pending_interaction": null,
+    "today_stats": {
+      "date": 20260419,
+      "tokens_in": 6880,
+      "tokens_out": 2776,
+      "session_baselines": {
+        "sess-root-running": [
+          3200,
+          1020
+        ],
+        "sess-child-processing": [
+          1400,
+          420
+        ],
+        "sess-review-waiting": [
+          300,
+          80
+        ]
+      }
+    },
+    "overlay": {
+      "initial_intent": "expanded"
+    }
+  },
+  "expected": {
+    "ui": {
+      "overlay_mode": "expanded",
+      "active_session_rows": 3,
+      "selected_session_id": "sess-root-running",
+      "recent_rows_initially_visible": 10,
+      "more_button_visible": true
+    },
+    "diagnostics": {
+      "overlay": {
+        "phase": "expanded",
+        "want_expanded": true,
+        "is_expanded": true
+      },
+      "counts": {
+        "sessions": 3,
+        "history_entries": 11
+      },
+      "selected_session_id": "sess-root-running",
+      "pending_interaction": null,
+      "onboarding": {
+        "type": "Connected",
+        "needs_attention": false
+      }
+    }
+  }
+}

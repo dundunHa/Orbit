@@ -57,18 +57,26 @@ final class OverlayStateMachine {
 
     /// Orbitbak source: main.js:177-184, 997-1025（expand intent + reconcile 语义）
     func requestExpand() {
-        NSLog("[Orbit] SM.requestExpand: phase=%@ isAnimating=%d wantExpanded=%d", "\(phase)", isAnimating ? 1 : 0, wantExpanded ? 1 : 0)
+        OrbitDiagnostics.shared.debug(
+            .overlay,
+            "stateMachine.requestExpand",
+            metadata: [
+                "phase": String(describing: phase),
+                "isAnimating": isAnimating ? "1" : "0",
+                "wantExpanded": wantExpanded ? "1" : "0"
+            ]
+        )
         cancelCollapse()
         wantExpanded = true
 
         // main.js 的 isAnimating 锁：动画期间禁止重入，仅更新意图。
         guard !isAnimating else {
-            NSLog("[Orbit] SM.requestExpand: BLOCKED by isAnimating")
+            OrbitDiagnostics.shared.debug(.overlay, "stateMachine.requestExpandBlocked")
             return
         }
 
         guard phase != .expanded, phase != .expanding else {
-            NSLog("[Orbit] SM.requestExpand: already expanded/expanding, skip")
+            OrbitDiagnostics.shared.debug(.overlay, "stateMachine.requestExpandSkipped")
             return
         }
         expandIsland()
@@ -76,7 +84,14 @@ final class OverlayStateMachine {
 
     /// Orbitbak source: main.js:177-184, 1027-1047（mouseleave + debounce + collapse intent）
     func scheduleCollapse() {
-        NSLog("[Orbit] SM.scheduleCollapse: phase=%@ isAnimating=%d", "\(phase)", isAnimating ? 1 : 0)
+        OrbitDiagnostics.shared.debug(
+            .overlay,
+            "stateMachine.scheduleCollapse",
+            metadata: [
+                "phase": String(describing: phase),
+                "isAnimating": isAnimating ? "1" : "0"
+            ]
+        )
         cancelCollapse()
         let generation = collapseGeneration
 
@@ -90,7 +105,14 @@ final class OverlayStateMachine {
 
                 // Orbitbak: pending interaction blocks collapse.
                 let hasPending = self.hasPendingInteractions?() == true
-                NSLog("[Orbit] SM.scheduleCollapse timer fired: phase=%@ hasPending=%d", "\(self.phase)", hasPending ? 1 : 0)
+                OrbitDiagnostics.shared.debug(
+                    .overlay,
+                    "stateMachine.collapseTimerFired",
+                    metadata: [
+                        "phase": String(describing: self.phase),
+                        "hasPending": hasPending ? "1" : "0"
+                    ]
+                )
                 if hasPending {
                     self.wantExpanded = true
                     return
@@ -141,7 +163,15 @@ final class OverlayStateMachine {
     func transitionDidEnd() {
         clearAnimationFallbackTimer()
 
-        NSLog("[Orbit] SM.transitionDidEnd: phase=%@ wantExpanded=%d collapseAfterTransition=%d", "\(phase)", wantExpanded ? 1 : 0, collapseAfterTransition ? 1 : 0)
+        OrbitDiagnostics.shared.debug(
+            .overlay,
+            "stateMachine.transitionDidEnd",
+            metadata: [
+                "phase": String(describing: phase),
+                "wantExpanded": wantExpanded ? "1" : "0",
+                "collapseAfterTransition": collapseAfterTransition ? "1" : "0"
+            ]
+        )
 
         if phase == .collapsing, collapseAfterTransition {
             finishCollapse()
@@ -164,7 +194,14 @@ final class OverlayStateMachine {
 
     /// Orbitbak source: main.js:177-184, 1027-1065（interaction resolved 后清理 intent 并折叠）
     func interactionResolved() {
-        NSLog("[Orbit] SM.interactionResolved: phase=%@ isAnimating=%d", "\(phase)", isAnimating ? 1 : 0)
+        OrbitDiagnostics.shared.debug(
+            .overlay,
+            "stateMachine.interactionResolved",
+            metadata: [
+                "phase": String(describing: phase),
+                "isAnimating": isAnimating ? "1" : "0"
+            ]
+        )
         cancelCollapse()
         wantExpanded = false
 
@@ -184,7 +221,7 @@ final class OverlayStateMachine {
     private func expandIsland() {
         guard !isAnimating else { return }
 
-        NSLog("[Orbit] SM.expandIsland: starting expand")
+        OrbitDiagnostics.shared.notice(.overlay, "stateMachine.expandIsland")
         phase = .expanding
         isAnimating = true
         collapseAfterTransition = false

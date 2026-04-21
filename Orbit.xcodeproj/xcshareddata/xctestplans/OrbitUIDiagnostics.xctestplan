@@ -1,0 +1,44 @@
+{
+  "configurations" : [
+    {
+      "id" : "2E4E9F6A-EF8B-4245-9BC0-0D6F6E63BBA7",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : true,
+    "environmentVariableEntries" : [
+      {
+        "key" : "OS_ACTIVITY_DT_MODE",
+        "value" : "1"
+      }
+    ],
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Orbit.xcodeproj",
+      "identifier" : "D57104BD2F8CEEDF00DF86E7",
+      "name" : "Orbit"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:Orbit.xcodeproj",
+        "identifier" : "04B61BDC4867BD43B215D701",
+        "name" : "OrbitTests"
+      }
+    },
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:Orbit.xcodeproj",
+        "identifier" : "A10000000000000000000203",
+        "name" : "OrbitUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

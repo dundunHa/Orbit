@@ -1,5 +1,5 @@
 import SwiftUI
-import Observation
+import Combine
 
 enum OverlayPayloadPhase: Equatable {
     case collapsed
@@ -8,19 +8,19 @@ enum OverlayPayloadPhase: Equatable {
     case collapsing
 }
 
-@Observable
-final class OverlayBridge {
-    var payloadPhase: OverlayPayloadPhase = .collapsed
-    var activeStatus: SessionStatus = .waitingForInput
+@MainActor
+final class OverlayBridge: ObservableObject {
+    @Published var payloadPhase: OverlayPayloadPhase = .collapsed
+    @Published var activeStatus: SessionStatus = .waitingForInput
     /// Incremented to signal that the next .expanded phase change should
     /// skip animation and snap instantly (Space-transition recovery).
-    var snapExpandedEpoch: UInt64 = 0
+    @Published var snapExpandedEpoch: UInt64 = 0
 }
 
 struct OverlayShellView: View {
     private static let expandAnimation = Animation.timingCurve(0.18, 0.88, 0.32, 1.0, duration: 0.24)
     private static let collapseAnimation = Animation.timingCurve(0.20, 0.82, 0.24, 1.0, duration: 0.26)
-    var bridge: OverlayBridge
+    @ObservedObject var bridge: OverlayBridge
     let geometry: NotchGeometry
     let payload: () -> AnyView
 

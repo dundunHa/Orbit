@@ -1,0 +1,50 @@
+{
+  "reviewer": "correctness+reliability",
+  "findings": [
+    {
+      "title": "Scenario bootstrap enters test mode on any fixture-path env, so load failures no longer fall back to the normal app startup path",
+      "severity": "P1",
+      "file": "Orbit/AppDelegate.swift",
+      "line": 33,
+      "confidence": 0.98,
+      "autofix_class": "gated_auto",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Only enable scenario mode after a scenario successfully loads, and gate the scenario/diagnostics bootstrap behind DEBUG or an explicit test-runtime check so invalid fixtures fall back to the normal startup path instead of disabling socket/anomaly/refresh startup.",
+      "why_it_matters": "Right now the presence of ORBIT_TEST_SCENARIO_PATH is enough to divert the app into testing startup, even if the file is missing or the JSON is invalid. In that failure path the app skips socket startup, anomaly detection, onboarding background checks, periodic refreshes, and switches history persistence to a temp file. That contradicts the planned error-path behavior of \"log and fall back\" and means an inherited env var can materially change non-test launches.",
+      "evidence": [
+        "Orbit/AppDelegate.swift:32-33 derives isScenarioMode from AppLaunchScenarioLoader(environment:) != nil, which only checks whether the env var is present.",
+        "Orbit/AppDelegate.swift:55-71 records scenarioLoadError but never clears isScenarioMode after load() fails.",
+        "Orbit/AppDelegate.swift:76-89 and 155-163 branch core startup on isScenarioMode, swapping in temp persistence and skipping onboardingManager.startBackgroundCheck(), socketServer.start(), anomalyDetector.start(), and the refresh timer when the scenario merely failed to load.",
+        "Orbit/OrbitCore/Testing/AppLaunchScenarioLoader.swift:3-65 is compiled as normal app code with no DEBUG gating, while AppDelegate.swift:498-505 explicitly DEBUG-gates the existing test-only processSocketMessageForTesting entrypoint."
+      ]
+    },
+    {
+      "title": "Runtime diagnostics writes can land out of order and overwrite newer state with stale snapshots",
+      "severity": "P1",
+      "file": "Orbit/AppDelegate.swift",
+      "line": 607,
+      "confidence": 0.94,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Serialize diagnostics writes through a single coalescing pipeline, or attach a monotonically increasing generation to each snapshot and have OrbitRuntimeDiagnosticsWriter drop stale generations so the file is always last-write-wins by state version, not Task scheduling order.",
+      "why_it_matters": "The UI harness treats the diagnostics JSON file as the source of truth for wait predicates. configureRuntimeDiagnostics subscribes to multiple @Published streams and also triggers writes from pending-interaction and overlay callbacks, then scheduleRuntimeDiagnosticsWrite() spawns an unstructured Task for every snapshot. Those Tasks can reach the writer actor in a different order than the main-actor state changes that created them, so an older snapshot can overwrite a newer one and make waitForDiagnostics observe regressed state. That directly reintroduces the flake this platform is trying to remove.",
+      "evidence": [
+        "Orbit/AppDelegate.swift:564-595 wires diagnostics writes to onPermissionDecisionHandled, five @Published sinks, and overlayController?.onRuntimeStateChanged, so bursty state transitions enqueue many writes back-to-back.",
+        "Orbit/AppDelegate.swift:597-609 captures a snapshot and launches a fresh Task { await runtimeDiagnosticsWriter.write(diagnostics) } for every trigger instead of maintaining one ordered write queue or generation check.",
+        "Orbit/OrbitCore/Diagnostics/OrbitRuntimeDiagnostics.swift:150-180 serializes whatever snapshot arrives at the actor without any sequence guard, so a stale write can still win if it arrives later.",
+        "OrbitUITests/Support/OrbitUITestCase.swift:164-181 polls the JSON file in waitForDiagnostics(), so any stale overwrite shows up as a false timeout or a misleading failure attachment."
+      ]
+    }
+  ],
+  "residual_risks": [
+    "OrbitUITests/OrbitUIRegressionTests.swift:38-41 still uses the visible button label \"more\" instead of OrbitAccessibilityID.Expanded.recentLoadMoreButton, so copy/localization changes can fail that regression even when the behavior is otherwise correct."
+  ],
+  "testing_gaps": [
+    "No app-level test exercises the documented error path where ORBIT_TEST_SCENARIO_PATH is missing/invalid and startup should fall back to the normal socket/anomaly/onboarding path.",
+    "No stress test asserts that runtime diagnostics remain monotonic under rapid consecutive overlay/session/pending updates, so the write-order race can slip through with the current happy-path coverage."
+  ]
+}

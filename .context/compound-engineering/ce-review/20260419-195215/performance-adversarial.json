@@ -1,0 +1,50 @@
+{
+  "reviewer": "performance+adversarial",
+  "findings": [
+    {
+      "title": "Runtime diagnostics writes can backlog and regress to stale snapshots under bursty state changes",
+      "severity": "P1",
+      "file": "Orbit/AppDelegate.swift",
+      "line": 597,
+      "confidence": 0.92,
+      "autofix_class": "gated_auto",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Move sequencing into OrbitRuntimeDiagnosticsWriter: enqueue a monotonic revision, coalesce duplicate updates, and drop stale revisions instead of spawning a new unstructured Task for every publisher emission.",
+      "why_it_matters": "The diagnostics file is now part of the UI-test oracle, but the current implementation fans a single logical state transition into several full JSON rewrites and schedules each rewrite through an unstructured Task. Under rapid hook/statusline or overlay activity, older snapshots can arrive at the writer after newer ones and overwrite the file, while the extra pretty-printed atomic writes add avoidable I/O and actor backlog. That directly undermines the stated goal of stable diagnostics-driven UI tests.",
+      "evidence": [
+        "Orbit/AppDelegate.swift:574-594 subscribes to five @Published properties plus overlayController.onRuntimeStateChanged, and every callback calls scheduleRuntimeDiagnosticsWrite() immediately.",
+        "Orbit/AppDelegate.swift:234-257 also calls scheduleRuntimeDiagnosticsWrite() from onPendingInteractionChanged, while AppViewModel.pendingInteractions already triggers that callback from a didSet hook at Orbit/AppViewModel.swift:10-13, so one permission transition produces duplicate write requests before overlay notifications are counted.",
+        "Orbit/AppDelegate.swift:597-609 captures a full OrbitRuntimeDiagnostics snapshot and launches Task { await runtimeDiagnosticsWriter.write(diagnostics) }; because the snapshot is captured before entering the actor, write order now depends on task scheduling rather than state order.",
+        "Orbit/OrbitCore/Diagnostics/OrbitRuntimeDiagnostics.swift:162-169 re-encodes pretty-printed JSON and performs an atomic file write on every request, so duplicate or reordered writes turn bursty UI events into repeated full-file I/O."
+      ]
+    },
+    {
+      "title": "macOS UI clicks run without re-activating the accessory app, so background windows can steal the event",
+      "severity": "P2",
+      "file": "OrbitUITests/Support/OrbitUITestCase.swift",
+      "line": 149,
+      "confidence": 0.85,
+      "autofix_class": "safe_auto",
+      "owner": "review-fixer",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "After launch, explicitly call app.activate() and wait for a stable root element to become hittable; route all clicks through a helper that re-activates Orbit and retries once if the target is not hittable.",
+      "why_it_matters": "These tests are supposed to harden the suite against environment noise, but the harness currently launches Orbit and immediately sends focus-sensitive macOS clicks without first making the accessory app frontmost. Any notification, chat window, or other desktop interruption can intercept the click and fail the test even when the product state is correct.",
+      "evidence": [
+        "Orbit/AppDelegate.swift:28-29 sets NSApplication.shared.setActivationPolicy(.accessory), which gives the app a weaker focus model than a regular foreground app.",
+        "OrbitUITests/Support/OrbitUITestCase.swift:149-157 only configures launchEnvironment and calls app.launch(); it never calls app.activate() or waits for a frontmost/hittable window state before interaction.",
+        "OrbitUITests/OrbitUIRegressionTests.swift:7-10, 22-24, and 38-40 call click() immediately after waitForExistence(timeout:), but waitForExistence only proves the element is present in the AX tree, not that Orbit is frontmost and receiving pointer events."
+      ]
+    }
+  ],
+  "residual_risks": [
+    "Collapsed scenario fixtures keep isExpansionSuppressedForTesting enabled for the whole run, so the harness still does not exercise production-style collapsed-to-expanded wake-up flows unless a future fixture explicitly opts into a different path.",
+    "waitForDiagnostics() still relies on a fixed 5s file-poll timeout; even after coalescing writes, slower CI disks or richer fixtures may need a longer, centrally configurable timeout budget."
+  ],
+  "testing_gaps": [
+    "No test currently drives rapid back-to-back diagnostics updates and asserts that the diagnostics file remains monotonic; the existing UI tests only check settled end states.",
+    "No UI harness helper or regression test covers focus interruption/re-activation on macOS, so the suite does not yet guard against the desktop-noise failure mode exposed by the current click path."
+  ]
+}

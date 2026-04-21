@@ -26,6 +26,10 @@ public actor SessionStore {
         sessions
     }
 
+    public func replaceAll(_ sessions: [Session]) {
+        self.sessions = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+    }
+
     public func removeSession(_ id: String) {
         sessions.removeValue(forKey: id)
     }

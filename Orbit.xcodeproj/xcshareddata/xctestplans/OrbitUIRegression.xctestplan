@@ -1,0 +1,39 @@
+{
+  "configurations" : [
+    {
+      "id" : "ED04AE65-5226-474B-B0F6-BFEBC00107F0",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : false,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Orbit.xcodeproj",
+      "identifier" : "D57104BD2F8CEEDF00DF86E7",
+      "name" : "Orbit"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "selectedTests" : [
+        "OrbitUISmokeTests/testIdleFixtureShowsPillOnly",
+        "OrbitUISmokeTests/testPendingPermissionFixtureShowsPermissionPrompt",
+        "OrbitUISmokeTests/testOnboardingDriftFixtureShowsRetryPath",
+        "OrbitUISmokeTests/testActiveAndHistoryFixtureShowsExpandedLists",
+        "OrbitUIRegressionTests/testPermissionAllowClearsPendingInteraction",
+        "OrbitUIRegressionTests/testOnboardingRetryMovesStateToInstalling",
+        "OrbitUIRegressionTests/testHistoryLoadMoreRevealsOlderEntry"
+      ],
+      "target" : {
+        "containerPath" : "container:Orbit.xcodeproj",
+        "identifier" : "A10000000000000000000203",
+        "name" : "OrbitUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

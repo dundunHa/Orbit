@@ -8,6 +8,14 @@ import Testing
 @Suite("OverlayController")
 @MainActor
 struct OverlayControllerTests {
+    private final class MouseLocationProbe {
+        var point: NSPoint
+
+        init(point: NSPoint) {
+            self.point = point
+        }
+    }
+
     private final class MockScreen: NSScreen {
         private let topInset: CGFloat
         private let mockedFrame: NSRect
@@ -194,6 +202,27 @@ struct OverlayControllerTests {
         #expect(fixture.controller.stateMachine.wantExpanded)
     }
 
+    @Test("pinned testing expansion stays open without hover")
+    func pinnedTestingExpansionStaysOpenWithoutHover() throws {
+        let fixture = try makeFixture()
+        defer { fixture.controller.panel.close() }
+
+        fixture.controller.setExpansionPinnedForTesting(true)
+        fixture.controller.requestExpand()
+        pumpMainRunLoop(seconds: 0.55)
+
+        #expect(fixture.controller.stateMachine.phase == .expanded)
+        #expect(fixture.controller.stateMachine.wantExpanded)
+        #expect(fixture.controller.isExpanded)
+
+        fixture.controller.panel.onMouseExit?()
+        pumpMainRunLoop(seconds: 0.30)
+
+        #expect(fixture.controller.stateMachine.phase == .expanded)
+        #expect(fixture.controller.stateMachine.wantExpanded)
+        #expect(fixture.controller.isExpanded)
+    }
+
     @Test("pending interaction ignores hover collapse arming")
     func pendingInteractionIgnoresHoverCollapseArming() throws {
         let fixture = try makeFixture()
@@ -276,6 +305,37 @@ struct OverlayControllerTests {
         #expect(!fixture.controller.stateMachine.wantExpanded)
     }
 
+    @Test("resolved interaction keeps expanded while pointer still hovers panel")
+    func resolvedInteractionKeepsExpandedWhilePointerStillHoversPanel() throws {
+        let fixture = try makeFixture()
+        defer { fixture.controller.panel.close() }
+
+        fixture.viewModel.pendingInteraction = PendingInteraction(
+            id: "req-1",
+            kind: "permission",
+            sessionId: "s1",
+            toolName: "Bash",
+            toolInput: .null,
+            message: "allow?",
+            requestedSchema: nil
+        )
+
+        fixture.controller.requestExpand()
+        pumpMainRunLoop(seconds: 0.35)
+
+        fixture.mouseLocation.point = NSPoint(
+            x: fixture.controller.panel.frame.midX,
+            y: fixture.controller.panel.frame.midY
+        )
+        fixture.viewModel.pendingInteraction = nil
+        fixture.controller.interactionResolved()
+        pumpMainRunLoop(seconds: 0.26)
+
+        #expect(fixture.controller.stateMachine.phase == .expanded)
+        #expect(fixture.controller.stateMachine.wantExpanded)
+        #expect(fixture.controller.isExpanded)
+    }
+
     @Test("queued interaction keeps collapse blocked after head resolves")
     func queuedInteractionKeepsCollapseBlockedAfterHeadResolves() throws {
         let fixture = try makeFixture()
@@ -314,6 +374,34 @@ struct OverlayControllerTests {
         #expect(fixture.viewModel.pendingInteraction?.id == "req-2")
         #expect(fixture.controller.stateMachine.phase == .expanded)
         #expect(fixture.controller.stateMachine.wantExpanded)
+    }
+
+    @Test("pinned testing expansion ignores resolved interaction collapse")
+    func pinnedTestingExpansionIgnoresResolvedInteractionCollapse() throws {
+        let fixture = try makeFixture()
+        defer { fixture.controller.panel.close() }
+
+        fixture.viewModel.pendingInteraction = PendingInteraction(
+            id: "req-1",
+            kind: "permission",
+            sessionId: "s1",
+            toolName: "Bash",
+            toolInput: .null,
+            message: "allow?",
+            requestedSchema: nil
+        )
+
+        fixture.controller.setExpansionPinnedForTesting(true)
+        fixture.controller.requestExpand()
+        pumpMainRunLoop(seconds: 0.35)
+
+        fixture.viewModel.pendingInteraction = nil
+        fixture.controller.interactionResolved()
+        pumpMainRunLoop(seconds: 0.30)
+
+        #expect(fixture.controller.stateMachine.phase == .expanded)
+        #expect(fixture.controller.stateMachine.wantExpanded)
+        #expect(fixture.controller.isExpanded)
     }
 
     @Test("transitionDidEnd advances phase")
@@ -389,6 +477,7 @@ private struct OverlayControllerFixture {
     let viewModel: AppViewModel
     let screen: NSScreen
     let geometry: NotchGeometry
+    let mouseLocation: OverlayControllerTests.MouseLocationProbe
 }
 
 @MainActor
@@ -397,6 +486,9 @@ private func makeFixture() throws -> OverlayControllerFixture {
 
     let screen = try #require(DisplayPolicy.targetScreen(from: NSScreen.screens) ?? NSScreen.screens.first)
     let geometry = NotchGeometry.current(on: screen)
+    let mouseLocation = OverlayControllerTests.MouseLocationProbe(
+        point: NSPoint(x: -10_000, y: -10_000)
+    )
 
     let sessionStore = SessionStore()
     let historyStore = HistoryStore(filePath: tempPath(prefix: "overlay-history"))
@@ -415,14 +507,19 @@ private func makeFixture() throws -> OverlayControllerFixture {
         onboardingManager: nil
     )
 
-    let controller = OverlayController(screen: screen, geometry: geometry)
+    let controller = OverlayController(
+        screen: screen,
+        geometry: geometry,
+        mouseLocationProvider: { mouseLocation.point }
+    )
     controller.setupContent(viewModel: viewModel)
 
     return OverlayControllerFixture(
         controller: controller,
         viewModel: viewModel,
         screen: screen,
-        geometry: geometry
+        geometry: geometry,
+        mouseLocation: mouseLocation
     )
 }
 

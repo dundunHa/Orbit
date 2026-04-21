@@ -22,6 +22,8 @@ final class AppViewModel: ObservableObject {
 
     var onRetryOnboarding: (() -> Void)?
     var onPendingInteractionChanged: (() -> Void)?
+    var onPermissionDecisionHandled: ((PendingInteraction, PermissionDecision) -> Void)?
+    var permissionDecisionResolver: (@Sendable (PendingInteraction, PermissionDecision) async -> Void)?
 
     var pendingInteraction: PendingInteraction? {
         get { pendingInteractions.first }
@@ -85,9 +87,14 @@ final class AppViewModel: ObservableObject {
     func handlePermissionDecision(_ decision: PermissionDecision) {
         guard let pending = pendingInteraction else { return }
         clearPendingInteraction(requestId: pending.id)
+        onPermissionDecisionHandled?(pending, decision)
 
         Task {
-            await hookRouter.resolvePermission(requestId: pending.id, decision: decision)
+            if let permissionDecisionResolver {
+                await permissionDecisionResolver(pending, decision)
+            } else {
+                await hookRouter.resolvePermission(requestId: pending.id, decision: decision)
+            }
             await MainActor.run {
                 self.refreshSessions()
             }
@@ -152,5 +159,21 @@ final class AppViewModel: ObservableObject {
         case .ended:
             return 0
         }
+    }
+
+    func applyTestingSnapshot(
+        sessions: [Session],
+        historyEntries: [HistoryEntry],
+        selectedSessionId: String?,
+        onboardingState: OnboardingState,
+        pendingInteraction: PendingInteraction?,
+        todayStats: TodayTokenStats
+    ) {
+        self.sessions = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        self.historyEntries = historyEntries.sorted { $0.endedAt > $1.endedAt }
+        self.selectedSessionId = selectedSessionId ?? activeSession()?.id
+        self.onboardingState = onboardingState
+        self.pendingInteractions = pendingInteraction.map { [$0] } ?? []
+        self.todayStats = todayStats
     }
 }

@@ -27,9 +27,11 @@ public struct OnboardingView: View {
                     .font(.system(size: 11))
                     .foregroundColor(Color.white.opacity(0.78))
                     .lineSpacing(4.4)
+                    .accessibilityIdentifier(OrbitAccessibilityID.Onboarding.statusText)
                 
                 Spacer()
             }
+            .accessibilityIdentifier(OrbitAccessibilityID.Onboarding.state(state))
             
             if canRetry {
                 Button(action: onRetry) {
@@ -41,6 +43,7 @@ public struct OnboardingView: View {
                         .background(Color(hex: "#60a5fa"))
                         .cornerRadius(8)
                 }
+                .accessibilityIdentifier(OrbitAccessibilityID.Onboarding.retryButton)
                 .buttonStyle(.plain)
                 .disabled(isRetrying)
                 .opacity(isRetrying ? 0.5 : 1.0)
@@ -53,6 +56,8 @@ public struct OnboardingView: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(OrbitAccessibilityID.Onboarding.root)
     }
     
     @ViewBuilder

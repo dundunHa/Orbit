@@ -27,6 +27,7 @@ public struct PillView: View {
             HStack(spacing: 6) {
                 Spacer()
                 StatusDotView(status: status)
+                    .accessibilityIdentifier(OrbitAccessibilityID.Pill.statusDot)
             }
             .padding(.trailing, 14)
             .frame(width: geometry.rightZoneWidth)
@@ -36,6 +37,7 @@ public struct PillView: View {
             Color.black
                 .clipShape(BottomRoundedRectangle(radius: 22.0))
         )
+        .accessibilityIdentifier(OrbitAccessibilityID.Pill.root)
         .onAppear {
             updateAnimations()
         }
@@ -100,5 +102,6 @@ struct ClaudeMascotView: View {
         .opacity(0.96)
         .scaleEffect(scaleOffset)
         .offset(y: yOffset)
+        .accessibilityIdentifier(OrbitAccessibilityID.Pill.mascot)
     }
 }

@@ -25,6 +25,8 @@ private extension View {
     }
 }
 
+private let kPermissionPayloadHeightFloor: CGFloat = 248
+
 struct OverlayPayloadSlot: View {
     @ObservedObject var viewModel: AppViewModel
     let geometry: NotchGeometry
@@ -40,10 +42,20 @@ struct OverlayPayloadSlot: View {
                     interactionView(for: interaction)
                         .id(interaction.id)
                 }
-                    .padding(.top, 8)
+                    .padding(.top, interaction.kind == "permission" ? 6 : 8)
                     // 给最外层 shell 预留更多底部留白，让已有的底部圆角更容易被看见。
-                    .padding(.bottom, 24)
-                    .reportOverlayPayloadHeight(onContentHeightChange)
+                    .padding(.bottom, interaction.kind == "permission" ? 16 : 24)
+                    .onAppear {
+                        guard interaction.kind == "permission" else { return }
+                        onContentHeightChange(kPermissionPayloadHeightFloor)
+                    }
+                    .reportOverlayPayloadHeight { height in
+                        if interaction.kind == "permission" {
+                            onContentHeightChange(max(height, kPermissionPayloadHeightFloor))
+                        } else {
+                            onContentHeightChange(height)
+                        }
+                    }
             } else if shouldShowOnboarding {
                 OnboardingView(
                     state: viewModel.onboardingState,
@@ -107,6 +119,7 @@ struct OverlayPayloadSlot: View {
     private func interactionView(for interaction: PendingInteraction) -> some View {
         if interaction.kind == "permission" {
             PermissionView(
+                message: interaction.message,
                 toolName: interaction.toolName,
                 toolInput: interaction.toolInput,
                 permissionSuggestions: interaction.permissionSuggestions

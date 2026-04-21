@@ -19,6 +19,9 @@ final class OverlayController: ObservableObject {
     private var lastContentScrollHeight: CGFloat?
     private var collapseContentTransitionTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
+    private let mouseLocationProvider: () -> NSPoint
+    private var isExpansionPinnedForTesting = false
+    private var isExpansionSuppressedForTesting = false
 
     /// Monotonic counter that invalidates stale animation completion handlers.
     /// Incremented every time `snapPanelFrame` cancels an in-flight animation.
@@ -43,16 +46,22 @@ final class OverlayController: ObservableObject {
     private var lastExpandedAt: CFAbsoluteTime = 0
 
     var onGeometryChanged: ((NotchGeometry) -> Void)?
+    var onRuntimeStateChanged: (() -> Void)?
 
     private static let nativeAnimationDuration: TimeInterval = 0.24
     private static let collapseLeadDuration: UInt64 = 140_000_000
 
-    init(screen: NSScreen, geometry: NotchGeometry) {
+    init(
+        screen: NSScreen,
+        geometry: NotchGeometry,
+        mouseLocationProvider: @escaping () -> NSPoint = { NSEvent.mouseLocation }
+    ) {
         self.geometry = geometry
         self.currentScreen = screen
         self.currentScreenFrame = DisplayPolicy.overlayAnchorFrame(for: screen)
         self.stateMachine = OverlayStateMachine()
         self.bridge = OverlayBridge()
+        self.mouseLocationProvider = mouseLocationProvider
 
         let collapsed = ParityGeometry.collapsedFrame(
             geometry: geometry,
@@ -108,16 +117,67 @@ final class OverlayController: ObservableObject {
     }
 
     func requestExpand() {
-        NSLog("[Orbit] OverlayController.requestExpand called, isExpanded=%d", isExpanded ? 1 : 0)
+        guard !isExpansionSuppressedForTesting else {
+            notifyRuntimeStateChanged()
+            return
+        }
+        OrbitDiagnostics.shared.debug(
+            .overlay,
+            "overlay.requestExpand",
+            metadata: [
+                "isExpanded": isExpanded ? "1" : "0",
+                "phase": String(describing: stateMachine.phase)
+            ]
+        )
         stateMachine.requestExpand()
+        notifyRuntimeStateChanged()
+    }
+
+    func setExpansionPinnedForTesting(_ isPinned: Bool) {
+        isExpansionPinnedForTesting = isPinned
+        if isPinned {
+            stateMachine.cancelCollapse()
+            stateMachine.forceWantExpanded()
+        }
+        notifyRuntimeStateChanged()
+    }
+
+    func setExpansionSuppressedForTesting(_ isSuppressed: Bool) {
+        isExpansionSuppressedForTesting = isSuppressed
+        if isSuppressed {
+            stateMachine.cancelCollapse()
+        }
+        notifyRuntimeStateChanged()
     }
 
     func scheduleCollapse() {
+        guard !isExpansionPinnedForTesting else {
+            stateMachine.cancelCollapse()
+            stateMachine.forceWantExpanded()
+            notifyRuntimeStateChanged()
+            return
+        }
         stateMachine.scheduleCollapse()
+        notifyRuntimeStateChanged()
     }
 
     func interactionResolved() {
+        if isExpansionPinnedForTesting {
+            stateMachine.cancelCollapse()
+            stateMachine.forceWantExpanded()
+            notifyRuntimeStateChanged()
+            return
+        }
+        // Keep the overlay open if the pointer is still over the panel.
+        // The pending interaction ended, but the user's hover intent did not.
+        if isMouseInsidePanel() {
+            stateMachine.cancelCollapse()
+            stateMachine.forceWantExpanded()
+            notifyRuntimeStateChanged()
+            return
+        }
         stateMachine.interactionResolved()
+        notifyRuntimeStateChanged()
     }
 
     func handleScreenChange(geometry: NotchGeometry, screen: NSScreen) {
@@ -171,6 +231,7 @@ final class OverlayController: ObservableObject {
 
         onGeometryChanged?(geometry)
         snapPanelFrame()
+        notifyRuntimeStateChanged()
     }
 
     func updateExpandedHeight(contentScrollHeight: CGFloat) {
@@ -191,15 +252,16 @@ final class OverlayController: ObservableObject {
             to: expandedFrame(height: expandedHeight),
             completion: nil
         )
+        notifyRuntimeStateChanged()
     }
 
     private func wirePanelHover() {
         panel.onMouseEnter = { [weak self] in
-            guard let self, !self.hasPendingInteraction() else { return }
-            self.stateMachine.requestExpand()
+            guard let self, !self.hasPendingInteraction(), !self.isExpansionSuppressedForTesting else { return }
+            self.requestExpand()
         }
         panel.onMouseExit = { [weak self] in
-            guard let self, !self.isScreenTransitioning, !self.hasPendingInteraction() else { return }
+            guard let self, !self.isScreenTransitioning, !self.hasPendingInteraction(), !self.isExpansionPinnedForTesting else { return }
             // Space 切换时 macOS 触发合成 mouseExited，但鼠标物理位置不变。
             // 仅在稳态阶段（collapsed/expanded）做 isMouseInsidePanel 检查，
             // 因为此时 panel.frame（模型值）与视觉位置一致。
@@ -207,14 +269,14 @@ final class OverlayController: ObservableObject {
             // 与当前视觉位置不符，检查会误判导致折叠被阻止。
             let stable = self.stateMachine.phase == .collapsed || self.stateMachine.phase == .expanded
             if stable, self.isMouseInsidePanel() { return }
-            self.stateMachine.scheduleCollapse()
+            self.scheduleCollapse()
         }
     }
 
     /// 检查当前鼠标位置是否在面板 frame 内。
     /// Space 切换导致的合成 mouseExited 不会改变鼠标物理位置。
     private func isMouseInsidePanel() -> Bool {
-        let mouseLocation = NSEvent.mouseLocation
+        let mouseLocation = mouseLocationProvider()
         return panel.frame.contains(mouseLocation)
     }
 
@@ -228,6 +290,7 @@ final class OverlayController: ObservableObject {
         if value {
             lastExpandedAt = CFAbsoluteTimeGetCurrent()
         }
+        notifyRuntimeStateChanged()
     }
 
     /// 面板在最近 1 秒内是否处于展开状态。
@@ -242,9 +305,13 @@ final class OverlayController: ObservableObject {
             guard let self else { return }
             self.collapseContentTransitionTask?.cancel()
             let targetFrame = self.expandedFrame(height: self.expandedHeight)
-            NSLog("[Orbit] onExpandNativeWindow: animating to frame=%@", NSStringFromRect(targetFrame))
+            let interval = OrbitDiagnostics.shared.beginInterval(
+                .overlay,
+                "overlay.expandAnimation",
+                metadata: ["targetFrame": NSStringFromRect(targetFrame)]
+            )
             self.animatePanel(to: targetFrame) {
-                NSLog("[Orbit] onExpandNativeWindow: animation completed, setting expanded")
+                OrbitDiagnostics.shared.endInterval(interval)
                 self.setExpanded(true)
                 self.bridge.payloadPhase = .expanded
                 self.stateMachine.transitionDidEnd()
@@ -253,11 +320,13 @@ final class OverlayController: ObservableObject {
                 // 动画结束后检查鼠标是否仍在面板内，不在则补发折叠。
                 // 交互请求会强制保持展开，不应再走 hover 收起链路。
                 if self.stateMachine.phase == .expanded,
+                   !self.isExpansionPinnedForTesting,
                    !self.hasPendingInteraction(),
                    !self.isMouseInsidePanel()
                 {
                     self.stateMachine.scheduleCollapse()
                 }
+                self.notifyRuntimeStateChanged()
             }
         }
 
@@ -265,29 +334,34 @@ final class OverlayController: ObservableObject {
             guard let self else { return }
             self.collapseContentTransitionTask?.cancel()
             self.setExpanded(true)
-            NSLog("[Orbit] onSetExpandedContent: payloadPhase -> expanding")
             self.bridge.payloadPhase = .expanding
+            self.notifyRuntimeStateChanged()
         }
 
         stateMachine.onSetCollapsedContent = { [weak self] in
             guard let self else { return }
             self.bridge.payloadPhase = .collapsing
+            self.notifyRuntimeStateChanged()
 
             self.collapseContentTransitionTask?.cancel()
             self.collapseContentTransitionTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: Self.collapseLeadDuration)
                 await MainActor.run {
                     self?.stateMachine.transitionDidEnd()
+                    self?.notifyRuntimeStateChanged()
                 }
             }
         }
 
         stateMachine.onCollapseNativeWindow = { [weak self] in
             guard let self else { return }
+            let interval = OrbitDiagnostics.shared.beginInterval(.overlay, "overlay.collapseAnimation")
             self.animatePanel(to: self.collapsedFrame()) {
+                OrbitDiagnostics.shared.endInterval(interval)
                 self.setExpanded(false)
                 self.bridge.payloadPhase = .collapsed
                 self.stateMachine.transitionDidEnd()
+                self.notifyRuntimeStateChanged()
             }
         }
 
@@ -314,6 +388,7 @@ final class OverlayController: ObservableObject {
         let frame = expandedFrame(height: expandedHeight)
         panel.anchoredFrame = frame
         panel.setFrame(frame, display: true)
+        notifyRuntimeStateChanged()
     }
 
     private func expandedFrame(height: CGFloat) -> NSRect {
@@ -398,5 +473,9 @@ final class OverlayController: ObservableObject {
 
     var runtimeExpandedHeight: CGFloat {
         expandedHeight
+    }
+
+    private func notifyRuntimeStateChanged() {
+        onRuntimeStateChanged?()
     }
 }

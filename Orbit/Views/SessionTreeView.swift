@@ -17,6 +17,7 @@ public struct SessionTreeView: View {
                 .foregroundColor(Color.white.opacity(0.3))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 8)
+                .accessibilityIdentifier(OrbitAccessibilityID.SessionTree.emptyState)
         } else {
             VStack(spacing: 0) {
                 let rootSessions = sessions.filter { $0.parentSessionId == nil }
@@ -92,6 +93,7 @@ public struct SessionTreeRowView: View {
         .background(isSelected ? Color.white.opacity(0.05) : Color.clear)
         .cornerRadius(6)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier(OrbitAccessibilityID.SessionTree.row(sessionID: session.id))
     }
     
     private func statusString(_ status: SessionStatus) -> String {

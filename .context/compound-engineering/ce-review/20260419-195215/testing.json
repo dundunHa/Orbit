@@ -1,0 +1,86 @@
+{
+  "reviewer": "testing",
+  "findings": [
+    {
+      "title": "Regression suite never exercises the Deny or Continue-in-terminal permission paths",
+      "severity": "P1",
+      "file": "OrbitUITests/OrbitUIRegressionTests.swift",
+      "line": 4,
+      "confidence": 0.94,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Add regression cases that click `UIID.permissionDeny` and `UIID.permissionPassthrough`, then wait for `pendingInteraction == nil` and assert distinct `lastDecision.decision` values.",
+      "why_it_matters": "The platform promise for permission flows is state-transition coverage, not just button presence. Right now a wiring bug that swaps or breaks Deny/Continue in terminal would still pass because only Allow is driven end-to-end.",
+      "evidence": [
+        "OrbitUITests/OrbitUIRegressionTests.swift:4-16 only drives the Allow action and asserts `lastDecision?.decision == \"allow\"`.",
+        "OrbitUITests/OrbitUISmokeTests.swift:21-24 only checks that Deny and Continue-in-terminal buttons exist; it never clicks them.",
+        "docs/testing/ui-automation.md:159-160 says regression should cover Allow / Deny / Continue in terminal and verify that `pending_interaction` clears with the recorded decision."
+      ]
+    },
+    {
+      "title": "History UI tests still key off rendered copy instead of the shared accessibility contract",
+      "severity": "P2",
+      "file": "OrbitUITests/OrbitUIRegressionTests.swift",
+      "line": 36,
+      "confidence": 0.97,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Query the load-more control through `element(UIID.recentLoadMore)` and assert history rows through `UIID.historyRow(...)` instead of `app.buttons[\"more\"]` and visible titles.",
+      "why_it_matters": "These tests are supposed to prove the new accessibility contract keeps UI automation stable across copy changes. Using visible labels means a harmless text tweak can fail the suite even when behavior is unchanged, which is exactly what Unit 2 was meant to eliminate.",
+      "evidence": [
+        "OrbitUITests/OrbitUIRegressionTests.swift:36-42 asserts on the literal title `Initial UI test scaffolding` and clicks `app.buttons[\"more\"]`.",
+        "OrbitUITests/OrbitUISmokeTests.swift:53 uses `app.buttons[\"more\"]` even though `UIID.recentLoadMore` is defined in OrbitUITests/Support/OrbitUITestCase.swift:15.",
+        "docs/plans/2026-04-19-001-feat-ui-testing-diagnostics-platform-plan.md:294-302 explicitly says UI tests should rely on identifiers rather than hard-coded copy or layout position."
+      ]
+    },
+    {
+      "title": "Malformed fixture validation branches are untested beyond the schema-version check",
+      "severity": "P2",
+      "file": "Orbit/OrbitCore/Testing/AppLaunchScenario.swift",
+      "line": 83,
+      "confidence": 0.89,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Extend `AppLaunchScenarioLoaderTests` with fixtures that assert `invalidPendingInteractionKind` and `unsupportedOnboardingState`, and optionally add the missing-file load error to close Unit 1's error-path coverage.",
+      "why_it_matters": "The scenario loader is the root of this test platform. If malformed fixtures stop being rejected, UI tests can boot into partial or misleading state and produce false failures that are hard to diagnose. Those validation branches need dedicated tests, not just the happy path.",
+      "evidence": [
+        "Orbit/OrbitCore/Testing/AppLaunchScenario.swift:83-89 rejects unsupported pending interaction kinds, and 98-117 rejects unsupported onboarding states.",
+        "OrbitTests/AppLaunchScenarioLoaderTests.swift:82-105 only covers `unsupportedVersion(99)`; there is no test that exercises the two other validation errors introduced in the same diff.",
+        "Unit 1 in docs/plans/2026-04-19-001-feat-ui-testing-diagnostics-platform-plan.md requires loader error-path coverage so bad fixtures fail diagnostically instead of partially applying state."
+      ]
+    },
+    {
+      "title": "Runtime diagnostics coverage stops at the happy path and never proves disable/write-failure behavior",
+      "severity": "P2",
+      "file": "Orbit/AppDelegate.swift",
+      "line": 552,
+      "confidence": 0.85,
+      "autofix_class": "manual",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Add tests that (a) leave `ORBIT_TEST_DIAGNOSTICS_PATH` unset and assert the exporter stays disabled, and (b) force `OrbitRuntimeDiagnosticsWriter.write` to an unwritable path while a test sink is installed, asserting `runtimeDiagnostics.writeFailed` is emitted without affecting UI state updates.",
+      "why_it_matters": "Unit 4 promises that diagnostics are opt-in and non-disruptive. Without a negative-path test, a future refactor can easily make release startup always wire diagnostics or silently swallow write failures without the evidence trail reviewers depend on.",
+      "evidence": [
+        "Orbit/AppDelegate.swift:552-609 contains the new opt-in wiring and asynchronous write scheduling for runtime diagnostics.",
+        "Orbit/OrbitCore/Diagnostics/OrbitRuntimeDiagnostics.swift:162-179 contains a dedicated `runtimeDiagnostics.writeFailed` error path that is never exercised.",
+        "OrbitTests/OrbitRuntimeDiagnosticsTests.swift:76-111 only verifies successful persistence; there is no test for the disabled exporter path or the documented unwritable-path error path from docs/plans/2026-04-19-001-feat-ui-testing-diagnostics-platform-plan.md:374-383."
+      ]
+    }
+  ],
+  "residual_risks": [
+    "The new diagnostics/accessibility platform still has no end-to-end UI case for AskUserQuestion option IDs or permission suggestion buttons, so those identifiers are only unit-tested as string factories.",
+    "The active-and-history suite infers selected-session correctness from diagnostics, not from a row-level UI assertion, so a visual/highlight regression on selection could still slip through."
+  ],
+  "testing_gaps": [
+    "Permission regression coverage is currently one-sided: Allow is verified end-to-end, Deny and Continue-in-terminal are smoke-only.",
+    "The accessibility contract is partially unproven in UI tests because load-more/history queries still depend on visible copy.",
+    "Scenario validation and diagnostics negative paths are not exercised, so the platform's failure-mode guarantees are only documented, not tested."
+  ]
+}

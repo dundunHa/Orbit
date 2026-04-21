@@ -4,7 +4,7 @@ struct ContentView: View {
     @ObservedObject var viewModel: AppViewModel
     let geometry: NotchGeometry
 
-    @State private var bridge = OverlayBridge()
+    @StateObject private var bridge = OverlayBridge()
 
     var body: some View {
         OverlayShellView(

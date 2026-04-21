@@ -1,9 +1,11 @@
 import SwiftUI
 
 public struct PermissionView: View {
-    private static let actionButtonCornerRadius: CGFloat = 14
-    private static let actionButtonMinHeight: CGFloat = 56
+    private static let actionButtonCornerRadius: CGFloat = 12
+    private static let actionButtonMinHeight: CGFloat = 40
+    private static let compactActionButtonMinHeight: CGFloat = 32
 
+    public let message: String
     public let toolName: String
     public let toolInput: AnyCodable
     public let permissionSuggestions: [PermissionUpdateEntry]?
@@ -15,11 +17,13 @@ public struct PermissionView: View {
     @State private var hoveredOption: String?
 
     public init(
+        message: String,
         toolName: String,
         toolInput: AnyCodable,
         permissionSuggestions: [PermissionUpdateEntry]? = nil,
         onDecision: @escaping (PermissionDecision) -> Void
     ) {
+        self.message = message
         self.toolName = toolName
         self.toolInput = toolInput
         self.permissionSuggestions = permissionSuggestions
@@ -27,63 +31,148 @@ public struct PermissionView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        Group {
             if toolName == "AskUserQuestion" {
                 askUserQuestionBody
+                    .padding(12)
+                    .background(Color.white.opacity(0.04))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                    )
             } else {
                 toolApprovalBody
+                    .padding(12)
             }
         }
-        .padding(12)
-        .background(Color.white.opacity(0.04))
-        .cornerRadius(10)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(OrbitAccessibilityID.Permission.root)
     }
 
     // MARK: - Tool Approval (non-AskUserQuestion)
 
     private var toolApprovalBody: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(toolName)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white.opacity(0.9))
+            permissionSummary
+            toolInputPanel
+            toolApprovalActions
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(OrbitAccessibilityID.Permission.toolApprovalBody)
+    }
 
-            ScrollView {
-                Text(formatJSON(toolInput))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.5))
-                    .textSelection(.enabled)
+    private var permissionSummary: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(toolName)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.92))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.06))
+                    .clipShape(Capsule())
+                    .accessibilityIdentifier(OrbitAccessibilityID.Permission.toolName)
+                Spacer(minLength: 0)
             }
-            .frame(maxHeight: 200)
 
-            VStack(spacing: 4) {
-                primaryButton(title: "Allow", id: "allow") {
+            if !message.isEmpty {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.84))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier(OrbitAccessibilityID.Permission.message)
+            }
+        }
+    }
+
+    private var toolInputPanel: some View {
+        ScrollView {
+            Text(formatJSON(toolInput))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.white.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+                .accessibilityIdentifier(OrbitAccessibilityID.Permission.toolInput)
+        }
+        .frame(minHeight: 64, maxHeight: 92, alignment: .top)
+        .padding(8)
+        .background(Color.white.opacity(0.03))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+        )
+        .layoutPriority(1)
+    }
+
+    private var toolApprovalActions: some View {
+        VStack(spacing: 8) {
+            if let suggestions = relevantPermissionSuggestions, suggestions.count == 1 {
+                approvalPrimaryRow(with: suggestions)
+            } else {
+                compactPrimaryButton(title: "Allow", id: OrbitAccessibilityID.Permission.primaryAction) {
                     onDecision(PermissionDecision(decision: "allow"))
                 }
-                if let suggestions = relevantPermissionSuggestions {
-                    ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
-                        secondaryButton(
-                            title: permissionSuggestionTitle(suggestion, totalCount: suggestions.count),
-                            id: "always-allow-\(index)"
-                        ) {
-                            onDecision(
-                                PermissionDecision(
-                                    decision: "allow",
-                                    updatedPermissions: [suggestion]
-                                )
-                            )
-                        }
-                    }
+
+                if let suggestions = relevantPermissionSuggestions, !suggestions.isEmpty {
+                    approvalSuggestionGrid(suggestions)
                 }
-                secondaryButton(title: "Deny", id: "deny") {
-                    onDecision(PermissionDecision(decision: "deny"))
+            }
+            approvalSecondaryRow
+        }
+    }
+
+    private func approvalPrimaryRow(with suggestions: [PermissionUpdateEntry]) -> some View {
+        HStack(spacing: 8) {
+            compactPrimaryButton(title: "Allow", id: OrbitAccessibilityID.Permission.primaryAction) {
+                onDecision(PermissionDecision(decision: "allow"))
+            }
+
+            if let suggestion = suggestions.first {
+                compactSecondaryButton(
+                    title: permissionSuggestionTitle(suggestion, totalCount: suggestions.count),
+                    id: OrbitAccessibilityID.Permission.suggestion(index: 0)
+                ) {
+                    onDecision(
+                        PermissionDecision(
+                            decision: "allow",
+                            updatedPermissions: [suggestion]
+                        )
+                    )
                 }
-                tertiaryButton(title: "Continue in terminal", id: "passthrough") {
-                    onDecision(PermissionDecision(decision: "passthrough"))
+            }
+        }
+    }
+
+    private func approvalSuggestionGrid(_ suggestions: [PermissionUpdateEntry]) -> some View {
+        LazyVGrid(columns: [
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8)
+        ], spacing: 8) {
+            ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
+                compactSecondaryButton(
+                    title: permissionSuggestionTitle(suggestion, totalCount: suggestions.count),
+                    id: OrbitAccessibilityID.Permission.suggestion(index: index)
+                ) {
+                    onDecision(
+                        PermissionDecision(
+                            decision: "allow",
+                            updatedPermissions: [suggestion]
+                        )
+                    )
                 }
+            }
+        }
+    }
+
+    private var approvalSecondaryRow: some View {
+        HStack(spacing: 8) {
+            compactSecondaryButton(title: "Deny", id: OrbitAccessibilityID.Permission.denyAction) {
+                onDecision(PermissionDecision(decision: "deny"))
+            }
+            compactTertiaryButton(title: "Continue in terminal", id: OrbitAccessibilityID.Permission.passthroughAction) {
+                onDecision(PermissionDecision(decision: "passthrough"))
             }
         }
     }
@@ -100,11 +189,13 @@ public struct PermissionView: View {
                         Text("Question \(currentQuestionIndex + 1) of \(questions.count)")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.white.opacity(0.45))
+                            .accessibilityIdentifier(OrbitAccessibilityID.Permission.questionProgress)
                         if let header = question.header, !header.isEmpty {
                             Text(header)
                                 .font(.system(size: 10, weight: .semibold))
                                 .foregroundColor(.white.opacity(0.32))
                                 .lineLimit(1)
+                                .accessibilityIdentifier(OrbitAccessibilityID.Permission.questionHeader)
                         }
                         Spacer()
                     }
@@ -113,6 +204,7 @@ public struct PermissionView: View {
                 Text(question.question)
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.9))
+                    .accessibilityIdentifier(OrbitAccessibilityID.Permission.questionText)
 
                 if !question.options.isEmpty {
                     questionOptions(question, submitsImmediately: questions.count == 1)
@@ -124,6 +216,8 @@ public struct PermissionView: View {
                     multiQuestionActions(question, questions: questions)
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(OrbitAccessibilityID.Permission.askUserQuestionBody)
         } else {
             fallbackQuestionActions
         }
@@ -142,7 +236,7 @@ public struct PermissionView: View {
 
     private func singleSelectOptions(_ question: AskUserQuestionQuestion, submitsImmediately: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(question.options, id: \.label) { opt in
+            ForEach(Array(question.options.enumerated()), id: \.offset) { index, opt in
                 let isSelected = drafts.answers(for: question).first == opt.label
                 Button(action: {
                     drafts.selectSingle(opt.label, for: question)
@@ -167,6 +261,12 @@ public struct PermissionView: View {
                     .background(backgroundColor(isSelected: isSelected, optionLabel: opt.label))
                     .cornerRadius(8)
                 }
+                .accessibilityIdentifier(
+                    OrbitAccessibilityID.Permission.questionOption(
+                        questionID: question.id,
+                        optionIndex: index
+                    )
+                )
                 .buttonStyle(.plain)
                 .onHover { isHovering in
                     hoveredOption = isHovering ? opt.label : (hoveredOption == opt.label ? nil : hoveredOption)
@@ -179,7 +279,7 @@ public struct PermissionView: View {
 
     private func multiSelectOptions(_ question: AskUserQuestionQuestion) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(question.options, id: \.label) { opt in
+            ForEach(Array(question.options.enumerated()), id: \.offset) { index, opt in
                 let isSelected = drafts.contains(opt.label, for: question)
                 Button(action: {
                     drafts.toggleMulti(opt.label, for: question)
@@ -215,6 +315,12 @@ public struct PermissionView: View {
                             : nil
                     )
                 }
+                .accessibilityIdentifier(
+                    OrbitAccessibilityID.Permission.questionOption(
+                        questionID: question.id,
+                        optionIndex: index
+                    )
+                )
                 .buttonStyle(.plain)
             }
         }
@@ -228,16 +334,16 @@ public struct PermissionView: View {
                 let count = drafts.answers(for: question).count
                 primaryButton(
                     title: count > 0 ? "Submit (\(count) selected)" : "Submit",
-                    id: "allow",
+                    id: OrbitAccessibilityID.Permission.primaryAction,
                     disabled: count == 0
                 ) {
                     submitQuestionnaire([question])
                 }
             }
-            secondaryButton(title: "Deny", id: "deny") {
+            secondaryButton(title: "Deny", id: OrbitAccessibilityID.Permission.denyAction) {
                 onDecision(PermissionDecision(decision: "deny"))
             }
-            tertiaryButton(title: "Continue in terminal", id: "passthrough") {
+            tertiaryButton(title: "Continue in terminal", id: OrbitAccessibilityID.Permission.passthroughAction) {
                 onDecision(PermissionDecision(decision: "passthrough"))
             }
         }
@@ -246,14 +352,14 @@ public struct PermissionView: View {
     private func multiQuestionActions(_ question: AskUserQuestionQuestion, questions: [AskUserQuestionQuestion]) -> some View {
         VStack(spacing: 4) {
             if currentQuestionIndex > 0 {
-                secondaryButton(title: "Back", id: "back") {
+                secondaryButton(title: "Back", id: OrbitAccessibilityID.Permission.backAction) {
                     currentQuestionIndex -= 1
                 }
             }
 
             primaryButton(
                 title: currentQuestionIndex == questions.count - 1 ? "Submit" : "Next",
-                id: "allow",
+                id: OrbitAccessibilityID.Permission.primaryAction,
                 disabled: !drafts.hasAnswer(for: question)
             ) {
                 if currentQuestionIndex == questions.count - 1 {
@@ -263,10 +369,10 @@ public struct PermissionView: View {
                 }
             }
 
-            secondaryButton(title: "Deny", id: "deny") {
+            secondaryButton(title: "Deny", id: OrbitAccessibilityID.Permission.denyAction) {
                 onDecision(PermissionDecision(decision: "deny"))
             }
-            tertiaryButton(title: "Continue in terminal", id: "passthrough") {
+            tertiaryButton(title: "Continue in terminal", id: OrbitAccessibilityID.Permission.passthroughAction) {
                 onDecision(PermissionDecision(decision: "passthrough"))
             }
         }
@@ -277,16 +383,18 @@ public struct PermissionView: View {
             Text("Question data unavailable.")
                 .font(.system(size: 12))
                 .foregroundColor(.white.opacity(0.9))
+                .accessibilityIdentifier(OrbitAccessibilityID.Permission.fallbackText)
 
             VStack(spacing: 4) {
-                secondaryButton(title: "Deny", id: "deny") {
+                secondaryButton(title: "Deny", id: OrbitAccessibilityID.Permission.denyAction) {
                     onDecision(PermissionDecision(decision: "deny"))
                 }
-                tertiaryButton(title: "Continue in terminal", id: "passthrough") {
+                tertiaryButton(title: "Continue in terminal", id: OrbitAccessibilityID.Permission.passthroughAction) {
                     onDecision(PermissionDecision(decision: "passthrough"))
                 }
             }
         }
+        .accessibilityIdentifier(OrbitAccessibilityID.Permission.askUserQuestionBody)
     }
 
     private func checkboxIndicator(checked: Bool) -> some View {
@@ -354,6 +462,62 @@ public struct PermissionView: View {
         }
     }
 
+    private func compactPrimaryButton(title: String, id: String, action: @escaping () -> Void) -> some View {
+        compactActionButton(
+            title: title,
+            id: id,
+            foregroundColor: .white,
+            fillColor: hoveredButton == id ? Color.white.opacity(0.18) : Color.white.opacity(0.12),
+            borderColor: Color.white.opacity(0.06),
+            action: action
+        )
+    }
+
+    private func compactSecondaryButton(title: String, id: String, action: @escaping () -> Void) -> some View {
+        compactActionButton(
+            title: title,
+            id: id,
+            foregroundColor: .white.opacity(0.68),
+            fillColor: hoveredButton == id ? Color.white.opacity(0.10) : Color.white.opacity(0.06),
+            borderColor: hoveredButton == id ? Color.white.opacity(0.10) : Color.white.opacity(0.05),
+            action: action
+        )
+    }
+
+    private func compactTertiaryButton(title: String, id: String, action: @escaping () -> Void) -> some View {
+        compactActionButton(
+            title: title,
+            id: id,
+            foregroundColor: hoveredButton == id ? .white.opacity(0.58) : .white.opacity(0.42),
+            fillColor: hoveredButton == id ? Color.white.opacity(0.06) : Color.white.opacity(0.02),
+            borderColor: hoveredButton == id ? Color.white.opacity(0.08) : Color.white.opacity(0.04),
+            action: action
+        )
+    }
+
+    private func compactActionButton(
+        title: String,
+        id: String,
+        foregroundColor: Color,
+        fillColor: Color,
+        borderColor: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        actionButton(
+            title: title,
+            id: id,
+            foregroundColor: foregroundColor,
+            fillColor: fillColor,
+            borderColor: borderColor,
+            minHeight: Self.compactActionButtonMinHeight,
+            action: action
+        )
+        .buttonStyle(.plain)
+        .onHover { isHovering in
+            if isHovering { hoveredButton = id } else if hoveredButton == id { hoveredButton = nil }
+        }
+    }
+
     private func actionButton(
         title: String,
         id: String,
@@ -361,13 +525,16 @@ public struct PermissionView: View {
         foregroundColor: Color,
         fillColor: Color,
         borderColor: Color,
+        minHeight: CGFloat = Self.actionButtonMinHeight,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
                 .foregroundColor(foregroundColor)
-                .frame(maxWidth: .infinity, minHeight: Self.actionButtonMinHeight)
+                .frame(maxWidth: .infinity, minHeight: minHeight)
                 .background(
                     RoundedRectangle(cornerRadius: Self.actionButtonCornerRadius, style: .continuous)
                         .fill(fillColor)

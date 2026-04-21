@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -19,15 +20,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenMonitor: ScreenMonitor?
     private var refreshTimer: Timer?
     private var startupTasks: [Task<Void, Never>] = []
+    private var diagnosticsCancellables = Set<AnyCancellable>()
+    private var runtimeDiagnosticsWriter: OrbitRuntimeDiagnosticsWriter?
+    private var runtimeDiagnosticsRevision = 0
+    private var activeScenarioSummary: OrbitRuntimeDiagnostics.ScenarioSummary?
+    private var lastDecisionSummary: OrbitRuntimeDiagnostics.DecisionSummary?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
 
+        let environment = ProcessInfo.processInfo.environment
+        let scenarioResolution = AppLaunchScenarioLoader.resolve(environment: environment)
+        let scenarioLoader = scenarioResolution.loader
+        let loadedScenario = scenarioResolution.scenario
+        let scenarioLoadError = scenarioResolution.errorDescription
+        let isScenarioMode = scenarioResolution.isScenarioMode
+
+        if let scenarioLoader, let loadedScenario {
+            activeScenarioSummary = OrbitRuntimeDiagnostics.ScenarioSummary(
+                fixtureName: loadedScenario.name,
+                schemaVersion: loadedScenario.schemaVersion,
+                loadState: "loaded",
+                error: nil
+            )
+            OrbitDiagnostics.shared.notice(
+                .scenario,
+                "scenario.loaded",
+                metadata: [
+                    "name": loadedScenario.name,
+                    "path": scenarioLoader.fileURL.path
+                ]
+            )
+        } else if let scenarioLoader, let scenarioLoadError {
+            activeScenarioSummary = OrbitRuntimeDiagnostics.ScenarioSummary(
+                fixtureName: scenarioLoader.fileURL.deletingPathExtension().lastPathComponent,
+                schemaVersion: AppLaunchScenario.currentVersion,
+                loadState: "failed",
+                error: scenarioLoadError
+            )
+            OrbitDiagnostics.shared.error(
+                .scenario,
+                "scenario.loadFailed",
+                metadata: [
+                    "path": scenarioLoader.fileURL.path,
+                    "error": scenarioLoadError
+                ]
+            )
+        }
+
         // 1) Core state
         let sessionStore = SessionStore()
-        let historyStore = HistoryStore()
-        let debugLogger = HookDebugLogger()
-        let todayStats = TodayTokenStats.loadFromDisk()
+        let historyStore = HistoryStore(
+            filePath: isScenarioMode ? Self.makeTestingFilePath(prefix: "history") : NSString(string: "~/.orbit/history.json").expandingTildeInPath
+        )
+        let debugLogger = HookDebugLogger(
+            filePath: {
+                if let configuredPath = environment["ORBIT_HOOK_DEBUG_LOG_PATH"], !configuredPath.isEmpty {
+                    return configuredPath
+                }
+                if isScenarioMode {
+                    return Self.makeTestingFilePath(prefix: "hook-debug")
+                }
+                return HookDebugLogger.defaultFilePath()
+            }()
+        )
+        let todayStats = loadedScenario?.todayStats ?? TodayTokenStats.loadFromDisk()
 
         // 2) HookRouter
         let hookRouter = HookRouter(
@@ -62,99 +119,139 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hookRouter: hookRouter,
             onboardingManager: onboardingManager,
             initialTodayStats: todayStats,
-            initialOnboardingState: onboardingManager.state
+            initialOnboardingState: loadedScenario.flatMap { try? $0.onboarding.makeState() }
+                ?? onboardingManager.state
         )
         self.viewModel = viewModel
 
         startMessageProcessor(hookRouter: hookRouter, viewModel: viewModel, debugLogger: debugLogger)
 
         viewModel.onRetryOnboarding = { [weak self] in
-            guard let self, let onboardingManager = self.onboardingManager else { return }
+            guard let self else { return }
+            if isScenarioMode {
+                viewModel.onboardingState = .installing
+                self.scheduleRuntimeDiagnosticsWrite()
+                return
+            }
+            guard let onboardingManager = self.onboardingManager else { return }
             onboardingManager.retryInstall()
             viewModel.refreshOnboardingState()
         }
 
-        // Startup sequence
-        onboardingManager.startBackgroundCheck()
-
-        let socketStartTask = Task {
-            do {
-                try await socketServer.start()
-                NSLog("[Orbit] SocketServer started successfully")
-            } catch {
-                NSLog("[Orbit] SocketServer failed to start: %@", "\(error)")
-            }
-        }
-        startupTasks.append(socketStartTask)
-
-        let anomalyStartTask = Task {
-            await anomalyDetector.start(
-                sessions: {
-                    let all = await sessionStore.allSessions()
-                    var snapshots: [String: SessionSnapshot] = [:]
-                    for session in all.values {
-                        switch session.status {
-                        case .processing:
-                            snapshots[session.id] = SessionSnapshot(
-                                id: session.id,
-                                status: .processing,
-                                lastEventAt: session.lastEventAt
-                            )
-                        case .runningTool(let name, _):
-                            snapshots[session.id] = SessionSnapshot(
-                                id: session.id,
-                                status: .runningTool(toolName: name),
-                                lastEventAt: session.lastEventAt
-                            )
-                        default:
-                            break
-                        }
-                    }
-                    return snapshots
-                },
-                onChange: { [weak self] sessionId, newStatus in
-                    _ = await sessionStore.upsertSession(sessionId) { session in
-                        switch newStatus {
-                        case .anomaly(let idleSeconds, let previousStatus):
-                            session.status = .anomaly(
-                                idleSeconds: idleSeconds,
-                                previousStatus: AppDelegate.mapSnapshotStatus(previousStatus)
-                            )
-                        default:
-                            break
-                        }
-                    }
-
-                    await MainActor.run {
-                        self?.viewModel?.refreshSessions()
-                    }
-                }
+        if let loadedScenario, let scenarioLoader {
+            let applyTask = scenarioLoader.apply(
+                loadedScenario,
+                sessionStore: sessionStore,
+                historyStore: historyStore,
+                viewModel: viewModel
             )
+            startupTasks.append(applyTask)
         }
-        startupTasks.append(anomalyStartTask)
+
+        // Startup sequence
+        if isScenarioMode {
+            OrbitDiagnostics.shared.notice(
+                .scenario,
+                "scenario.modeEnabled",
+                metadata: ["name": activeScenarioSummary?.fixtureName ?? "load_failed"]
+            )
+        } else {
+            onboardingManager.startBackgroundCheck()
+
+            let socketStartTask = Task {
+                do {
+                    try await socketServer.start()
+                    OrbitDiagnostics.shared.info(.launch, "socketServer.started")
+                } catch {
+                    OrbitDiagnostics.shared.error(
+                        .launch,
+                        "socketServer.startFailed",
+                        metadata: ["error": String(describing: error)]
+                    )
+                }
+            }
+            startupTasks.append(socketStartTask)
+
+            let anomalyStartTask = Task {
+                await anomalyDetector.start(
+                    sessions: {
+                        let all = await sessionStore.allSessions()
+                        var snapshots: [String: SessionSnapshot] = [:]
+                        for session in all.values {
+                            switch session.status {
+                            case .processing:
+                                snapshots[session.id] = SessionSnapshot(
+                                    id: session.id,
+                                    status: .processing,
+                                    lastEventAt: session.lastEventAt
+                                )
+                            case .runningTool(let name, _):
+                                snapshots[session.id] = SessionSnapshot(
+                                    id: session.id,
+                                    status: .runningTool(toolName: name),
+                                    lastEventAt: session.lastEventAt
+                                )
+                            default:
+                                break
+                            }
+                        }
+                        return snapshots
+                    },
+                    onChange: { [weak self] sessionId, newStatus in
+                        _ = await sessionStore.upsertSession(sessionId) { session in
+                            switch newStatus {
+                            case .anomaly(let idleSeconds, let previousStatus):
+                                session.status = .anomaly(
+                                    idleSeconds: idleSeconds,
+                                    previousStatus: AppDelegate.mapSnapshotStatus(previousStatus)
+                                )
+                            default:
+                                break
+                            }
+                        }
+
+                        await MainActor.run {
+                            self?.viewModel?.refreshSessions()
+                        }
+                    }
+                )
+            }
+            startupTasks.append(anomalyStartTask)
+        }
 
         setupPanel(viewModel: viewModel)
+        let shouldPinExpandedScenario = isScenarioMode && loadedScenario?.overlay?.initialIntent == .expanded
+        let shouldSuppressCollapsedScenario = isScenarioMode && loadedScenario?.overlay?.initialIntent == .collapsed
+        overlayController?.setExpansionPinnedForTesting(shouldPinExpandedScenario)
+        overlayController?.setExpansionSuppressedForTesting(shouldSuppressCollapsedScenario)
+        if loadedScenario?.overlay?.initialIntent == .expanded {
+            overlayController?.requestExpand()
+        }
         viewModel.onPendingInteractionChanged = { [weak self, weak viewModel] in
             guard let self, let viewModel else { return }
 
             if let interaction = viewModel.pendingInteraction {
-                NSLog(
-                    "[Orbit] pendingInteraction set: kind=%@ tool=%@ id=%@ queue=%ld",
-                    interaction.kind,
-                    interaction.toolName,
-                    interaction.id,
-                    viewModel.pendingInteractions.count
+                OrbitDiagnostics.shared.notice(
+                    .hook,
+                    "pendingInteraction.set",
+                    metadata: [
+                        "kind": interaction.kind,
+                        "tool": interaction.toolName,
+                        "requestId": interaction.id,
+                        "queueDepth": "\(viewModel.pendingInteractions.count)"
+                    ]
                 )
                 if self.overlayController != nil {
-                    NSLog("[Orbit] Calling requestExpand()")
                     self.overlayController?.requestExpand()
                 } else {
-                    NSLog("[Orbit] WARNING: overlayController is nil, cannot expand!")
+                    OrbitDiagnostics.shared.error(.overlay, "overlayController.missingForExpand")
                 }
             } else {
                 self.overlayController?.interactionResolved()
             }
+            self.scheduleRuntimeDiagnosticsWrite()
         }
+        configureRuntimeDiagnostics(viewModel: viewModel, diagnosticsPath: AppLaunchScenarioLoader.diagnosticsPath(in: environment))
         setupTray()
 
         if let overlayController {
@@ -167,26 +264,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.screenMonitor = screenMonitor
         }
 
-        viewModel.refreshSessions()
-        viewModel.refreshHistory()
-        viewModel.refreshOnboardingState()
-        viewModel.todayStats = TodayTokenStats.loadFromDisk()
+        if isScenarioMode {
+            viewModel.todayStats = loadedScenario?.todayStats ?? viewModel.todayStats
+        } else {
+            viewModel.refreshSessions()
+            viewModel.refreshHistory()
+            viewModel.refreshOnboardingState()
+            viewModel.todayStats = TodayTokenStats.loadFromDisk()
+        }
 
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            Task { @MainActor in
-                guard let viewModel = self.viewModel else { return }
-                viewModel.refreshSessions()
-                viewModel.refreshHistory()
-                viewModel.refreshOnboardingState()
-                viewModel.todayStats = TodayTokenStats.loadFromDisk()
+        if !isScenarioMode {
+            refreshTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    guard let viewModel = self.viewModel else { return }
+                    viewModel.refreshSessions()
+                    viewModel.refreshHistory()
+                    viewModel.refreshOnboardingState()
+                    viewModel.todayStats = TodayTokenStats.loadFromDisk()
+                }
             }
         }
+
+        scheduleRuntimeDiagnosticsWrite()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         refreshTimer?.invalidate()
         refreshTimer = nil
+        diagnosticsCancellables.removeAll()
 
         for task in startupTasks {
             task.cancel()
@@ -235,6 +341,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) async -> Data? {
         if bytes.allSatisfy({ $0 == 0 }) { return nil }
 
+        let interval = OrbitDiagnostics.shared.beginInterval(
+            .hook,
+            "hook.processSocketMessage",
+            metadata: ["byteCount": "\(bytes.count)"]
+        )
+        defer {
+            OrbitDiagnostics.shared.endInterval(interval)
+        }
+
         let data = Data(bytes)
         let decoder = JSONDecoder()
 
@@ -256,12 +371,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             let preview = String(decoding: data.prefix(200), as: UTF8.self)
             let hex = data.prefix(40).map { String(format: "%02x", $0) }.joined(separator: " ")
-            NSLog("[Orbit] HookPayload decode failed (len=%d hex=%@): %@ — data: %@", data.count, hex, "\(error)", preview)
+            OrbitDiagnostics.shared.error(
+                .hook,
+                "hookPayload.decodeFailed",
+                metadata: [
+                    "length": "\(data.count)",
+                    "hexPrefix": hex,
+                    "error": String(describing: error),
+                    "preview": preview
+                ]
+            )
             payload = nil
         }
 
         if let payload {
-            NSLog("[Orbit] Hook event: %@ session=%@", payload.hookEventName, payload.sessionId)
+            OrbitDiagnostics.shared.debug(
+                .hook,
+                "hook.eventReceived",
+                metadata: [
+                    "event": payload.hookEventName,
+                    "sessionId": payload.sessionId
+                ]
+            )
             await debugLogger.log(
                 source: "socket",
                 sessionId: payload.sessionId,
@@ -300,7 +431,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
 
             case .awaitPermissionDecision(let requestId):
-                NSLog("[Orbit] Awaiting permission decision: requestId=%@ event=%@", requestId, payload.hookEventName)
+                OrbitDiagnostics.shared.notice(
+                    .hook,
+                    "permission.awaitingDecision",
+                    metadata: [
+                        "requestId": requestId,
+                        "event": payload.hookEventName
+                    ]
+                )
                 await MainActor.run {
                     viewModel.enqueuePendingInteraction(
                         PendingInteraction(
@@ -318,7 +456,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
 
                 let decision = await hookRouter.awaitPermissionDecision(requestId: requestId)
-                NSLog("[Orbit] Permission decision received: %@ for requestId=%@", decision.normalizedDecision(), requestId)
+                OrbitDiagnostics.shared.notice(
+                    .hook,
+                    "permission.decisionReceived",
+                    metadata: [
+                        "decision": decision.normalizedDecision(),
+                        "requestId": requestId
+                    ]
+                )
                 await MainActor.run {
                     viewModel.clearPendingInteraction(requestId: requestId)
                 }
@@ -400,6 +545,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.trayController = trayController
     }
 
+    private func configureRuntimeDiagnostics(viewModel: AppViewModel, diagnosticsPath: String?) {
+        guard let diagnosticsPath else {
+            return
+        }
+
+        runtimeDiagnosticsWriter = OrbitRuntimeDiagnosticsWriter(filePath: diagnosticsPath)
+        runtimeDiagnosticsRevision = 0
+        diagnosticsCancellables.removeAll()
+
+        let scheduleWrite: () -> Void = { [weak self] in
+            self?.scheduleRuntimeDiagnosticsWrite()
+        }
+
+        viewModel.onPermissionDecisionHandled = { [weak self] pendingInteraction, decision in
+            self?.lastDecisionSummary = OrbitRuntimeDiagnostics.DecisionSummary(
+                requestId: pendingInteraction.id,
+                decision: decision.normalizedDecision(),
+                reason: decision.reason,
+                timestamp: Date()
+            )
+            scheduleWrite()
+        }
+
+        viewModel.$sessions
+            .sink { _ in scheduleWrite() }
+            .store(in: &diagnosticsCancellables)
+
+        viewModel.$historyEntries
+            .sink { _ in scheduleWrite() }
+            .store(in: &diagnosticsCancellables)
+
+        viewModel.$selectedSessionId
+            .sink { _ in scheduleWrite() }
+            .store(in: &diagnosticsCancellables)
+
+        viewModel.$onboardingState
+            .sink { _ in scheduleWrite() }
+            .store(in: &diagnosticsCancellables)
+
+        viewModel.$pendingInteractions
+            .sink { _ in scheduleWrite() }
+            .store(in: &diagnosticsCancellables)
+
+        overlayController?.onRuntimeStateChanged = scheduleWrite
+    }
+
+    private func scheduleRuntimeDiagnosticsWrite() {
+        guard let runtimeDiagnosticsWriter, let viewModel else {
+            return
+        }
+        runtimeDiagnosticsRevision += 1
+        let diagnostics = OrbitRuntimeDiagnostics.capture(
+            viewModel: viewModel,
+            overlayController: overlayController,
+            revision: runtimeDiagnosticsRevision,
+            scenario: activeScenarioSummary,
+            lastDecision: lastDecisionSummary
+        )
+        Task {
+            _ = await runtimeDiagnosticsWriter.submit(diagnostics)
+        }
+    }
+
     nonisolated private static func mapSnapshotStatus(_ status: SessionStatusSnapshot) -> SessionStatus {
         switch status {
         case .processing:
@@ -439,6 +647,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return Installer.FALLBACK_ORBIT_HELPER_PATH
+    }
+
+    private static func makeTestingFilePath(prefix: String) -> String {
+        URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString).json")
+            .path
     }
 }
 
