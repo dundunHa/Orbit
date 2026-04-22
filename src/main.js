@@ -499,7 +499,9 @@ listen("onboarding-state-changed", (event) => {
 listen("interaction-request", (event) => {
   const request = normalizeInteractionRequest(event.payload);
   pendingInteractions.set(request.requestId, request);
-  showInteraction(request.requestId, request);
+  if (!isShowingPendingInteraction()) {
+    showNextPendingInteraction();
+  }
   requestExpand();
 });
 
@@ -514,10 +516,7 @@ listen("interaction-timeout", (event) => {
   const requestId = event.payload;
   pendingInteractions.delete(requestId);
   if (permissionSection.dataset.requestId === requestId) {
-    if (pendingInteractions.size > 0) {
-      const [nextId, next] = pendingInteractions.entries().next().value;
-      showInteraction(nextId, next);
-    } else {
+    if (!showNextPendingInteraction()) {
       hideInteractionSection();
       settleAfterInteractionsComplete();
     }
@@ -528,10 +527,7 @@ listen("interaction-resolved", (event) => {
   const requestId = event.payload;
   pendingInteractions.delete(requestId);
   if (permissionSection.dataset.requestId === requestId) {
-    if (pendingInteractions.size > 0) {
-      const [nextId, next] = pendingInteractions.entries().next().value;
-      showInteraction(nextId, next);
-    } else {
+    if (!showNextPendingInteraction()) {
       hideInteractionSection();
       settleAfterInteractionsComplete();
     }
@@ -822,6 +818,318 @@ function describeTool(toolName, toolInput) {
   return desc;
 }
 
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function compactText(value, maxLength = 120) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  const text =
+    typeof value === "string" ? value : JSON.stringify(value, null, 0);
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength - 3)}...`
+    : normalized;
+}
+
+function multilineText(value, maxLength = 320) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  const text =
+    typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  const trimmed = text.trim();
+  return trimmed.length > maxLength
+    ? `${trimmed.slice(0, maxLength - 3)}...`
+    : trimmed;
+}
+
+function basename(path) {
+  if (!path || typeof path !== "string") {
+    return "";
+  }
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
+function inferPermissionFamily(toolName, toolInput, payload = {}) {
+  const name = (toolName || "").toLowerCase();
+  if (name === "bash") return "bash";
+  if (["edit", "multiedit", "write", "notebookedit"].includes(name)) {
+    return "edit";
+  }
+  if (["read", "grep", "glob", "ls"].includes(name)) {
+    return "read";
+  }
+  if (["webfetch", "websearch"].includes(name) || toolInput?.url) {
+    return "network";
+  }
+  if (["task", "agent"].includes(name)) {
+    return "agent";
+  }
+  if (["todowrite", "exitplanmode"].includes(name)) {
+    return "plan";
+  }
+  if (name.startsWith("mcp__") || payload.mcp_server_name) {
+    return "mcp";
+  }
+  return "unknown";
+}
+
+function getRiskReasons(toolName, toolInput) {
+  if ((toolName || "").toLowerCase() !== "bash" || !toolInput?.command) {
+    return [];
+  }
+
+  const command = String(toolInput.command);
+  const checks = [
+    [
+      /(\brm\s+[^;&|]*-[a-zA-Z]*r[a-zA-Z]*f|\brm\s+[^;&|]*-[a-zA-Z]*f[a-zA-Z]*r)/,
+      "recursive delete",
+    ],
+    [/\bsudo\b/, "elevated permission"],
+    [/\bchmod\s+(-R\s+)?(777|a[+=]w)\b/, "broad permission change"],
+    [/\bchown\s+-R\b/, "recursive owner change"],
+    [/\bgit\s+reset\s+--hard\b/, "hard reset"],
+    [/\bgit\s+clean\s+-[a-zA-Z]*f/, "force clean"],
+    [/\bgit\s+push\b[^;&|]*--force/, "force push"],
+    [/\b(drop|truncate)\s+(table|database)\b/i, "destructive database command"],
+  ];
+
+  return checks
+    .filter(([pattern]) => pattern.test(command))
+    .map(([, reason]) => reason);
+}
+
+function summarizeStructuredArgs(toolInput, omittedKeys = []) {
+  if (!isPlainObject(toolInput)) {
+    return multilineText(toolInput);
+  }
+
+  const omitted = new Set(omittedKeys);
+  return Object.entries(toolInput)
+    .filter(([key]) => !omitted.has(key))
+    .slice(0, 5)
+    .map(([key, value]) => `${key}: ${compactText(value, 96)}`)
+    .join("\n");
+}
+
+function addDisplayBox(boxes, title, text, options = {}) {
+  const body = multilineText(text, options.maxLength || 320);
+  if (!body) {
+    return;
+  }
+  boxes.push({
+    title,
+    text: body,
+    tone: options.tone || "",
+    mono: Boolean(options.mono),
+  });
+}
+
+function buildEditPreview(toolName, toolInput) {
+  const edits = Array.isArray(toolInput?.edits) ? toolInput.edits : [];
+  if (edits.length > 0) {
+    return edits
+      .slice(0, 3)
+      .map((edit, index) => {
+        const oldText = compactText(edit.old_string, 44);
+        const newText = compactText(edit.new_string, 44);
+        return `${index + 1}. - ${oldText}\n   + ${newText}`;
+      })
+      .join("\n");
+  }
+
+  if (toolInput?.old_string || toolInput?.new_string) {
+    return `- ${compactText(toolInput.old_string, 80)}\n+ ${compactText(toolInput.new_string, 80)}`;
+  }
+
+  if ((toolName || "").toLowerCase() === "write" && toolInput?.content) {
+    return `${compactText(toolInput.content, 140)}`;
+  }
+
+  return "";
+}
+
+function buildPermissionDisplay(request, payload = {}) {
+  const toolInput = request.toolInput;
+  const family = inferPermissionFamily(request.toolName, toolInput, payload);
+  const riskReasons = getRiskReasons(request.toolName, toolInput);
+  const boxes = [];
+  const meta = [];
+  let headline = request.title;
+  let headlineMono = false;
+  const labelKey = `permission.toolLabel.${family}`;
+  const label =
+    t(labelKey) === labelKey ? request.toolName || "Permission" : t(labelKey);
+
+  if (riskReasons.length > 0) {
+    addDisplayBox(boxes, t("permission.detail.risk"), riskReasons.join(", "), {
+      tone: "risk",
+    });
+  }
+
+  switch (family) {
+    case "bash": {
+      const command = toolInput?.command || request.title;
+      headline = command;
+      headlineMono = true;
+      addDisplayBox(boxes, t("permission.detail.prompt"), request.message);
+      addDisplayBox(boxes, t("permission.detail.cwd"), request.cwd, {
+        mono: true,
+        maxLength: 180,
+      });
+      meta.push("Bash");
+      if (request.cwd) meta.push(`cwd ${basename(request.cwd)}`);
+      break;
+    }
+    case "edit": {
+      const filePath = toolInput?.file_path || toolInput?.path || "";
+      const editCount = Array.isArray(toolInput?.edits)
+        ? toolInput.edits.length
+        : null;
+      headline = filePath
+        ? `${basename(filePath)}${editCount ? ` · ${editCount} edits` : ""}`
+        : request.toolName || "Edit";
+      addDisplayBox(boxes, t("permission.detail.file"), filePath, {
+        mono: true,
+        maxLength: 180,
+      });
+      addDisplayBox(
+        boxes,
+        t("permission.detail.preview"),
+        buildEditPreview(request.toolName, toolInput),
+        {
+          tone: "edit",
+          mono: true,
+        },
+      );
+      addDisplayBox(boxes, t("permission.detail.prompt"), request.message);
+      meta.push(request.toolName || "Edit");
+      if (filePath) meta.push(basename(filePath));
+      break;
+    }
+    case "read": {
+      const filePath = toolInput?.file_path || toolInput?.path || "";
+      const pattern = toolInput?.pattern || toolInput?.glob || "";
+      headline = filePath || pattern || request.title;
+      headlineMono = true;
+      addDisplayBox(
+        boxes,
+        t("permission.detail.scope"),
+        filePath || toolInput?.path || request.cwd,
+        {
+          mono: true,
+        },
+      );
+      addDisplayBox(
+        boxes,
+        t("permission.detail.arguments"),
+        summarizeStructuredArgs(toolInput, ["file_path", "path"]),
+        {
+          mono: true,
+        },
+      );
+      meta.push(request.toolName || "Read", "read-only");
+      break;
+    }
+    case "network": {
+      const url = toolInput?.url || request.url || "";
+      headline = url || toolInput?.query || request.title;
+      addDisplayBox(
+        boxes,
+        t("permission.detail.destination"),
+        url || toolInput?.query,
+        {
+          tone: "network",
+          mono: true,
+        },
+      );
+      addDisplayBox(
+        boxes,
+        t("permission.detail.prompt"),
+        toolInput?.prompt || request.message,
+      );
+      meta.push(request.toolName || "Network", "external");
+      break;
+    }
+    case "agent": {
+      headline = toolInput?.description || request.title;
+      addDisplayBox(
+        boxes,
+        t("permission.detail.prompt"),
+        toolInput?.prompt || request.message,
+      );
+      addDisplayBox(
+        boxes,
+        t("permission.detail.arguments"),
+        summarizeStructuredArgs(toolInput, ["prompt"]),
+        {
+          mono: true,
+        },
+      );
+      meta.push(toolInput?.subagent_type || request.toolName || "Agent");
+      break;
+    }
+    case "plan": {
+      const todos = Array.isArray(toolInput?.todos) ? toolInput.todos : [];
+      headline = todos.length
+        ? `${todos.length} plan items will change`
+        : request.toolName || "Plan";
+      addDisplayBox(
+        boxes,
+        t("permission.detail.preview"),
+        todos
+          .slice(0, 4)
+          .map(
+            (todo) =>
+              `${todo.status || "todo"}: ${todo.content || todo.text || ""}`,
+          )
+          .join("\n"),
+      );
+      meta.push(request.toolName || "Plan", "state");
+      break;
+    }
+    case "mcp":
+    case "unknown":
+    default: {
+      headline = request.toolName || "Custom tool";
+      addDisplayBox(
+        boxes,
+        t("permission.detail.arguments"),
+        summarizeStructuredArgs(toolInput),
+        {
+          mono: true,
+        },
+      );
+      addDisplayBox(boxes, t("permission.detail.prompt"), request.message);
+      meta.push(family === "mcp" ? "MCP" : "unknown");
+      break;
+    }
+  }
+
+  if (boxes.length === 0 && request.message) {
+    addDisplayBox(boxes, t("permission.detail.prompt"), request.message);
+  }
+
+  return {
+    family,
+    riskLevel: riskReasons.length > 0 ? "high" : "normal",
+    label,
+    headline: compactText(headline, 170),
+    headlineMono,
+    boxes,
+    meta,
+    requiresFocus:
+      riskReasons.length > 0 ||
+      (request.message || "").length > 180 ||
+      boxes.some((box) => box.text.length > 220),
+  };
+}
+
 function extractElicitationOptions(schema) {
   if (!schema || typeof schema !== "object" || schema.type !== "object") {
     return null;
@@ -976,9 +1284,11 @@ function normalizeInteractionRequest(payload) {
     toolInput,
     title: describeTool(payload.tool_name, toolInput),
     message: payload.message || "",
+    cwd: payload.cwd || "",
     mode: payload.mode || null,
     url: payload.url || null,
     requestedSchema: payload.requested_schema || null,
+    display: null,
     fieldKey: null,
     questionGroups: [],
     options: [],
@@ -998,6 +1308,12 @@ function normalizeInteractionRequest(payload) {
       request.questionGroups = parsedQuestion.questions;
     }
     return request;
+  }
+
+  if (kind === "permission") {
+    request.display = buildPermissionDisplay(request, payload);
+    request.title = request.display.label;
+    request.requiresFocus = request.display.requiresFocus;
   }
 
   if (kind === "elicitation") {
@@ -1028,8 +1344,30 @@ function hideInteractionSection() {
   delete permissionSection.dataset.kind;
   delete permissionSection.dataset.mode;
   delete permissionSection.dataset.density;
+  delete permissionSection.dataset.family;
+  delete permissionSection.dataset.risk;
   clearInteractionFocus();
   scheduleExpandedHeightUpdate();
+}
+
+function isShowingPendingInteraction() {
+  const requestId = permissionSection.dataset.requestId;
+  return Boolean(
+    permissionSection.style.display !== "none" &&
+      requestId &&
+      pendingInteractions.has(requestId),
+  );
+}
+
+function showNextPendingInteraction() {
+  const next = pendingInteractions.entries().next().value;
+  if (!next) {
+    return false;
+  }
+
+  const [nextId, nextRequest] = next;
+  showInteraction(nextId, nextRequest);
+  return true;
 }
 
 function setInteractionSubmitting(isSubmitting) {
@@ -1132,6 +1470,64 @@ function renderIconCornerPermissionActions() {
     title: t("interaction.passThrough"),
     onClick: () => handleInteraction("passthrough"),
   });
+}
+
+function renderPermissionDetails(request) {
+  const display = request.display;
+  permissionMessage.textContent = "";
+  permissionMessage.classList.add("permission-detail-stack");
+
+  if (!display) {
+    permissionMessage.textContent =
+      request.message ||
+      (request.supported ? "" : t("interaction.unsupported"));
+    return;
+  }
+
+  if (display.headline) {
+    const headline = document.createElement("div");
+    headline.className = "permission-headline";
+    if (display.headlineMono) {
+      headline.classList.add("mono");
+    }
+    headline.textContent = display.headline;
+    permissionMessage.appendChild(headline);
+  }
+
+  display.boxes.forEach((box) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "permission-detail-box";
+    if (box.tone) {
+      wrapper.dataset.tone = box.tone;
+    }
+
+    const title = document.createElement("div");
+    title.className = "permission-detail-title";
+    title.textContent = box.title;
+    wrapper.appendChild(title);
+
+    const text = document.createElement("div");
+    text.className = "permission-detail-text";
+    if (box.mono) {
+      text.classList.add("mono");
+    }
+    text.textContent = box.text;
+    wrapper.appendChild(text);
+
+    permissionMessage.appendChild(wrapper);
+  });
+
+  if (display.meta.length > 0) {
+    const meta = document.createElement("div");
+    meta.className = "permission-meta-row";
+    display.meta.forEach((item) => {
+      const chip = document.createElement("span");
+      chip.className = "permission-chip";
+      chip.textContent = item;
+      meta.appendChild(chip);
+    });
+    permissionMessage.appendChild(meta);
+  }
 }
 
 function renderAskUserQuestion(request) {
@@ -1252,9 +1648,11 @@ function showInteraction(requestId, request) {
   permissionSection.dataset.density = request.requiresFocus
     ? "focus"
     : "default";
+  permissionSection.dataset.family = request.display?.family || "";
+  permissionSection.dataset.risk = request.display?.riskLevel || "";
   permissionTool.textContent = request.title;
-  permissionMessage.textContent =
-    request.message || (request.supported ? "" : t("interaction.unsupported"));
+  permissionMessage.className = "permission-message";
+  permissionMessage.textContent = "";
   permissionActions.innerHTML = "";
 
   let renderDefaultPass = true;
@@ -1266,9 +1664,13 @@ function showInteraction(requestId, request) {
     request.kind === "permission" &&
     request.answerMode === "permission"
   ) {
+    renderPermissionDetails(request);
     renderIconCornerPermissionActions();
     renderDefaultPass = false;
   } else if (request.supported && request.fieldKey) {
+    permissionMessage.textContent =
+      request.message ||
+      (request.supported ? "" : t("interaction.unsupported"));
     request.options.forEach((option) => {
       renderActionButton({
         label: option.label,
@@ -1287,6 +1689,9 @@ function showInteraction(requestId, request) {
   }
 
   if (renderDefaultPass) {
+    permissionMessage.textContent =
+      request.message ||
+      (request.supported ? "" : t("interaction.unsupported"));
     renderActionButton({
       label: t("interaction.passThrough"),
       className: "btn-pass",
@@ -1320,10 +1725,7 @@ async function handleInteraction(decision, content = null) {
     });
     pendingInteractions.delete(requestId);
 
-    if (pendingInteractions.size > 0) {
-      const [nextId, next] = pendingInteractions.entries().next().value;
-      showInteraction(nextId, next);
-    } else {
+    if (!showNextPendingInteraction()) {
       hideInteractionSection();
       settleAfterInteractionsComplete();
     }

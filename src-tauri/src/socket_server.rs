@@ -540,6 +540,7 @@ async fn handle_connection(
                 "tool_name": tool_name,
                 "tool_input": tool_input,
                 "message": payload.message,
+                "cwd": payload.cwd,
                 "mode": payload.mode,
                 "url": payload.url,
                 "mcp_server_name": payload.mcp_server_name,

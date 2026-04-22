@@ -396,6 +396,8 @@
             dataset: { ...section?.dataset },
             ariaBusy: section?.getAttribute("aria-busy"),
             tool: document.querySelector(".permission-tool")?.textContent || "",
+            headline:
+              document.querySelector(".permission-headline")?.textContent || "",
             message:
               document.querySelector(".permission-message")?.textContent || "",
             meta:
@@ -454,6 +456,7 @@
       function permissionPayload(
         requestId,
         command = "cd frontend && bun tsx --test src/pages/__tests__/UrlMonitor.test.ts",
+        overrides = {},
       ) {
         return {
           request_id: requestId,
@@ -461,7 +464,27 @@
           session_id: "session-approval",
           tool_name: "Bash",
           tool_input: { command },
-          message: "",
+          message:
+            "I need to verify the URL monitor behavior before changing the UIbar approval flow.",
+          cwd: "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit/frontend",
+          ...overrides,
+        };
+      }
+
+      function editPermissionPayload(requestId) {
+        return {
+          request_id: requestId,
+          kind: "permission",
+          session_id: "session-approval",
+          tool_name: "Edit",
+          tool_input: {
+            file_path: "src/styles.css",
+            old_string: "background: rgba(255, 255, 255, 0.045);",
+            new_string: "background: #020202;",
+          },
+          message:
+            "The approval action buttons should be black with white icons.",
+          cwd: "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit",
         };
       }
 
@@ -623,6 +646,14 @@
               "allow button reverted to green CTA block",
             );
             assert(
+              getComputedStyle(allow).backgroundColor === "rgb(2, 2, 2)",
+              "allow button should use the black global action surface",
+            );
+            assert(
+              getComputedStyle(allow).color.includes("255, 255, 255"),
+              "allow icon should be white",
+            );
+            assert(
               document
                 .querySelector(".permission-action-meta")
                 ?.textContent.includes("once") ||
@@ -700,6 +731,81 @@
           },
         ],
         [
+          "Tool-aware Bash details show prompt, command, and cwd",
+          async () => {
+            emit(
+              "interaction-request",
+              permissionPayload(
+                "perm-bash-detail",
+                "bun test src/main.test.js",
+              ),
+            );
+            await settle(80);
+            const section = document.querySelector(".permission-section");
+            const detailText = document.querySelector(
+              ".permission-message",
+            ).textContent;
+            assert(section.dataset.family === "bash", "bash family missing");
+            assert(section.dataset.risk === "normal", "normal risk missing");
+            assert(
+              document
+                .querySelector(".permission-headline")
+                .textContent.includes("bun test"),
+              "bash command headline missing",
+            );
+            assert(
+              detailText.includes("URL monitor") && detailText.includes("cwd"),
+              "bash prompt or cwd detail missing",
+            );
+            emit("interaction-resolved", "perm-bash-detail");
+            await settle(50);
+          },
+        ],
+        [
+          "Edit permission renders file preview",
+          async () => {
+            emit("interaction-request", editPermissionPayload("perm-edit"));
+            await settle(80);
+            const section = document.querySelector(".permission-section");
+            const detailText = document.querySelector(
+              ".permission-message",
+            ).textContent;
+            assert(section.dataset.family === "edit", "edit family missing");
+            assert(detailText.includes("src/styles.css"), "file path missing");
+            assert(
+              detailText.includes("background: #020202"),
+              "edit preview missing",
+            );
+            emit("interaction-resolved", "perm-edit");
+            await settle(50);
+          },
+        ],
+        [
+          "Risky Bash permission marks high risk",
+          async () => {
+            emit(
+              "interaction-request",
+              permissionPayload(
+                "perm-risk",
+                "rm -rf ~/Library/Application\\ Support/Orbit/cache/*",
+              ),
+            );
+            await settle(80);
+            const section = document.querySelector(".permission-section");
+            const detailText = document.querySelector(
+              ".permission-message",
+            ).textContent;
+            assert(section.dataset.family === "bash", "bash family missing");
+            assert(section.dataset.risk === "high", "high risk missing");
+            assert(
+              detailText.includes("recursive delete"),
+              "risk reason missing",
+            );
+            emit("interaction-resolved", "perm-risk");
+            await settle(50);
+          },
+        ],
+        [
           "Timeout cleans stale permission UI",
           async () => {
             emit("interaction-request", permissionPayload("perm-timeout"));
@@ -714,32 +820,43 @@
           },
         ],
         [
-          "Queue handoff clears submitting state",
+          "Queue displays permissions FIFO",
           async () => {
             emit("interaction-request", permissionPayload("perm-queue-a"));
             await settle(50);
             emit("interaction-request", permissionPayload("perm-queue-b"));
             await settle(50);
+
+            const section = document.querySelector(".permission-section");
+            assert(
+              section.dataset.requestId === "perm-queue-a",
+              "newer permission replaced the first queued request",
+            );
+
             document
               .querySelector(".permission-icon-actions .btn-allow")
               .click();
             await settle(120);
+            assert(
+              currentDecisionCall().args.permId === "perm-queue-a",
+              "first queued request should be submitted first",
+            );
             resolvePermissionDecision();
             await settle(80);
-            const section = document.querySelector(".permission-section");
+
             assert(
               section.style.display === "block",
               "next queued permission should show",
             );
             assert(
-              section.dataset.requestId === "perm-queue-a",
-              "first queued request should be restored",
+              section.dataset.requestId === "perm-queue-b",
+              "second queued request should show after first resolves",
             );
             assert(
               !section.classList.contains("is-submitting"),
               "submitting class leaked into queued request",
             );
-            emit("interaction-resolved", "perm-queue-a");
+            emit("interaction-resolved", "perm-queue-b");
             await settle(50);
           },
         ],
