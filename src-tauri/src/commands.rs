@@ -14,6 +14,7 @@ const MIN_EXPANDED_HEIGHT: f64 = 168.0;
 const DEFAULT_EXPANDED_HEIGHT: f64 = 320.0;
 const MAX_EXPANDED_HEIGHT: f64 = 560.0;
 const WINDOW_EDGE_MARGIN: f64 = 24.0;
+const MAX_COMPACT_HEIGHT: f64 = 140.0;
 
 pub static NOTCH_GEOMETRY: LazyLock<RwLock<NotchGeometry>> =
     LazyLock::new(|| RwLock::new(NotchGeometry::fallback()));
@@ -67,6 +68,10 @@ fn clamp_expanded_width(width: f64) -> f64 {
     let min_width = pill_width(notch);
     let max_width = (notch.screen_width - WINDOW_EDGE_MARGIN * 2.0).max(min_width);
     width.clamp(min_width, max_width)
+}
+
+fn clamp_compact_height(height: f64) -> f64 {
+    height.clamp(collapsed_height(), MAX_COMPACT_HEIGHT)
 }
 
 /// Apply frame to NSWindow using native macOS coordinates (bottom-left origin).
@@ -344,6 +349,12 @@ pub async fn set_expanded_frame(
         clamp_expanded_width(width),
         clamp_expanded_height(height),
     );
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_compact_frame(window: tauri::WebviewWindow, height: f64) -> Result<(), String> {
+    set_window_frame(&window, current_pill_width(), clamp_compact_height(height));
     Ok(())
 }
 

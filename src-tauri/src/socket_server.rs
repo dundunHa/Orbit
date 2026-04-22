@@ -714,7 +714,8 @@ mod tests {
             "tokens_in": 1500,
             "tokens_out": 800,
             "cost_usd": 0.02,
-            "model": "claude-sonnet-4-20250514"
+            "model": "claude-sonnet-4-20250514",
+            "status": "Stewing"
         }"#;
 
         let update: StatuslineUpdate = serde_json::from_str(json).unwrap();
@@ -723,6 +724,7 @@ mod tests {
         assert_eq!(update.tokens_out, 800);
         assert_eq!(update.cost_usd, 0.02);
         assert_eq!(update.model, Some("claude-sonnet-4-20250514".to_string()));
+        assert_eq!(update.status, Some("Stewing".to_string()));
     }
 
     #[test]
@@ -818,6 +820,7 @@ mod tests {
 
         let update: StatuslineUpdate = serde_json::from_str(json).unwrap();
         assert_eq!(update.model, None);
+        assert_eq!(update.status, None);
         assert_eq!(update.tokens_in, 100);
     }
 

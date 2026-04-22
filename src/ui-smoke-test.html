@@ -177,6 +177,25 @@
             </div>
           </div>
 
+          <div
+            class="live-strip"
+            aria-live="polite"
+            aria-label="Active Claude Code session"
+          >
+            <div class="live-rail"></div>
+            <div class="live-main">
+              <div class="live-session">
+                <div class="live-cwd"></div>
+                <div class="live-title"></div>
+              </div>
+              <div class="live-ticker" aria-hidden="true">
+                <span class="live-ticker-primary"></span>
+                <span class="live-ticker-detail"></span>
+              </div>
+            </div>
+            <div class="live-metrics"></div>
+          </div>
+
           <div class="detail">
             <div class="detail-header">
               <span class="session-cwd"></span>
@@ -308,6 +327,7 @@
                 return Promise.resolve(sessions);
               case "get_history":
                 return Promise.resolve([]);
+              case "set_compact_frame":
               case "set_expanded_frame":
               case "collapse_window":
               case "resume_session":
@@ -384,6 +404,15 @@
           },
           statusDotClass: document.querySelector(".pill-right .status-dot")
             ?.className,
+          liveStrip: {
+            hidden: document.querySelector(".live-strip")?.hidden,
+            className: document.querySelector(".live-strip")?.className || "",
+            tone: document.querySelector(".live-strip")?.dataset.tone || "",
+            title: document.querySelector(".live-title")?.textContent || "",
+            ticker:
+              document.querySelector(".live-ticker")?.textContent || "",
+            metrics: document.querySelector(".live-metrics")?.textContent || "",
+          },
           cssVars: {
             pillWidth: getComputedStyle(document.documentElement)
               .getPropertyValue("--pill-width")
@@ -431,6 +460,13 @@
         updateAgentDiagnostics();
         const callbacks = listeners.get(name) || [];
         callbacks.forEach((callback) => callback({ payload }));
+      }
+
+      function updatePrimarySession(patch) {
+        Object.assign(sessions[0], patch, {
+          last_event_at: new Date().toISOString(),
+        });
+        emit("session-update", { ...sessions[0] });
       }
 
       function settle(ms = 40) {
@@ -587,6 +623,72 @@
               document.querySelector(".status-dot.waiting-approval"),
               "waiting approval status dot not rendered",
             );
+            assert(
+              island.classList.contains("compact-live"),
+              "live session strip should be visible while collapsed",
+            );
+            assert(
+              document.querySelector(".live-title")?.textContent ===
+                "UI smoke permission",
+              "live strip title not rendered",
+            );
+            assert(
+              invokeCalls.some((call) => call.command === "set_compact_frame"),
+              "compact live strip should resize the native window",
+            );
+          },
+        ],
+        [
+          "Idle active session does not show compact live strip",
+          async () => {
+            const island = document.getElementById("island");
+            updatePrimarySession({ status: { type: "WaitingForInput" } });
+            await settle(80);
+            assert(
+              !island.classList.contains("compact-live"),
+              "idle active session should not keep the compact live strip open",
+            );
+            assert(
+              document.querySelector(".live-strip")?.hidden,
+              "live strip should be hidden for idle active session",
+            );
+            assert(
+              invokeCalls.at(-1)?.command === "collapse_window",
+              "idle active session should collapse the native window",
+            );
+
+            updatePrimarySession({ status: { type: "WaitingForApproval" } });
+            await settle(80);
+            assert(
+              island.classList.contains("compact-live"),
+              "non-idle active session should restore compact live strip",
+            );
+          },
+        ],
+        [
+          "Live strip prefers Claude Code CLI status text",
+          async () => {
+            const island = document.getElementById("island");
+            updatePrimarySession({
+              status: { type: "Processing" },
+              cli_status_text: "Stewing",
+            });
+            await settle(80);
+            assert(
+              island.classList.contains("compact-live"),
+              "processing session should show the compact live strip",
+            );
+            assert(
+              document.querySelector(".live-ticker-primary")?.textContent ===
+                "Stewing",
+              "live strip should use Claude Code CLI status text",
+            );
+
+            updatePrimarySession({
+              status: { type: "WaitingForApproval" },
+              cli_status_text: null,
+            });
+            await settle(80);
           },
         ],
         [

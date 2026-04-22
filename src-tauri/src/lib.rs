@@ -127,6 +127,7 @@ pub fn run() {
             commands::expand_window,
             commands::set_expanded_height,
             commands::set_expanded_frame,
+            commands::set_compact_frame,
             commands::collapse_window,
             commands::retry_onboarding_install,
             commands::resume_session,

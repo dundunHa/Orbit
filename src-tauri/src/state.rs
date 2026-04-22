@@ -15,6 +15,8 @@ pub struct StatuslineUpdate {
     pub cost_usd: f64,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +93,15 @@ fn normalize_title(raw: &str) -> Option<String> {
     Some(truncated)
 }
 
+fn normalize_cli_status_text(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    Some(trimmed.chars().take(80).collect())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
@@ -120,6 +131,9 @@ pub struct Session {
     pub cost_usd: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cli_status_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -364,6 +378,7 @@ impl Session {
             tokens_out: 0,
             cost_usd: 0.0,
             model: None,
+            cli_status_text: None,
         }
     }
 
@@ -424,7 +439,18 @@ impl Session {
         if let Some(ref model) = update.model {
             self.model = Some(model.clone());
         }
+        self.apply_cli_status_text(update.status.as_deref());
         self.last_event_at = Utc::now();
+    }
+
+    fn apply_cli_status_text(&mut self, status: Option<&str>) {
+        if let Some(raw) = status {
+            self.cli_status_text = normalize_cli_status_text(raw);
+        }
+    }
+
+    fn clear_cli_status_text(&mut self) {
+        self.cli_status_text = None;
     }
 
     pub fn clear_waiting_for_approval(&mut self) -> bool {
@@ -439,6 +465,7 @@ impl Session {
 
     pub fn apply_event(&mut self, payload: &HookPayload) {
         self.last_event_at = Utc::now();
+        self.apply_cli_status_text(payload.status.as_deref());
 
         match payload.hook_event_name.as_str() {
             "UserPromptSubmit" => {
@@ -468,12 +495,14 @@ impl Session {
                 self.status = SessionStatus::Processing;
             }
             "PermissionRequest" => {
+                self.clear_cli_status_text();
                 self.status = SessionStatus::WaitingForApproval {
                     tool_name: payload.tool_name.clone().unwrap_or_default(),
                     tool_input: payload.tool_input.clone().unwrap_or(Value::Null),
                 };
             }
             "Elicitation" => {
+                self.clear_cli_status_text();
                 self.status = SessionStatus::WaitingForApproval {
                     tool_name: payload
                         .mcp_server_name
@@ -493,22 +522,27 @@ impl Session {
             "Stop" | "SubagentStop" => {
                 // LLM generation stopped (reply completed, interrupted by user Ctrl+C, or subagent finished)
                 // Status dot becomes GREEN (idle) - session continues, waiting for next input
+                self.clear_cli_status_text();
                 self.status = SessionStatus::WaitingForInput;
             }
             "SessionStart" => {
+                self.clear_cli_status_text();
                 self.status = SessionStatus::WaitingForInput;
                 self.refresh_title_from_claude();
             }
             "SessionEnd" => {
                 // Entire session ended (user closed terminal, exited Claude Code)
                 // Status dot becomes GRAY (ended) - session is archived to history, cannot continue
+                self.clear_cli_status_text();
                 self.status = SessionStatus::Ended;
             }
             "Notification" => match payload.notification_type.as_deref() {
                 Some("idle_prompt") => {
+                    self.clear_cli_status_text();
                     self.status = SessionStatus::WaitingForInput;
                 }
                 Some("permission_prompt") => {
+                    self.clear_cli_status_text();
                     self.status = SessionStatus::WaitingForApproval {
                         tool_name: "Permission".to_string(),
                         tool_input: payload.tool_input.clone().unwrap_or_else(|| {
@@ -639,6 +673,7 @@ mod tests {
             tokens_out: 2000,
             cost_usd: 0.05,
             model: Some("claude-sonnet-4-20250514".to_string()),
+            status: None,
         };
 
         session.apply_statusline_update(&update);
@@ -659,6 +694,7 @@ mod tests {
             tokens_out: 500,
             cost_usd: 0.01,
             model: Some("claude-sonnet-4-20250514".to_string()),
+            status: None,
         };
         session.apply_statusline_update(&update1);
 
@@ -668,6 +704,7 @@ mod tests {
             tokens_out: 1500,
             cost_usd: 0.03,
             model: Some("claude-sonnet-4-20250514".to_string()),
+            status: None,
         };
         session.apply_statusline_update(&update2);
 
@@ -675,6 +712,47 @@ mod tests {
         assert_eq!(session.tokens_in, 3000);
         assert_eq!(session.tokens_out, 1500);
         assert_eq!(session.cost_usd, 0.03);
+    }
+
+    #[test]
+    fn test_statusline_update_preserves_cli_status_text() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        let update = StatuslineUpdate {
+            session_id: "test".to_string(),
+            tokens_in: 1000,
+            tokens_out: 500,
+            cost_usd: 0.01,
+            model: None,
+            status: Some("Stewing".to_string()),
+        };
+
+        session.apply_statusline_update(&update);
+
+        assert_eq!(session.cli_status_text.as_deref(), Some("Stewing"));
+    }
+
+    #[test]
+    fn test_hook_payload_preserves_cli_status_text() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        let mut payload = make_hook_payload("UserPromptSubmit");
+        payload.status = Some("  Stewing  ".to_string());
+
+        session.apply_event(&payload);
+
+        assert_eq!(session.cli_status_text.as_deref(), Some("Stewing"));
+    }
+
+    #[test]
+    fn test_inactive_events_clear_cli_status_text() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        let mut payload = make_hook_payload("UserPromptSubmit");
+        payload.status = Some("Stewing".to_string());
+        session.apply_event(&payload);
+
+        session.apply_event(&make_hook_payload("Stop"));
+
+        assert_eq!(session.cli_status_text, None);
     }
 
     #[test]

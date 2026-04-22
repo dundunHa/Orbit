@@ -244,6 +244,12 @@ fn build_statusline_message(input: &str) -> Option<String> {
         .and_then(|v| v.get("id"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    let status = val
+        .get("status")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
 
     Some(
         serde_json::json!({
@@ -252,7 +258,8 @@ fn build_statusline_message(input: &str) -> Option<String> {
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
             "cost_usd": cost_usd,
-            "model": model
+            "model": model,
+            "status": status
         })
         .to_string(),
     )
@@ -379,7 +386,7 @@ mod tests {
 
     #[test]
     fn build_statusline_message_transforms_claude_payload() {
-        let payload = r#"{"session_id":"session-4","context_window":{"total_input_tokens":123,"total_output_tokens":456},"cost":{"total_cost_usd":0.78},"model":{"id":"claude-sonnet-4-20250514"}}"#;
+        let payload = r#"{"session_id":"session-4","status":"Stewing","context_window":{"total_input_tokens":123,"total_output_tokens":456},"cost":{"total_cost_usd":0.78},"model":{"id":"claude-sonnet-4-20250514"}}"#;
 
         let msg = build_statusline_message(payload).unwrap();
         let forwarded: Value = serde_json::from_str(&msg).unwrap();
@@ -390,5 +397,6 @@ mod tests {
         assert_eq!(forwarded["tokens_out"], 456);
         assert_eq!(forwarded["cost_usd"], 0.78);
         assert_eq!(forwarded["model"], "claude-sonnet-4-20250514");
+        assert_eq!(forwarded["status"], "Stewing");
     }
 }

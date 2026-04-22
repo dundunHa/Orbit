@@ -31,12 +31,17 @@ let hoverInside = false;
 const COLLAPSE_DELAY = 200; // ms, hover 离开后延迟收起防抖
 let cachedHistory = null; // 预取的 history，expand 时直接渲染避免 IPC 延迟
 let lastExpandedFrame = { width: null, height: null };
+let lastCompactFrameHeight = null;
+let compactFrameUpdatePending = false;
 
 const DEFAULT_EXPANDED_HEIGHT = 320;
 const FOCUS_EXPANDED_HEIGHT = 560;
 const FOCUS_WIDTH_BASE = 640;
 const FOCUS_WIDTH_WIDE = 720;
 const WINDOW_EDGE_MARGIN = 24;
+const LIVE_STRIP_EXTRA_HEIGHT = 72;
+const LIVE_STRIP_MIN_HEIGHT = 98;
+const LIVE_STRIP_MAX_HEIGHT = 124;
 const QUESTION_OPTION_MAX_WIDTH = 260;
 const QUESTION_OPTION_MIN_WIDTH = 168;
 const QUESTION_OPTION_LONG_MIN_WIDTH = 220;
@@ -60,6 +65,8 @@ listen("screen-changed", (event) => {
   notchInfo = info;
   if (isExpanded) {
     scheduleExpandedHeightUpdate();
+  } else {
+    renderLiveStrip();
   }
   console.log("[Orbit] Screen configuration updated", info);
 });
@@ -101,6 +108,14 @@ const permissionMessage = document.querySelector(".permission-message");
 const permissionActions = document.querySelector(".permission-actions");
 const historyList = document.querySelector(".history-list");
 const mascot = document.querySelector(".mascot");
+const liveStrip = document.querySelector(".live-strip");
+const liveRail = document.querySelector(".live-rail");
+const liveCwd = document.querySelector(".live-cwd");
+const liveTitle = document.querySelector(".live-title");
+const liveTicker = document.querySelector(".live-ticker");
+const liveTickerPrimary = document.querySelector(".live-ticker-primary");
+const liveTickerDetail = document.querySelector(".live-ticker-detail");
+const liveMetrics = document.querySelector(".live-metrics");
 const DEFAULT_PROVIDER = "claude-code";
 let currentStatusText = "";
 
@@ -237,6 +252,94 @@ async function applyExpandedFrame(width, height) {
   } catch (e) {
     console.error("[Orbit] Failed to resize expanded frame:", e);
   }
+}
+
+function getCompactLiveHeight() {
+  const notchHeight = notchInfo.notch_height || 37;
+  return Math.round(
+    Math.min(
+      LIVE_STRIP_MAX_HEIGHT,
+      Math.max(LIVE_STRIP_MIN_HEIGHT, notchHeight + LIVE_STRIP_EXTRA_HEIGHT),
+    ),
+  );
+}
+
+function isCompactLiveStatus(statusType) {
+  return (
+    statusType === "Processing" ||
+    statusType === "RunningTool" ||
+    statusType === "Compacting" ||
+    statusType === "WaitingForApproval" ||
+    statusType === "Anomaly"
+  );
+}
+
+function getCompactLiveSession() {
+  let best = null;
+  let bestPriority = -1;
+
+  for (const session of Object.values(sessions)) {
+    const statusType = session.status?.type;
+    if (!isCompactLiveStatus(statusType)) {
+      continue;
+    }
+
+    const priority = STATUS_PRIORITY[statusType] || 0;
+    if (
+      priority > bestPriority ||
+      (priority === bestPriority &&
+        (!best || session.last_event_at > best.last_event_at))
+    ) {
+      best = session;
+      bestPriority = priority;
+    }
+  }
+
+  return best;
+}
+
+function shouldRenderLiveStrip() {
+  return Boolean(getCompactLiveSession() && !shouldShowOnboardingPill());
+}
+
+function getCompactTargetHeight() {
+  return shouldRenderLiveStrip()
+    ? getCompactLiveHeight()
+    : notchInfo.notch_height || 37;
+}
+
+async function applyCompactWindowFrame({ force = false } = {}) {
+  if (isExpanded || (isAnimating && !force)) {
+    return;
+  }
+
+  const targetHeight = getCompactTargetHeight();
+  if (!force && Math.abs((lastCompactFrameHeight || 0) - targetHeight) < 0.5) {
+    return;
+  }
+
+  lastCompactFrameHeight = targetHeight;
+  try {
+    if (shouldRenderLiveStrip()) {
+      await invokeCommand("set_compact_frame", { height: targetHeight });
+    } else {
+      await invokeCommand("collapse_window");
+    }
+  } catch (e) {
+    console.error("[Orbit] Failed to resize compact frame:", e);
+  }
+}
+
+function scheduleCompactFrameUpdate() {
+  if (compactFrameUpdatePending || isExpanded || isAnimating) {
+    return;
+  }
+
+  compactFrameUpdatePending = true;
+  requestAnimationFrame(() => {
+    compactFrameUpdatePending = false;
+    applyCompactWindowFrame();
+  });
 }
 
 function estimateInteractionWidth(request) {
@@ -613,6 +716,169 @@ function renderFallbackPill() {
   });
 }
 
+function formatLiveModel(model) {
+  if (!model) {
+    return t("live.noModel");
+  }
+
+  return String(model)
+    .replace(/^claude-/, "")
+    .replace(/-\d{8}$/, "");
+}
+
+function formatLiveCwd(cwd) {
+  if (!cwd) {
+    return t("live.unknownCwd");
+  }
+
+  const parts = cwd.split("/").filter(Boolean).slice(-2);
+  return parts.length > 0 ? `~/${parts.join("/")}` : cwd;
+}
+
+function formatLiveTitle(session) {
+  const status = session.status || {};
+  return (
+    session.title ||
+    status.description ||
+    (status.type === "WaitingForApproval"
+      ? t("live.approvalTitle")
+      : t("session.untitled"))
+  );
+}
+
+function getCliStatusText(session) {
+  const value = session?.cli_status_text ?? session?.cliStatusText;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getLiveSessionView(session) {
+  const status = session.status || {};
+  const tokenStats = getSessionTokenStats(session);
+  const toolName = status.tool_name || t("live.tool");
+  const cliStatusText = getCliStatusText(session);
+  const pendingInteraction =
+    status.type === "WaitingForApproval"
+      ? getPendingInteractionForSession(session.id)
+      : null;
+  let tone = "idle";
+  let primary = t("live.idle");
+  let detail = t("live.waitingInput");
+
+  switch (status.type) {
+    case "Processing":
+      tone = "thinking";
+      primary = cliStatusText || t("live.thinking");
+      detail = status.description || t("live.readingContext");
+      break;
+    case "RunningTool":
+      tone = "running-tool";
+      primary = t("live.runningTool", { tool: toolName });
+      detail = status.description || formatTool(status.tool_name);
+      break;
+    case "WaitingForApproval":
+      tone = "blocked";
+      primary =
+        pendingInteraction?.kind === "elicitation"
+          ? t("live.respond")
+          : t("live.blocked");
+      detail =
+        pendingInteraction?.kind === "elicitation"
+          ? t("live.waitingForChoice")
+          : t("live.waitingForApproval", { tool: toolName });
+      break;
+    case "Anomaly":
+      tone = "stuck";
+      primary = t("live.stuckSeconds", {
+        seconds: status.idle_seconds || 0,
+      });
+      detail = t("live.waitingForUser");
+      break;
+    case "Compacting":
+      tone = "thinking";
+      primary = cliStatusText || t("live.compacting");
+      detail = t("live.compactingDetail");
+      break;
+    case "Ended":
+      tone = "ended";
+      primary = t("status.ended");
+      detail = t("live.endedDetail");
+      break;
+    case "WaitingForInput":
+    default:
+      tone = "idle";
+      primary = t("live.idle");
+      detail = t("live.waitingInput");
+      break;
+  }
+
+  const tokenText = tokenStats.hasTokens
+    ? t("live.tokenMetrics", {
+        input: formatCompactTokenCount(tokenStats.input),
+        output: formatCompactTokenCount(tokenStats.output),
+      })
+    : t("live.noTokens");
+  const model = formatLiveModel(session.model);
+  const metrics =
+    model === t("live.noModel")
+      ? tokenText
+      : t("live.metricsWithModel", { tokens: tokenText, model });
+
+  return {
+    tone,
+    primary,
+    detail,
+    cwd: formatLiveCwd(session.cwd),
+    title: formatLiveTitle(session),
+    metrics,
+  };
+}
+
+function renderLiveStrip() {
+  if (
+    !liveStrip ||
+    !liveRail ||
+    !liveCwd ||
+    !liveTitle ||
+    !liveTicker ||
+    !liveTickerPrimary ||
+    !liveTickerDetail ||
+    !liveMetrics
+  ) {
+    return;
+  }
+
+  const session = shouldRenderLiveStrip() ? getCompactLiveSession() : null;
+  const show = Boolean(session) && !isExpanded;
+  const liveHeight = getCompactLiveHeight();
+  document.documentElement.style.setProperty(
+    "--compact-live-height",
+    `${liveHeight}px`,
+  );
+  island.classList.toggle("compact-live", show);
+  liveStrip.hidden = !show;
+
+  if (!show) {
+    scheduleCompactFrameUpdate();
+    return;
+  }
+
+  const view = getLiveSessionView(session);
+  liveStrip.dataset.tone = view.tone;
+  liveRail.className = `live-rail ${view.tone}`;
+  liveCwd.textContent = view.cwd;
+  liveTitle.textContent = view.title;
+  liveTicker.dataset.tone = view.tone;
+  liveTickerPrimary.textContent = view.primary;
+  liveTickerDetail.textContent = view.detail;
+  liveMetrics.textContent = view.metrics;
+  liveStrip.setAttribute(
+    "aria-label",
+    `${view.title}. ${view.primary}. ${view.detail}. ${view.metrics}`,
+  );
+
+  scheduleCompactFrameUpdate();
+}
+
 function clearSessionDetail() {
   if (!isExpanded) {
     return;
@@ -675,6 +941,7 @@ function refreshUI() {
   }
 
   renderOnboardingSection();
+  renderLiveStrip();
 }
 
 function setOnboardingState(nextState) {
@@ -688,6 +955,7 @@ function updateUI(session) {
 
   const status = session.status;
   const statusType = status.type;
+  const cliStatusText = getCliStatusText(session);
   const activeToolName = statusType === "RunningTool" ? status.tool_name : null;
   const pendingInteraction =
     statusType === "WaitingForApproval"
@@ -701,7 +969,7 @@ function updateUI(session) {
   switch (statusType) {
     case "Processing":
       statusDot.classList.add("processing");
-      setStatusText(t("status.thinking"));
+      setStatusText(cliStatusText || t("status.thinking"));
       break;
     case "RunningTool":
       statusDot.classList.add("running-tool");
@@ -721,7 +989,7 @@ function updateUI(session) {
       break;
     case "Compacting":
       statusDot.classList.add("processing");
-      setStatusText(t("status.compacting"));
+      setStatusText(cliStatusText || t("status.compacting"));
       break;
     case "Ended":
       statusDot.classList.add("ended");
@@ -1354,8 +1622,8 @@ function isShowingPendingInteraction() {
   const requestId = permissionSection.dataset.requestId;
   return Boolean(
     permissionSection.style.display !== "none" &&
-      requestId &&
-      pendingInteractions.has(requestId),
+    requestId &&
+    pendingInteractions.has(requestId),
   );
 }
 
@@ -1788,6 +2056,11 @@ async function expandIsland() {
   isExpanded = true;
   collapseAfterTransition = false;
   clearAnimationFallback();
+  lastCompactFrameHeight = null;
+  island.classList.remove("compact-live");
+  if (liveStrip) {
+    liveStrip.hidden = true;
+  }
 
   // Elevator: expand native window FIRST, then CSS animation fills it.
   await applyExpandedFrame(getExpandedWidth(), getExpandedMaxHeight());
@@ -1817,9 +2090,10 @@ async function collapseIsland() {
 
   const currentHeight = island.getBoundingClientRect().height;
   island.style.height = `${currentHeight}px`;
+  const targetHeight = getCompactTargetHeight();
 
   requestAnimationFrame(() => {
-    island.style.height = `${notchInfo.notch_height || 37}px`;
+    island.style.height = `${targetHeight}px`;
   });
 
   scheduleAnimationFallback(async () => {
@@ -1840,13 +2114,11 @@ async function finishCollapse() {
   island.style.height = "";
   island.style.removeProperty("--expanded-height");
   lastExpandedFrame = { width: null, height: null };
+  lastCompactFrameHeight = null;
+  renderLiveStrip();
 
   // THEN shrink native window (elevator: door closes after you're inside)
-  try {
-    await invokeCommand("collapse_window");
-  } catch (e) {
-    console.error("Failed to collapse window:", e);
-  }
+  await applyCompactWindowFrame({ force: true });
 }
 
 function scheduleExpandedHeightUpdate() {

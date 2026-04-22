@@ -46,6 +46,7 @@ fn create_statusline_update(
         tokens_out,
         cost_usd,
         model: Some(model.to_string()),
+        status: None,
     }
 }
 
