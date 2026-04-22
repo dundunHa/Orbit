@@ -46,7 +46,7 @@ const QUESTION_OPTION_LAYOUT_RIGHT_INSET = 16;
 
 listen("screen-changed", (event) => {
   const info = event.payload;
-  if (!info || typeof info.notch_height !== 'number') {
+  if (!info || typeof info.notch_height !== "number") {
     console.error("[Orbit] Invalid screen-changed payload", info);
     return;
   }
@@ -288,8 +288,7 @@ function getQuestionOptionLayout(question) {
         (minOptionWidth + QUESTION_OPTION_GAP),
     ),
   );
-  const preferredColumns =
-    optionCount <= 1 ? 1 : optionCount <= 4 ? 2 : 3;
+  const preferredColumns = optionCount <= 1 ? 1 : optionCount <= 4 ? 2 : 3;
   const columns = Math.max(
     1,
     Math.min(optionCount, preferredColumns, maxColumnsByWidth),
@@ -315,7 +314,10 @@ function applyInteractionFocus(request) {
   }
 
   const width = estimateInteractionWidth(request);
-  document.documentElement.style.setProperty("--interaction-width", `${width}px`);
+  document.documentElement.style.setProperty(
+    "--interaction-width",
+    `${width}px`,
+  );
   island.classList.add("interaction-focus");
 
   if (isExpanded) {
@@ -541,7 +543,9 @@ function getActiveSession() {
 }
 
 function hasLiveSessions() {
-  return Object.values(sessions).some((session) => session.status.type !== "Ended");
+  return Object.values(sessions).some(
+    (session) => session.status.type !== "Ended",
+  );
 }
 
 function getOnboardingView(state) {
@@ -549,7 +553,8 @@ function getOnboardingView(state) {
     return null;
   }
 
-  const config = ONBOARDING_STATUS_MAP[state.type] || ONBOARDING_STATUS_MAP.Error;
+  const config =
+    ONBOARDING_STATUS_MAP[state.type] || ONBOARDING_STATUS_MAP.Error;
   return {
     dotClass: config.dotClass,
     mascotStatusType: config.mascotStatusType,
@@ -642,13 +647,16 @@ function renderOnboardingSection() {
   if (view?.dotClass) {
     onboardingStatusDot.classList.add(view.dotClass);
   }
-  onboardingStatusText.textContent = view?.text || t("onboarding.requiresAttention");
+  onboardingStatusText.textContent =
+    view?.text || t("onboarding.requiresAttention");
 
   if (onboardingRetryButton) {
     const showRetry = Boolean(view?.canRetry);
     onboardingRetryButton.style.display = showRetry ? "block" : "none";
     onboardingRetryButton.disabled = onboardingRetryPending;
-    onboardingRetryButton.textContent = onboardingRetryPending ? t("onboarding.retrying") : t("onboarding.retry");
+    onboardingRetryButton.textContent = onboardingRetryPending
+      ? t("onboarding.retrying")
+      : t("onboarding.retry");
   }
 
   if (isExpanded) {
@@ -758,7 +766,7 @@ function updateUI(session) {
 
 function setMascotVariant(toolName, statusType) {
   const provider = detectProvider(toolName);
-  mascot.className = `mascot mascot-${provider}`;
+  mascot.setAttribute("class", `mascot mascot-${provider}`);
 
   if (
     statusType === "Processing" ||
@@ -840,7 +848,10 @@ function extractElicitationOptions(schema) {
       .map((variant) => {
         if (!variant || typeof variant !== "object") return null;
         const value =
-          variant.const ?? variant.enum?.[0] ?? variant.value ?? variant.default;
+          variant.const ??
+          variant.enum?.[0] ??
+          variant.value ??
+          variant.default;
         if (value === undefined) return null;
         return {
           label: variant.title || String(value),
@@ -929,7 +940,10 @@ function extractAskUserQuestions(toolInput) {
     })
     .filter(Boolean);
 
-  if (parsedQuestions.length !== questions.length || parsedQuestions.length === 0) {
+  if (
+    parsedQuestions.length !== questions.length ||
+    parsedQuestions.length === 0
+  ) {
     return null;
   }
 
@@ -944,7 +958,9 @@ function payloadSafeToolTitle(toolInput) {
   if (!toolInput || typeof toolInput !== "object") {
     return "Question";
   }
-  const firstQuestion = Array.isArray(toolInput.questions) ? toolInput.questions[0] : null;
+  const firstQuestion = Array.isArray(toolInput.questions)
+    ? toolInput.questions[0]
+    : null;
   return firstQuestion?.header || "Question";
 }
 
@@ -1006,12 +1022,28 @@ function hideInteractionSection() {
   permissionSection.style.display = "none";
   permissionActions.innerHTML = "";
   permissionMessage.textContent = "";
+  permissionSection.classList.remove("is-submitting");
+  permissionSection.setAttribute("aria-busy", "false");
   delete permissionSection.dataset.requestId;
   delete permissionSection.dataset.kind;
   delete permissionSection.dataset.mode;
   delete permissionSection.dataset.density;
   clearInteractionFocus();
   scheduleExpandedHeightUpdate();
+}
+
+function setInteractionSubmitting(isSubmitting) {
+  permissionSection.classList.toggle("is-submitting", isSubmitting);
+  permissionSection.setAttribute("aria-busy", String(isSubmitting));
+  permissionActions.querySelectorAll("button").forEach((button) => {
+    if (isSubmitting) {
+      button.dataset.disabledBeforeSubmit = String(button.disabled);
+      button.disabled = true;
+    } else if (button.dataset.disabledBeforeSubmit !== undefined) {
+      button.disabled = button.dataset.disabledBeforeSubmit === "true";
+      delete button.dataset.disabledBeforeSubmit;
+    }
+  });
 }
 
 function renderActionButton({
@@ -1021,11 +1053,19 @@ function renderActionButton({
   onClick,
   parent = permissionActions,
   disabled = false,
+  ariaLabel,
+  title,
 }) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = className;
   button.disabled = disabled;
+  if (ariaLabel) {
+    button.setAttribute("aria-label", ariaLabel);
+  }
+  if (title) {
+    button.title = title;
+  }
 
   if (description) {
     button.classList.add("has-desc");
@@ -1058,6 +1098,42 @@ function renderActionButton({
   return button;
 }
 
+function renderIconCornerPermissionActions() {
+  const meta = document.createElement("div");
+  meta.className = "permission-action-meta";
+  meta.textContent = t("permission.scopeOnce");
+  permissionActions.appendChild(meta);
+
+  const group = document.createElement("div");
+  group.className = "permission-icon-actions";
+  permissionActions.appendChild(group);
+
+  renderActionButton({
+    label: "✓",
+    className: "btn-icon btn-allow",
+    parent: group,
+    ariaLabel: t("permission.allowAria"),
+    title: t("permission.allow"),
+    onClick: () => handleInteraction("allow"),
+  });
+  renderActionButton({
+    label: "×",
+    className: "btn-icon btn-deny",
+    parent: group,
+    ariaLabel: t("permission.denyAria"),
+    title: t("permission.deny"),
+    onClick: () => handleInteraction("deny"),
+  });
+  renderActionButton({
+    label: "↗",
+    className: "btn-icon btn-pass",
+    parent: group,
+    ariaLabel: t("interaction.passThroughAria"),
+    title: t("interaction.passThrough"),
+    onClick: () => handleInteraction("passthrough"),
+  });
+}
+
 function renderAskUserQuestion(request) {
   const selections = new Map();
 
@@ -1082,8 +1158,7 @@ function renderAskUserQuestion(request) {
     options.dataset.multiSelect = String(question.multiSelect);
     const layout = getQuestionOptionLayout(question);
     options.dataset.columns = String(layout.columns);
-    options.style.gridTemplateColumns =
-      `repeat(${layout.columns}, minmax(0, ${layout.optionWidth}px))`;
+    options.style.gridTemplateColumns = `repeat(${layout.columns}, minmax(0, ${layout.optionWidth}px))`;
     options.style.maxWidth = `${layout.maxWidth}px`;
     options.style.setProperty(
       "--question-option-gap",
@@ -1169,15 +1244,17 @@ function renderAskUserQuestion(request) {
 
 function showInteraction(requestId, request) {
   applyInteractionFocus(request);
+  setInteractionSubmitting(false);
   permissionSection.style.display = "block";
   permissionSection.dataset.requestId = requestId;
   permissionSection.dataset.kind = request.kind;
   permissionSection.dataset.mode = request.answerMode;
-  permissionSection.dataset.density = request.requiresFocus ? "focus" : "default";
+  permissionSection.dataset.density = request.requiresFocus
+    ? "focus"
+    : "default";
   permissionTool.textContent = request.title;
   permissionMessage.textContent =
-    request.message ||
-    (request.supported ? "" : t("interaction.unsupported"));
+    request.message || (request.supported ? "" : t("interaction.unsupported"));
   permissionActions.innerHTML = "";
 
   let renderDefaultPass = true;
@@ -1185,17 +1262,12 @@ function showInteraction(requestId, request) {
   if (request.answerMode === "ask_user_question" && request.supported) {
     renderAskUserQuestion(request);
     renderDefaultPass = false;
-  } else if (request.kind === "permission" && request.answerMode === "permission") {
-    renderActionButton({
-      label: t("permission.allow"),
-      className: "btn-allow",
-      onClick: () => handleInteraction("allow"),
-    });
-    renderActionButton({
-      label: t("permission.deny"),
-      className: "btn-deny",
-      onClick: () => handleInteraction("deny"),
-    });
+  } else if (
+    request.kind === "permission" &&
+    request.answerMode === "permission"
+  ) {
+    renderIconCornerPermissionActions();
+    renderDefaultPass = false;
   } else if (request.supported && request.fieldKey) {
     request.options.forEach((option) => {
       renderActionButton({
@@ -1238,6 +1310,7 @@ async function handleInteraction(decision, content = null) {
   const requestId = permissionSection.dataset.requestId;
   if (!requestId) return;
 
+  setInteractionSubmitting(true);
   try {
     await invokeCommand("permission_decision", {
       permId: requestId,
@@ -1256,6 +1329,7 @@ async function handleInteraction(decision, content = null) {
     }
   } catch (e) {
     console.error("[Orbit] Failed to submit interaction decision:", e);
+    setInteractionSubmitting(false);
   }
 }
 

@@ -59,11 +59,16 @@ const zh = {
   // Permission
   "permission.allow": "允许",
   "permission.deny": "拒绝",
+  "permission.allowAria": "允许执行一次",
+  "permission.denyAria": "拒绝本次请求",
+  "permission.scopeOnce": "允许一次 · 当前会话",
   "interaction.question": "问题",
   "interaction.submit": "提交选择",
   "interaction.passThrough": "回到终端处理",
+  "interaction.passThroughAria": "回到终端处理",
   "interaction.cancel": "取消",
-  "interaction.unsupported": "这个请求需要更复杂的输入，Orbit 先让 Claude/Codex 在终端继续处理。",
+  "interaction.unsupported":
+    "这个请求需要更复杂的输入，Orbit 先让 Claude/Codex 在终端继续处理。",
 };
 
 const en = {
@@ -117,11 +122,16 @@ const en = {
 
   "permission.allow": "Allow",
   "permission.deny": "Deny",
+  "permission.allowAria": "Allow once",
+  "permission.denyAria": "Deny this request",
+  "permission.scopeOnce": "Allow once · current session",
   "interaction.question": "Question",
   "interaction.submit": "Submit",
   "interaction.passThrough": "Continue in terminal",
+  "interaction.passThroughAria": "Continue in terminal",
   "interaction.cancel": "Cancel",
-  "interaction.unsupported": "This request needs a richer form, so Orbit will hand it back to Claude/Codex in the terminal.",
+  "interaction.unsupported":
+    "This request needs a richer form, so Orbit will hand it back to Claude/Codex in the terminal.",
 };
 
 const locales = { zh, en };

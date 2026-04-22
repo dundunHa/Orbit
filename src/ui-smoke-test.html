@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orbit UI Smoke Test</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      body {
+        min-height: 100vh;
+        overflow: auto;
+        background: #111214;
+        color: rgba(255, 255, 255, 0.86);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue",
+          sans-serif;
+      }
+
+      .smoke-shell {
+        display: grid;
+        grid-template-columns: minmax(360px, 720px) minmax(320px, 1fr);
+        gap: 24px;
+        padding: 28px;
+      }
+
+      .smoke-stage {
+        position: relative;
+        min-height: 620px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        background: #050505;
+        overflow: hidden;
+      }
+
+      .smoke-stage #island {
+        position: absolute;
+      }
+
+      .smoke-panel {
+        padding: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .smoke-panel h1 {
+        margin: 0 0 8px;
+        font-size: 18px;
+        line-height: 1.2;
+        letter-spacing: 0;
+      }
+
+      .smoke-panel p {
+        margin: 0 0 14px;
+        color: rgba(255, 255, 255, 0.52);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .smoke-results {
+        display: grid;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .smoke-result {
+        display: grid;
+        grid-template-columns: 58px 1fr;
+        gap: 10px;
+        align-items: start;
+        padding: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 9px;
+        background: rgba(0, 0, 0, 0.22);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .smoke-result strong {
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 700;
+      }
+
+      .smoke-result code {
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 11px;
+      }
+
+      .smoke-pass {
+        color: #9df2b4;
+      }
+
+      .smoke-fail {
+        color: #ffb4b4;
+      }
+
+      .smoke-pending {
+        color: #ffd29b;
+      }
+
+      .smoke-summary {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.75);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .smoke-agent-json {
+        max-height: 240px;
+        margin: 14px 0 0;
+        padding: 10px;
+        overflow: auto;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 9px;
+        background: rgba(0, 0, 0, 0.28);
+        color: rgba(255, 255, 255, 0.56);
+        font:
+          11px/1.45 "SF Mono",
+          ui-monospace,
+          Menlo,
+          monospace;
+        white-space: pre-wrap;
+      }
+
+      @media (max-width: 980px) {
+        .smoke-shell {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="smoke-shell">
+      <section class="smoke-stage" aria-label="Orbit UI smoke test stage">
+        <div
+          id="island"
+          class="island collapsed"
+          role="status"
+          aria-live="polite"
+          aria-label="Orbit AI assistant status"
+          aria-expanded="false"
+        >
+          <div class="pill">
+            <div class="pill-left">
+              <svg
+                class="mascot mascot-claude"
+                width="24"
+                height="16"
+                viewBox="0 0 24 16"
+                fill="none"
+                aria-hidden="true"
+              >
+                <g class="mascot-fill">
+                  <rect x="4" y="1" width="16" height="4" />
+                  <rect x="2" y="5" width="20" height="3" />
+                  <rect x="4" y="8" width="16" height="4" />
+                  <rect x="6" y="12" width="2" height="3" />
+                  <rect x="9" y="12" width="2" height="4" />
+                  <rect x="14" y="12" width="2" height="4" />
+                  <rect x="17" y="12" width="2" height="3" />
+                </g>
+                <g class="mascot-cutout">
+                  <rect x="8" y="3" width="2" height="3" />
+                  <rect x="14" y="3" width="2" height="3" />
+                </g>
+              </svg>
+            </div>
+            <div class="pill-center"></div>
+            <div class="pill-right">
+              <div class="status-dot"></div>
+            </div>
+          </div>
+
+          <div class="detail">
+            <div class="detail-header">
+              <span class="session-cwd"></span>
+            </div>
+            <div class="detail-status"></div>
+            <div class="detail-tools"></div>
+            <div class="detail-tokens"></div>
+            <div class="detail-model"></div>
+
+            <div class="onboarding-section" style="display: none">
+              <div class="section-title" data-i18n="section.setup">Setup</div>
+              <div class="onboarding-status-row">
+                <div class="onboarding-status-dot status-dot"></div>
+                <div class="onboarding-status-text"></div>
+              </div>
+              <div class="onboarding-actions">
+                <button
+                  class="btn-retry"
+                  type="button"
+                  aria-label="Retry Orbit setup"
+                  onclick="
+                    event.stopPropagation();
+                    handleOnboardingRetry();
+                  "
+                  data-i18n="onboarding.retry"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+
+            <div class="permission-section" style="display: none">
+              <div class="permission-tool"></div>
+              <div class="permission-message"></div>
+              <div class="permission-actions"></div>
+            </div>
+
+            <div class="active-section">
+              <div class="section-title" data-i18n="section.active">Active</div>
+              <div class="active-list"></div>
+            </div>
+
+            <div class="history-section">
+              <div class="section-title" data-i18n="section.recent">Recent</div>
+              <div class="history-list"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="smoke-panel">
+        <h1>UI Smoke Test</h1>
+        <p>
+          Runs against the real frontend module with a mocked Tauri bridge. It
+          covers boot, Icon Corner permission UI, action submission, timeout
+          cleanup, queue handoff, AskUserQuestion, elicitation, and
+          accessibility basics.
+        </p>
+        <div id="smoke-summary" class="smoke-summary">Running...</div>
+        <div id="smoke-results" class="smoke-results"></div>
+        <pre
+          id="smoke-agent-json"
+          class="smoke-agent-json"
+          aria-label="Machine-readable smoke diagnostics"
+        ></pre>
+      </aside>
+    </main>
+
+    <script type="module">
+      const listeners = new Map();
+      const invokeCalls = [];
+      const emittedEvents = [];
+      const caseResults = [];
+      const stateSnapshots = [];
+      const startedAt = new Date().toISOString();
+      let pendingPermissionDecision = null;
+
+      const notchInfo = {
+        notch_height: 37,
+        screen_width: 1440,
+        notch_left: 620,
+        notch_right: 820,
+        notch_width: 200,
+        left_safe_width: 620,
+        right_safe_width: 620,
+        has_notch: true,
+        pill_width: 640,
+        left_zone_width: 120,
+        right_zone_width: 160,
+        mascot_left_inset: 8,
+      };
+
+      const sessions = [
+        {
+          id: "session-approval",
+          title: "UI smoke permission",
+          status: { type: "WaitingForApproval" },
+          cwd: "/Users/dev/orbit",
+          started_at: new Date(Date.now() - 60_000).toISOString(),
+          last_event_at: new Date().toISOString(),
+          tokens_in: 1200,
+          tokens_out: 800,
+          model: "claude-sonnet-4",
+        },
+      ];
+
+      window.__TAURI__ = {
+        event: {
+          listen(name, callback) {
+            if (!listeners.has(name)) {
+              listeners.set(name, []);
+            }
+            listeners.get(name).push(callback);
+            return Promise.resolve(() => {});
+          },
+        },
+        core: {
+          invoke(command, args) {
+            invokeCalls.push({ command, args, ts: new Date().toISOString() });
+            switch (command) {
+              case "get_notch_info":
+                return Promise.resolve(notchInfo);
+              case "get_onboarding_state":
+                return Promise.resolve({
+                  type: "Connected",
+                  status_text: "Connected",
+                });
+              case "get_sessions":
+                return Promise.resolve(sessions);
+              case "get_history":
+                return Promise.resolve([]);
+              case "set_expanded_frame":
+              case "collapse_window":
+              case "resume_session":
+              case "retry_onboarding_install":
+                return Promise.resolve(null);
+              case "permission_decision":
+                return new Promise((resolve) => {
+                  pendingPermissionDecision = { args, resolve };
+                });
+              default:
+                return Promise.reject(
+                  new Error(`Unexpected invoke: ${command}`),
+                );
+            }
+          },
+        },
+      };
+
+      const resultsEl = document.getElementById("smoke-results");
+      const summaryEl = document.getElementById("smoke-summary");
+      const agentJsonEl = document.getElementById("smoke-agent-json");
+
+      window.__ORBIT_UI_SMOKE__ = {
+        status: "running",
+        startedAt,
+        summary: null,
+        caseResults,
+        emittedEvents,
+        invokeCalls,
+        stateSnapshots,
+      };
+
+      function getButtonSnapshot(selector) {
+        return [...document.querySelectorAll(selector)].map((button) => {
+          const rect = button.getBoundingClientRect();
+          const style = getComputedStyle(button);
+          return {
+            text: button.textContent,
+            className: button.className,
+            ariaLabel: button.getAttribute("aria-label"),
+            title: button.title,
+            disabled: button.disabled,
+            focused: document.activeElement === button,
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            backgroundColor: style.backgroundColor,
+            color: style.color,
+          };
+        });
+      }
+
+      function updateAgentDiagnostics(summary = null) {
+        if (summary) {
+          window.__ORBIT_UI_SMOKE__.summary = summary;
+        }
+        agentJsonEl.textContent = JSON.stringify(
+          window.__ORBIT_UI_SMOKE__,
+          null,
+          2,
+        );
+      }
+
+      function snapshotState(label) {
+        const island = document.getElementById("island");
+        const section = document.querySelector(".permission-section");
+        const snapshot = {
+          label,
+          ts: new Date().toISOString(),
+          island: {
+            className: island.className,
+            ariaExpanded: island.getAttribute("aria-expanded"),
+            width: Math.round(island.getBoundingClientRect().width),
+            height: Math.round(island.getBoundingClientRect().height),
+          },
+          statusDotClass: document.querySelector(".pill-right .status-dot")
+            ?.className,
+          cssVars: {
+            pillWidth: getComputedStyle(document.documentElement)
+              .getPropertyValue("--pill-width")
+              .trim(),
+            expandedHeight: island.style.getPropertyValue("--expanded-height"),
+          },
+          permission: {
+            display: section?.style.display || "",
+            className: section?.className || "",
+            dataset: { ...section?.dataset },
+            ariaBusy: section?.getAttribute("aria-busy"),
+            tool: document.querySelector(".permission-tool")?.textContent || "",
+            message:
+              document.querySelector(".permission-message")?.textContent || "",
+            meta:
+              document.querySelector(".permission-action-meta")?.textContent ||
+              "",
+            iconButtons: getButtonSnapshot(".permission-icon-actions button"),
+            optionButtons: getButtonSnapshot(".permission-actions .btn-option"),
+            submitButton: getButtonSnapshot(".interaction-footer .btn-submit"),
+          },
+          activeElement: {
+            tagName: document.activeElement?.tagName || "",
+            className: document.activeElement?.className || "",
+            ariaLabel: document.activeElement?.getAttribute("aria-label") || "",
+            text:
+              document.activeElement === document.body ||
+              document.activeElement === document.documentElement
+                ? ""
+                : (document.activeElement?.textContent || "").slice(0, 80),
+          },
+          invokeCount: invokeCalls.length,
+          lastInvoke: invokeCalls.at(-1) || null,
+          pendingPermissionDecision: Boolean(pendingPermissionDecision),
+        };
+        stateSnapshots.push(snapshot);
+        updateAgentDiagnostics();
+        return snapshot;
+      }
+
+      function emit(name, payload) {
+        emittedEvents.push({ name, payload, ts: new Date().toISOString() });
+        updateAgentDiagnostics();
+        const callbacks = listeners.get(name) || [];
+        callbacks.forEach((callback) => callback({ payload }));
+      }
+
+      function settle(ms = 40) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      function assert(condition, message) {
+        if (!condition) {
+          throw new Error(message);
+        }
+      }
+
+      function testResult(name, status, detail = "") {
+        const row = document.createElement("div");
+        row.className = "smoke-result";
+        row.innerHTML = `
+        <span class="${status === "PASS" ? "smoke-pass" : "smoke-fail"}">${status}</span>
+        <span><strong>${name}</strong>${detail ? `<br><code>${detail}</code>` : ""}</span>
+      `;
+        resultsEl.appendChild(row);
+      }
+
+      function permissionPayload(
+        requestId,
+        command = "cd frontend && bun tsx --test src/pages/__tests__/UrlMonitor.test.ts",
+      ) {
+        return {
+          request_id: requestId,
+          kind: "permission",
+          session_id: "session-approval",
+          tool_name: "Bash",
+          tool_input: { command },
+          message: "",
+        };
+      }
+
+      function askUserQuestionPayload(requestId) {
+        return {
+          request_id: requestId,
+          kind: "permission",
+          session_id: "session-approval",
+          tool_name: "AskUserQuestion",
+          tool_input: {
+            questions: [
+              {
+                header: "Deploy",
+                question: "Proceed with this deploy?",
+                options: [
+                  { label: "Yes", description: "Ship it" },
+                  { label: "No", description: "Stop here" },
+                ],
+              },
+            ],
+          },
+        };
+      }
+
+      function elicitationPayload(requestId) {
+        return {
+          request_id: requestId,
+          kind: "elicitation",
+          session_id: "session-approval",
+          mcp_server_name: "GitHub",
+          requested_schema: {
+            type: "object",
+            properties: {
+              action: {
+                enum: ["Create issue", "Skip"],
+              },
+            },
+          },
+        };
+      }
+
+      function currentDecisionCall() {
+        return [...invokeCalls]
+          .reverse()
+          .find((call) => call.command === "permission_decision");
+      }
+
+      function resolvePermissionDecision() {
+        assert(
+          pendingPermissionDecision,
+          "permission_decision promise was not pending",
+        );
+        pendingPermissionDecision.resolve(null);
+        pendingPermissionDecision = null;
+      }
+
+      async function runCase(name, fn) {
+        snapshotState(`before:${name}`);
+        try {
+          await fn();
+          const snapshot = snapshotState(`after:${name}`);
+          caseResults.push({ name, status: "PASS", snapshot });
+          testResult(name, "PASS");
+          updateAgentDiagnostics();
+          return true;
+        } catch (error) {
+          console.error(`[smoke] ${name}`, error);
+          const snapshot = snapshotState(`failed:${name}`);
+          caseResults.push({
+            name,
+            status: "FAIL",
+            error: error.message,
+            snapshot,
+          });
+          testResult(name, "FAIL", error.message);
+          updateAgentDiagnostics();
+          return false;
+        }
+      }
+
+      await import("./main.js");
+      await settle(80);
+
+      const tests = [
+        [
+          "Boot applies notch layout and base status",
+          async () => {
+            const island = document.getElementById("island");
+            assert(
+              island.classList.contains("collapsed"),
+              "island should start collapsed",
+            );
+            assert(
+              getComputedStyle(document.documentElement)
+                .getPropertyValue("--pill-width")
+                .trim() === "640px",
+              "pill width CSS var not applied",
+            );
+            assert(
+              document.querySelector(".status-dot.waiting-approval"),
+              "waiting approval status dot not rendered",
+            );
+          },
+        ],
+        [
+          "Icon Corner permission renders three compact actions",
+          async () => {
+            emit("interaction-request", permissionPayload("perm-icon"));
+            await settle(80);
+            const section = document.querySelector(".permission-section");
+            assert(
+              section.style.display === "block",
+              "permission section should be visible",
+            );
+            assert(
+              section.dataset.mode === "permission",
+              "permission mode not set",
+            );
+            assert(
+              document.querySelector(".permission-icon-actions"),
+              "icon action group missing",
+            );
+            const buttons = [
+              ...document.querySelectorAll(
+                ".permission-icon-actions .btn-icon",
+              ),
+            ];
+            assert(
+              buttons.length === 3,
+              "expected allow, deny, terminal buttons",
+            );
+            assert(
+              buttons.map((button) => button.textContent).join("") === "✓×↗",
+              "unexpected icon labels",
+            );
+            assert(
+              buttons.every((button) => button.getAttribute("aria-label")),
+              "icon buttons need aria-labels",
+            );
+            assert(
+              buttons.every((button) => button.title),
+              "icon buttons need title tooltips",
+            );
+          },
+        ],
+        [
+          "Icon buttons stay visually small and low-color",
+          async () => {
+            const allow = document.querySelector(
+              ".permission-icon-actions .btn-allow",
+            );
+            const rect = allow.getBoundingClientRect();
+            assert(
+              rect.width <= 38 && rect.height <= 38,
+              `allow button is too large: ${rect.width}x${rect.height}`,
+            );
+            assert(
+              getComputedStyle(allow).backgroundColor !== "rgb(74, 222, 128)",
+              "allow button reverted to green CTA block",
+            );
+            assert(
+              document
+                .querySelector(".permission-action-meta")
+                ?.textContent.includes("once") ||
+                document
+                  .querySelector(".permission-action-meta")
+                  ?.textContent.includes("一次"),
+              "permission scope meta missing",
+            );
+          },
+        ],
+        [
+          "Allow click disables actions while submitting",
+          async () => {
+            document
+              .querySelector(".permission-icon-actions .btn-allow")
+              .click();
+            await settle(120);
+            const section = document.querySelector(".permission-section");
+            assert(
+              section.classList.contains("is-submitting"),
+              "submitting class missing",
+            );
+            assert(
+              section.getAttribute("aria-busy") === "true",
+              "aria-busy should be true",
+            );
+            assert(
+              [
+                ...document.querySelectorAll(".permission-icon-actions button"),
+              ].every((button) => button.disabled),
+              "all action buttons should be disabled",
+            );
+            const call = currentDecisionCall();
+            assert(call.args.permId === "perm-icon", "permId not submitted");
+            assert(
+              call.args.decision === "allow",
+              "allow decision not submitted",
+            );
+            resolvePermissionDecision();
+            await settle(80);
+            assert(
+              section.style.display === "none",
+              "permission section should hide after resolve",
+            );
+          },
+        ],
+        [
+          "Deny and terminal actions submit correct decisions",
+          async () => {
+            emit("interaction-request", permissionPayload("perm-deny"));
+            await settle(60);
+            document
+              .querySelector(".permission-icon-actions .btn-deny")
+              .click();
+            await settle(120);
+            assert(
+              currentDecisionCall().args.decision === "deny",
+              "deny decision not submitted",
+            );
+            resolvePermissionDecision();
+            await settle(60);
+
+            emit("interaction-request", permissionPayload("perm-pass"));
+            await settle(60);
+            document
+              .querySelector(".permission-icon-actions .btn-pass")
+              .click();
+            await settle(120);
+            assert(
+              currentDecisionCall().args.decision === "passthrough",
+              "terminal passthrough decision not submitted",
+            );
+            resolvePermissionDecision();
+            await settle(60);
+          },
+        ],
+        [
+          "Timeout cleans stale permission UI",
+          async () => {
+            emit("interaction-request", permissionPayload("perm-timeout"));
+            await settle(60);
+            emit("interaction-timeout", "perm-timeout");
+            await settle(60);
+            assert(
+              document.querySelector(".permission-section").style.display ===
+                "none",
+              "stale permission should hide on timeout",
+            );
+          },
+        ],
+        [
+          "Queue handoff clears submitting state",
+          async () => {
+            emit("interaction-request", permissionPayload("perm-queue-a"));
+            await settle(50);
+            emit("interaction-request", permissionPayload("perm-queue-b"));
+            await settle(50);
+            document
+              .querySelector(".permission-icon-actions .btn-allow")
+              .click();
+            await settle(120);
+            resolvePermissionDecision();
+            await settle(80);
+            const section = document.querySelector(".permission-section");
+            assert(
+              section.style.display === "block",
+              "next queued permission should show",
+            );
+            assert(
+              section.dataset.requestId === "perm-queue-a",
+              "first queued request should be restored",
+            );
+            assert(
+              !section.classList.contains("is-submitting"),
+              "submitting class leaked into queued request",
+            );
+            emit("interaction-resolved", "perm-queue-a");
+            await settle(50);
+          },
+        ],
+        [
+          "AskUserQuestion flow is not replaced by icon actions",
+          async () => {
+            emit("interaction-request", askUserQuestionPayload("ask-one"));
+            await settle(80);
+            const section = document.querySelector(".permission-section");
+            assert(
+              section.dataset.mode === "ask_user_question",
+              "AskUserQuestion mode not set",
+            );
+            assert(
+              !document.querySelector(".permission-icon-actions"),
+              "AskUserQuestion should not use icon actions",
+            );
+            assert(
+              document.querySelectorAll(".interaction-options .btn-option")
+                .length === 2,
+              "question options missing",
+            );
+            assert(
+              document.querySelector(".interaction-footer .btn-submit")
+                .disabled,
+              "submit should start disabled",
+            );
+            emit("interaction-resolved", "ask-one");
+            await settle(50);
+          },
+        ],
+        [
+          "Elicitation flow keeps option buttons and cancel",
+          async () => {
+            emit("interaction-request", elicitationPayload("elicit-one"));
+            await settle(80);
+            const section = document.querySelector(".permission-section");
+            assert(
+              section.dataset.kind === "elicitation",
+              "elicitation kind not set",
+            );
+            assert(
+              !document.querySelector(".permission-icon-actions"),
+              "elicitation should not use icon actions",
+            );
+            assert(
+              document.querySelectorAll(".permission-actions .btn-option")
+                .length === 2,
+              "elicitation options missing",
+            );
+            assert(
+              document.querySelector(".permission-actions .btn-deny"),
+              "elicitation cancel missing",
+            );
+            emit("interaction-resolved", "elicit-one");
+            await settle(50);
+          },
+        ],
+        [
+          "Focusability and labels satisfy smoke-level a11y",
+          async () => {
+            emit("interaction-request", permissionPayload("perm-a11y"));
+            await settle(60);
+            const buttons = [
+              ...document.querySelectorAll(".permission-icon-actions button"),
+            ];
+            buttons[0].focus();
+            assert(
+              document.activeElement === buttons[0],
+              "allow button should receive focus",
+            );
+            assert(
+              buttons.every((button) => button.type === "button"),
+              "actions must be button elements",
+            );
+            assert(
+              buttons.every(
+                (button) => button.getAttribute("aria-label")?.length > 0,
+              ),
+              "all icon buttons need labels",
+            );
+            emit("interaction-resolved", "perm-a11y");
+            await settle(50);
+          },
+        ],
+      ];
+
+      let passed = 0;
+      for (const [name, fn] of tests) {
+        const ok = await runCase(name, fn);
+        if (ok) passed += 1;
+      }
+
+      const failed = tests.length - passed;
+      const summary = {
+        passed,
+        failed,
+        total: tests.length,
+        completedAt: new Date().toISOString(),
+      };
+      window.__ORBIT_UI_SMOKE__.status = failed === 0 ? "pass" : "fail";
+      summaryEl.textContent = `${passed}/${tests.length} passed`;
+      summaryEl.classList.toggle("smoke-pass", failed === 0);
+      summaryEl.classList.toggle("smoke-fail", failed > 0);
+      updateAgentDiagnostics(summary);
+      console.info(
+        "[orbit-ui-smoke]",
+        JSON.stringify(window.__ORBIT_UI_SMOKE__),
+      );
+    </script>
+  </body>
+</html>
