@@ -1,0 +1,1102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Orbit Browser Debug</title>
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      body.orbit-debug {
+        min-height: 100vh;
+        overflow: auto;
+        background: #121417;
+        color: rgba(255, 255, 255, 0.88);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue",
+          sans-serif;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+
+      .debug-shell {
+        display: grid;
+        grid-template-columns: minmax(360px, 760px) minmax(300px, 420px);
+        gap: 18px;
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .debug-stage {
+        position: relative;
+        min-height: 680px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 8px;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+          #070809;
+        background-size: 32px 32px;
+      }
+
+      .debug-stage::before {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        width: var(--notch-width, 200px);
+        height: 37px;
+        transform: translateX(-50%);
+        border-radius: 0 0 18px 18px;
+        background: rgba(255, 255, 255, 0.08);
+        content: "";
+      }
+
+      .debug-stage #island {
+        position: absolute;
+      }
+
+      .debug-panel {
+        display: grid;
+        align-content: start;
+        gap: 14px;
+      }
+
+      .debug-section {
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.045);
+        padding: 14px;
+      }
+
+      .debug-section h1,
+      .debug-section h2 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        line-height: 1.25;
+        letter-spacing: 0;
+      }
+
+      .debug-section p {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.58);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .debug-address {
+        display: block;
+        margin-top: 10px;
+        padding: 9px;
+        overflow-wrap: anywhere;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.34);
+        color: rgba(255, 255, 255, 0.78);
+        font:
+          12px/1.4 "SF Mono",
+          ui-monospace,
+          Menlo,
+          monospace;
+      }
+
+      .debug-controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .debug-controls.is-wide {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .debug-controls button {
+        min-height: 34px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.35);
+        color: rgba(255, 255, 255, 0.88);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .debug-controls button:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .debug-controls button.is-active {
+        border-color: rgba(96, 165, 250, 0.68);
+        background: rgba(96, 165, 250, 0.16);
+      }
+
+      .debug-state-line {
+        min-height: 18px;
+        color: rgba(255, 255, 255, 0.54);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .debug-log {
+        max-height: 300px;
+        overflow: auto;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.34);
+        color: rgba(255, 255, 255, 0.58);
+        font:
+          11px/1.45 "SF Mono",
+          ui-monospace,
+          Menlo,
+          monospace;
+        padding: 10px;
+        white-space: pre-wrap;
+      }
+
+      @media (max-width: 980px) {
+        .debug-shell {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body class="orbit-debug">
+    <main class="debug-shell">
+      <section class="debug-stage" aria-label="Orbit browser debug stage">
+        <div
+          id="island"
+          class="island collapsed"
+          role="status"
+          aria-live="polite"
+          aria-label="Orbit AI assistant status"
+          aria-expanded="false"
+        >
+          <div class="pill">
+            <div class="pill-left">
+              <svg
+                class="mascot mascot-claude"
+                width="24"
+                height="16"
+                viewBox="0 0 24 16"
+                fill="none"
+                aria-hidden="true"
+              >
+                <g class="mascot-fill">
+                  <rect x="4" y="1" width="16" height="4" />
+                  <rect x="2" y="5" width="20" height="3" />
+                  <rect x="4" y="8" width="16" height="4" />
+                  <rect x="6" y="12" width="2" height="3" />
+                  <rect x="9" y="12" width="2" height="4" />
+                  <rect x="14" y="12" width="2" height="4" />
+                  <rect x="17" y="12" width="2" height="3" />
+                </g>
+                <g class="mascot-cutout">
+                  <rect x="8" y="3" width="2" height="3" />
+                  <rect x="14" y="3" width="2" height="3" />
+                </g>
+              </svg>
+            </div>
+            <div class="pill-center"></div>
+            <div class="pill-right">
+              <div class="status-dot"></div>
+            </div>
+          </div>
+
+          <div
+            class="live-strip"
+            aria-live="polite"
+            aria-label="Active Claude Code session"
+          >
+            <div class="live-rail"></div>
+            <div class="live-main">
+              <div class="live-session">
+                <div class="live-cwd"></div>
+                <div class="live-title"></div>
+              </div>
+              <div class="live-ticker" aria-hidden="true">
+                <span class="live-ticker-primary"></span>
+              </div>
+            </div>
+            <div class="live-metrics"></div>
+          </div>
+
+          <div class="detail">
+            <div class="detail-header">
+              <span class="session-cwd"></span>
+            </div>
+            <div class="detail-status"></div>
+            <div class="detail-tools"></div>
+            <div class="detail-tokens"></div>
+            <div class="detail-model"></div>
+
+            <div class="onboarding-section" style="display: none">
+              <div class="section-title" data-i18n="section.setup">Setup</div>
+              <div class="onboarding-status-row">
+                <div class="onboarding-status-dot status-dot"></div>
+                <div class="onboarding-status-text"></div>
+              </div>
+              <div class="onboarding-actions">
+                <button
+                  class="btn-retry"
+                  type="button"
+                  aria-label="Retry Orbit setup"
+                  onclick="
+                    event.stopPropagation();
+                    handleOnboardingRetry();
+                  "
+                  data-i18n="onboarding.retry"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+
+            <div class="permission-section" style="display: none">
+              <div class="permission-tool"></div>
+              <div class="permission-message"></div>
+              <div class="permission-actions"></div>
+            </div>
+
+            <div class="active-section">
+              <div class="section-title" data-i18n="section.active">Active</div>
+              <div class="active-list"></div>
+            </div>
+
+            <div class="history-section">
+              <div class="section-title" data-i18n="section.recent">Recent</div>
+              <div class="history-list"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="debug-panel">
+        <section class="debug-section">
+          <h1>Orbit Browser Debug</h1>
+          <p>
+            The page loads the real frontend module with a mocked Tauri bridge,
+            so the UI can be inspected from a normal browser.
+          </p>
+          <code class="debug-address">debug.html</code>
+        </section>
+
+        <section class="debug-section">
+          <h2>Window</h2>
+          <div class="debug-controls">
+            <button type="button" data-action="expand">Expand</button>
+            <button type="button" data-action="collapse">Collapse</button>
+          </div>
+        </section>
+
+        <section class="debug-section">
+          <h2>Mock Scenarios</h2>
+          <div class="debug-controls is-wide">
+            <button type="button" data-scenario="baseline">Active</button>
+            <button type="button" data-scenario="multi">Multi</button>
+            <button type="button" data-scenario="subagents">Subagents</button>
+            <button type="button" data-scenario="compacting">Compact</button>
+            <button type="button" data-scenario="anomaly">Anomaly</button>
+            <button type="button" data-scenario="history">History</button>
+            <button type="button" data-scenario="bash">Bash</button>
+            <button type="button" data-scenario="risky-bash">Risky</button>
+            <button type="button" data-scenario="edit">Edit</button>
+            <button type="button" data-scenario="question">Question</button>
+            <button type="button" data-scenario="multi-question">Multi Q</button>
+            <button type="button" data-scenario="elicitation">Elicit</button>
+            <button type="button" data-scenario="network">Network</button>
+            <button type="button" data-scenario="mcp">MCP</button>
+            <button type="button" data-scenario="queue">Queue</button>
+          </div>
+        </section>
+
+        <section class="debug-section">
+          <h2>Interaction Tools</h2>
+          <div class="debug-controls">
+            <button type="button" data-action="resolve-current">Resolve</button>
+            <button type="button" data-action="timeout-current">Timeout</button>
+            <button type="button" data-action="add-queued">Add Queue</button>
+            <button type="button" data-action="reset">Reset</button>
+          </div>
+          <div id="debug-state-line" class="debug-state-line"></div>
+        </section>
+
+        <section class="debug-section">
+          <h2>Diagnostics</h2>
+          <pre id="debug-log" class="debug-log">{}</pre>
+        </section>
+      </aside>
+    </main>
+
+    <script type="module">
+      const listeners = new Map();
+      const invokeCalls = [];
+      const emittedEvents = [];
+      const pendingRequestIds = new Set();
+      const knownSessionIds = new Set();
+      const debugLog = document.getElementById("debug-log");
+      const debugAddress = document.querySelector(".debug-address");
+      const debugStateLine = document.getElementById("debug-state-line");
+      const scenarioButtons = [
+        ...document.querySelectorAll("[data-scenario]"),
+      ];
+      const REPO_CWD =
+        "/Users/lxp/Library/CloudStorage/Dropbox/code-space/mygitspace/Orbit";
+      let sessions = [];
+      let history = [];
+      let activeScenario = "baseline";
+      let requestSequence = 0;
+
+      debugAddress.textContent = window.location.href;
+
+      const nowIso = (offsetMs = 0) =>
+        new Date(Date.now() + offsetMs).toISOString();
+
+      const clone = (value) => JSON.parse(JSON.stringify(value));
+
+      const RUST_LEFT_ZONE_WIDTH = 35;
+      const RUST_RIGHT_ZONE_WIDTH = 25;
+      const RUST_MASCOT_LEFT_INSET = 8;
+      const RUST_NOTCH_WIDTH = 200;
+
+      const notchInfo = {
+        notch_height: 37,
+        screen_width: 1440,
+        notch_left: 620,
+        notch_right: 820,
+        notch_width: RUST_NOTCH_WIDTH,
+        left_safe_width: 620,
+        right_safe_width: 620,
+        has_notch: true,
+        pill_width:
+          RUST_LEFT_ZONE_WIDTH + RUST_NOTCH_WIDTH + RUST_RIGHT_ZONE_WIDTH,
+        left_zone_width: RUST_LEFT_ZONE_WIDTH,
+        right_zone_width: RUST_RIGHT_ZONE_WIDTH,
+        mascot_left_inset: RUST_MASCOT_LEFT_INSET,
+      };
+
+      function nextRequestId(prefix) {
+        requestSequence += 1;
+        return `${prefix}-${requestSequence}`;
+      }
+
+      function makeSession(id, overrides = {}) {
+        const startedOffset = overrides.startedOffset ?? -12 * 60 * 1000;
+        const lastOffset = overrides.lastOffset ?? 0;
+        return {
+          id,
+          title: overrides.title || "Orbit debug session",
+          status: overrides.status || { type: "Processing" },
+          cwd: overrides.cwd || REPO_CWD,
+          started_at: nowIso(startedOffset),
+          last_event_at: nowIso(lastOffset),
+          tokens_in: overrides.tokens_in ?? 8200,
+          tokens_out: overrides.tokens_out ?? 3100,
+          cost_usd: overrides.cost_usd ?? 0.042,
+          model: overrides.model || "claude-sonnet-4",
+          cli_status_text: overrides.cli_status_text || null,
+          agents: overrides.agents || {},
+          agent: overrides.agent || null,
+        };
+      }
+
+      function makeAgent(id, overrides = {}) {
+        return {
+          agent_id: id,
+          agent_type: overrides.agent_type || "worker",
+          started_at: nowIso(overrides.startedOffset ?? -4 * 60 * 1000),
+          last_event_at: nowIso(overrides.lastOffset ?? -30 * 1000),
+          tool_count: overrides.tool_count ?? 2,
+          ended: Boolean(overrides.ended),
+          last_tool_name: overrides.last_tool_name || "Read",
+          last_tool_description:
+            overrides.last_tool_description || "Scanning UI files",
+        };
+      }
+
+      function makeHistory(extra = []) {
+        return [
+          {
+            session_id: "history-debug-1",
+            title: "Polished permission UI",
+            cwd: REPO_CWD,
+            ended_at: nowIso(-18 * 60 * 1000),
+            duration_secs: 940,
+            tokens_in: 14200,
+            tokens_out: 5300,
+            cost_usd: 0.071,
+            model: "claude-sonnet-4",
+          },
+          ...extra,
+        ];
+      }
+
+      function permissionPayload(toolName, toolInput, overrides = {}) {
+        return {
+          request_id: nextRequestId(overrides.prefix || "debug-permission"),
+          kind: "permission",
+          session_id: overrides.session_id || "debug-primary",
+          tool_name: toolName,
+          tool_input: toolInput,
+          message:
+            overrides.message ||
+            "Claude needs approval before continuing this debug scenario.",
+          cwd: overrides.cwd || REPO_CWD,
+          url: overrides.url || null,
+          mcp_server_name: overrides.mcp_server_name || null,
+        };
+      }
+
+      function askQuestionPayload({ multi = false, many = false } = {}) {
+        const questions = [
+          {
+            header: multi ? "Review scope" : "Debug mode",
+            question: multi
+              ? "Which follow-up checks should run?"
+              : "Which UI state should Orbit keep open?",
+            multiSelect: multi,
+            options: multi
+              ? [
+                  { label: "Layout", description: "Check overflow states" },
+                  { label: "A11y", description: "Check labels and focus" },
+                  { label: "Motion", description: "Check expand timing" },
+                  { label: "Tokens", description: "Check metric density" },
+                ]
+              : [
+                  {
+                    label: "Expanded",
+                    description: "Keep the browser surface open",
+                  },
+                  {
+                    label: "Compact",
+                    description: "Return to the notch-sized surface",
+                  },
+                ],
+          },
+        ];
+
+        if (many) {
+          questions.push({
+            header: "Risk",
+            question: "How cautious should the next change be?",
+            options: [
+              { label: "Small", description: "Patch the minimum surface" },
+              { label: "Broad", description: "Review adjacent UI states" },
+            ],
+          });
+        }
+
+        return permissionPayload(
+          "AskUserQuestion",
+          { questions },
+          {
+            prefix: multi ? "debug-multi-question" : "debug-question",
+            message: "",
+          },
+        );
+      }
+
+      function elicitationPayload() {
+        return {
+          request_id: nextRequestId("debug-elicitation"),
+          kind: "elicitation",
+          session_id: "debug-primary",
+          mcp_server_name: "GitHub",
+          message: "Choose how Orbit should handle the generated issue.",
+          cwd: REPO_CWD,
+          requested_schema: {
+            type: "object",
+            properties: {
+              action: {
+                oneOf: [
+                  { const: "create_issue", title: "Create issue" },
+                  { const: "draft_note", title: "Draft note" },
+                  { const: "skip", title: "Skip" },
+                ],
+              },
+            },
+          },
+        };
+      }
+
+      function approvalSession(toolName, toolInput, title) {
+        return makeSession("debug-primary", {
+          title,
+          status: {
+            type: "WaitingForApproval",
+            tool_name: toolName,
+            tool_input: toolInput,
+          },
+          cli_status_text: null,
+        });
+      }
+
+      const scenarioFactories = {
+        baseline: () => ({
+          label: "Active session with one running subagent",
+          sessions: [
+            makeSession("debug-primary", {
+              title: "Browser debug session",
+              status: {
+                type: "Processing",
+                description: "Reading project files",
+              },
+              cli_status_text: "Inspecting workspace",
+              agents: {
+                "worker-debug": makeAgent("worker-debug", {
+                  last_tool_name: "Read",
+                  last_tool_description: "Scanning UI files",
+                }),
+              },
+            }),
+            makeSession("debug-idle", {
+              title: "Previous QA pass",
+              status: { type: "WaitingForInput" },
+              startedOffset: -38 * 60 * 1000,
+              lastOffset: -8 * 60 * 1000,
+              tokens_in: 3100,
+              tokens_out: 1600,
+            }),
+          ],
+          history: makeHistory(),
+        }),
+        multi: () => ({
+          label: "Several live sessions with competing priorities",
+          sessions: [
+            makeSession("debug-primary", {
+              title: "Refine live strip",
+              status: {
+                type: "RunningTool",
+                tool_name: "Bash",
+                description: "bun run visual-check",
+              },
+              tokens_in: 18200,
+              tokens_out: 6500,
+            }),
+            makeSession("debug-secondary", {
+              title: "Review settings drift",
+              status: { type: "Processing", description: "Comparing files" },
+              startedOffset: -26 * 60 * 1000,
+              lastOffset: -12 * 1000,
+              tokens_in: 9400,
+              tokens_out: 2700,
+            }),
+            makeSession("debug-waiting", {
+              title: "Waiting for a human answer",
+              status: { type: "WaitingForInput" },
+              startedOffset: -55 * 60 * 1000,
+              lastOffset: -13 * 60 * 1000,
+              tokens_in: 22400,
+              tokens_out: 8200,
+            }),
+          ],
+          history: makeHistory(),
+        }),
+        subagents: () => ({
+          label: "Parent session with mixed subagent states",
+          sessions: [
+            makeSession("debug-primary", {
+              title: "Parallel agent investigation",
+              status: { type: "Processing", description: "Merging findings" },
+              cli_status_text: "Coordinating workers",
+              agents: {
+                "worker-style": makeAgent("worker-style", {
+                  agent_type: "worker",
+                  last_tool_name: "Edit",
+                  last_tool_description: "Adjusting debug controls",
+                  tool_count: 4,
+                }),
+                "explorer-hooks": makeAgent("explorer-hooks", {
+                  agent_type: "explorer",
+                  last_tool_name: "Grep",
+                  last_tool_description: "Mapping hook payloads",
+                  tool_count: 7,
+                }),
+                "worker-done": makeAgent("worker-done", {
+                  agent_type: "worker",
+                  last_tool_name: "Bash",
+                  last_tool_description: "Completed smoke checks",
+                  ended: true,
+                  tool_count: 3,
+                  lastOffset: -9 * 60 * 1000,
+                }),
+              },
+            }),
+          ],
+          history: makeHistory(),
+        }),
+        compacting: () => ({
+          label: "Conversation compacting state",
+          sessions: [
+            makeSession("debug-primary", {
+              title: "Long-running refactor",
+              status: { type: "Compacting" },
+              cli_status_text: "Compacting context",
+              tokens_in: 46200,
+              tokens_out: 18300,
+            }),
+          ],
+          history: makeHistory(),
+        }),
+        anomaly: () => ({
+          label: "Idle anomaly warning state",
+          sessions: [
+            makeSession("debug-primary", {
+              title: "Command may be stuck",
+              status: {
+                type: "Anomaly",
+                idle_seconds: 142,
+                previous_status: {
+                  type: "RunningTool",
+                  tool_name: "Bash",
+                  description: "cargo test",
+                },
+              },
+              tokens_in: 12400,
+              tokens_out: 4200,
+            }),
+          ],
+          history: makeHistory(),
+        }),
+        history: () => ({
+          label: "Dense recent history with no active pressure",
+          sessions: [
+            makeSession("debug-primary", {
+              title: "Idle debug surface",
+              status: { type: "WaitingForInput" },
+              lastOffset: -4 * 60 * 1000,
+              tokens_in: 5600,
+              tokens_out: 2100,
+            }),
+          ],
+          history: makeHistory([
+            {
+              session_id: "history-debug-2",
+              title: "Investigated hook timeouts",
+              cwd: `${REPO_CWD}/src-tauri`,
+              ended_at: nowIso(-34 * 60 * 1000),
+              duration_secs: 1280,
+              tokens_in: 22100,
+              tokens_out: 7700,
+              model: "claude-sonnet-4",
+            },
+            {
+              session_id: "history-debug-3",
+              title: "Tuned live-strip metrics",
+              cwd: `${REPO_CWD}/src`,
+              ended_at: nowIso(-74 * 60 * 1000),
+              duration_secs: 760,
+              tokens_in: 10400,
+              tokens_out: 3900,
+              model: "claude-sonnet-4",
+            },
+          ]),
+        }),
+        bash: () => {
+          const toolInput = { command: "cd src-tauri && cargo test" };
+          return {
+            label: "Standard Bash permission",
+            sessions: [approvalSession("Bash", toolInput, "Bash approval")],
+            history: makeHistory(),
+            interactions: [
+              permissionPayload("Bash", toolInput, {
+                message:
+                  "Claude wants to run focused backend tests before changing the UI.",
+              }),
+            ],
+          };
+        },
+        "risky-bash": () => {
+          const toolInput = {
+            command: "rm -rf ~/Library/Application\\ Support/Orbit/cache/*",
+          };
+          return {
+            label: "High-risk Bash permission",
+            sessions: [
+              approvalSession("Bash", toolInput, "Risky Bash approval"),
+            ],
+            history: makeHistory(),
+            interactions: [
+              permissionPayload("Bash", toolInput, {
+                message:
+                  "Claude wants to clean Orbit cache recursively before a visual check.",
+              }),
+            ],
+          };
+        },
+        edit: () => {
+          const toolInput = {
+            file_path: "src/styles.css",
+            old_string: "background: rgba(255, 255, 255, 0.045);",
+            new_string: "background: rgba(255, 255, 255, 0.06);",
+          };
+          return {
+            label: "Edit permission with file preview",
+            sessions: [approvalSession("Edit", toolInput, "Edit approval")],
+            history: makeHistory(),
+            interactions: [
+              permissionPayload("Edit", toolInput, {
+                message:
+                  "Claude wants to tune the browser debug panel surface color.",
+              }),
+            ],
+          };
+        },
+        question: () => ({
+          label: "AskUserQuestion single-select",
+          sessions: [
+            approvalSession(
+              "AskUserQuestion",
+              {},
+              "Question approval",
+            ),
+          ],
+          history: makeHistory(),
+          interactions: [askQuestionPayload()],
+        }),
+        "multi-question": () => ({
+          label: "AskUserQuestion multi-step and multi-select",
+          sessions: [
+            approvalSession(
+              "AskUserQuestion",
+              {},
+              "Multi-question approval",
+            ),
+          ],
+          history: makeHistory(),
+          interactions: [askQuestionPayload({ multi: true, many: true })],
+        }),
+        elicitation: () => ({
+          label: "MCP elicitation enum choice",
+          sessions: [
+            makeSession("debug-primary", {
+              title: "GitHub elicitation",
+              status: {
+                type: "WaitingForApproval",
+                tool_name: "GitHub",
+                tool_input: {},
+              },
+            }),
+          ],
+          history: makeHistory(),
+          interactions: [elicitationPayload()],
+        }),
+        network: () => {
+          const toolInput = {
+            url: "https://docs.anthropic.com/en/docs/claude-code/hooks",
+            prompt: "Summarize hook payload fields relevant to Orbit.",
+          };
+          return {
+            label: "Network permission",
+            sessions: [
+              approvalSession("WebFetch", toolInput, "Network approval"),
+            ],
+            history: makeHistory(),
+            interactions: [
+              permissionPayload("WebFetch", toolInput, {
+                message:
+                  "Claude wants to fetch external hook documentation for comparison.",
+                url: toolInput.url,
+              }),
+            ],
+          };
+        },
+        mcp: () => {
+          const toolInput = {
+            repo: "lxp/Orbit",
+            title: "UIbar debug surface follow-up",
+            body: "Track polish issues found while testing Orbit debug states.",
+          };
+          return {
+            label: "MCP permission with structured args",
+            sessions: [
+              approvalSession(
+                "mcp__github__create_issue",
+                toolInput,
+                "MCP approval",
+              ),
+            ],
+            history: makeHistory(),
+            interactions: [
+              permissionPayload("mcp__github__create_issue", toolInput, {
+                message:
+                  "Claude wants to create a GitHub issue from the debug findings.",
+                mcp_server_name: "GitHub",
+              }),
+            ],
+          };
+        },
+        queue: () => {
+          const bashInput = { command: "make ffmt" };
+          const editInput = {
+            file_path: "src/debug.html",
+            old_string: "Debug",
+            new_string: "Debug Panel",
+          };
+          return {
+            label: "FIFO queue of mixed interactions",
+            sessions: [
+              approvalSession("Bash", bashInput, "Queued approvals"),
+            ],
+            history: makeHistory(),
+            interactions: [
+              permissionPayload("Bash", bashInput, {
+                prefix: "debug-queue-bash",
+                message: "First queued request: format frontend files.",
+              }),
+              permissionPayload("Edit", editInput, {
+                prefix: "debug-queue-edit",
+                message: "Second queued request: edit debug copy.",
+              }),
+              askQuestionPayload({ multi: true }),
+            ],
+          };
+        },
+      };
+
+      function renderDiagnostics() {
+        debugLog.textContent = JSON.stringify(
+          {
+            activeScenario,
+            pendingRequestIds: [...pendingRequestIds],
+            sessions: sessions.map((session) => ({
+              id: session.id,
+              title: session.title,
+              status: session.status?.type,
+              last_event_at: session.last_event_at,
+            })),
+            historyCount: history.length,
+            invokeCalls: invokeCalls.slice(-12),
+            emittedEvents: emittedEvents.slice(-12),
+          },
+          null,
+          2,
+        );
+      }
+
+      function setDebugState(text) {
+        debugStateLine.textContent = text;
+      }
+
+      function updateScenarioButtons() {
+        scenarioButtons.forEach((button) => {
+          button.classList.toggle(
+            "is-active",
+            button.dataset.scenario === activeScenario,
+          );
+        });
+      }
+
+      function emit(name, payload) {
+        emittedEvents.push({ name, payload, ts: nowIso() });
+        renderDiagnostics();
+        const callbacks = listeners.get(name) || [];
+        callbacks.forEach((callback) => callback({ payload }));
+      }
+
+      function emitSession(session) {
+        knownSessionIds.add(session.id);
+        emit("session-update", clone(session));
+      }
+
+      function clearPendingInteractions() {
+        for (const requestId of pendingRequestIds) {
+          emit("interaction-timeout", requestId);
+        }
+        pendingRequestIds.clear();
+      }
+
+      function replaceSessions(nextSessions) {
+        const nextIds = new Set(nextSessions.map((session) => session.id));
+        for (const session of sessions) {
+          if (!nextIds.has(session.id)) {
+            emitSession({
+              ...session,
+              status: { type: "Ended" },
+              last_event_at: nowIso(),
+            });
+          }
+        }
+
+        sessions = nextSessions.map((session) => clone(session));
+        sessions.forEach(emitSession);
+      }
+
+      function emitInteractions(interactions = []) {
+        interactions.forEach((interaction) => {
+          pendingRequestIds.add(interaction.request_id);
+          emit("interaction-request", clone(interaction));
+        });
+      }
+
+      function applyScenario(name) {
+        const factory = scenarioFactories[name] || scenarioFactories.baseline;
+        const scenario = factory();
+        activeScenario = name;
+        clearPendingInteractions();
+        history = scenario.history || makeHistory();
+        replaceSessions(scenario.sessions || []);
+        emit("onboarding-state-changed", {
+          type: scenario.onboardingType || "Connected",
+          status_text: scenario.onboardingText || "Connected to Claude Code",
+          can_retry: Boolean(scenario.canRetry),
+        });
+        emit("connection-count", 1);
+        emitInteractions(scenario.interactions);
+        emit("island-hover-enter");
+        updateScenarioButtons();
+        setDebugState(
+          `${scenario.label || name} · ${sessions.length} sessions · ${pendingRequestIds.size} pending`,
+        );
+        renderDiagnostics();
+      }
+
+      function resolveCurrentInteraction() {
+        const [requestId] = pendingRequestIds;
+        if (!requestId) {
+          setDebugState("No pending interaction to resolve");
+          return;
+        }
+        pendingRequestIds.delete(requestId);
+        emit("interaction-resolved", requestId);
+        setDebugState(`Resolved ${requestId}`);
+      }
+
+      function timeoutCurrentInteraction() {
+        const [requestId] = pendingRequestIds;
+        if (!requestId) {
+          setDebugState("No pending interaction to timeout");
+          return;
+        }
+        pendingRequestIds.delete(requestId);
+        emit("interaction-timeout", requestId);
+        setDebugState(`Timed out ${requestId}`);
+      }
+
+      function addQueuedInteraction() {
+        const payload = permissionPayload(
+          "Bash",
+          { command: "cargo clippy --all-targets --all-features -- -D warnings" },
+          {
+            prefix: "debug-added-queue",
+            message: "Additional queued check injected from the debug panel.",
+          },
+        );
+        pendingRequestIds.add(payload.request_id);
+        emit("interaction-request", payload);
+        setDebugState(`Queued ${payload.request_id}`);
+      }
+
+      const initialScenario = scenarioFactories.baseline();
+      sessions = initialScenario.sessions;
+      history = initialScenario.history;
+      sessions.forEach((session) => knownSessionIds.add(session.id));
+
+      window.__TAURI__ = {
+        event: {
+          listen(name, callback) {
+            if (!listeners.has(name)) {
+              listeners.set(name, []);
+            }
+            listeners.get(name).push(callback);
+            return Promise.resolve(() => {
+              const callbacks = listeners.get(name) || [];
+              listeners.set(
+                name,
+                callbacks.filter((item) => item !== callback),
+              );
+            });
+          },
+        },
+        core: {
+          invoke(command, args) {
+            invokeCalls.push({ command, args, ts: nowIso() });
+            renderDiagnostics();
+
+            switch (command) {
+              case "get_notch_info":
+                return Promise.resolve(clone(notchInfo));
+              case "get_onboarding_state":
+                return Promise.resolve({
+                  type: "Connected",
+                  status_text: "Connected to Claude Code",
+                });
+              case "get_sessions":
+                return Promise.resolve(clone(sessions));
+              case "get_history":
+                return Promise.resolve(clone(history));
+              case "set_compact_frame":
+              case "set_expanded_frame":
+              case "collapse_window":
+              case "resume_session":
+              case "retry_onboarding_install":
+                return Promise.resolve(null);
+              case "permission_decision": {
+                const requestId = args?.permId;
+                if (requestId) {
+                  pendingRequestIds.delete(requestId);
+                  emit("interaction-resolved", requestId);
+                  setDebugState(`Submitted ${args.decision} for ${requestId}`);
+                }
+                return Promise.resolve(null);
+              }
+              default:
+                return Promise.reject(
+                  new Error(`Unexpected debug invoke: ${command}`),
+                );
+            }
+          },
+        },
+      };
+
+      window.__ORBIT_DEBUG__ = {
+        emit,
+        applyScenario,
+        sessions: () => clone(sessions),
+        history: () => clone(history),
+        invokeCalls,
+        emittedEvents,
+        pendingRequestIds,
+      };
+
+      document
+        .querySelector(".debug-panel")
+        .addEventListener("click", (event) => {
+          const scenarioButton = event.target.closest("button[data-scenario]");
+          if (scenarioButton) {
+            applyScenario(scenarioButton.dataset.scenario);
+            return;
+          }
+
+          const button = event.target.closest("button[data-action]");
+          if (!button) return;
+
+          switch (button.dataset.action) {
+            case "expand":
+              emit("island-hover-enter");
+              break;
+            case "collapse":
+              emit("island-hover-leave");
+              window.collapseIsland?.();
+              break;
+            case "resolve-current":
+              resolveCurrentInteraction();
+              break;
+            case "timeout-current":
+              timeoutCurrentInteraction();
+              break;
+            case "add-queued":
+              addQueuedInteraction();
+              break;
+            case "reset":
+              applyScenario("baseline");
+              break;
+          }
+        });
+
+      renderDiagnostics();
+      updateScenarioButtons();
+      await import("./main.js");
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      emit("connection-count", 1);
+      emit("island-hover-enter");
+      setDebugState("Active session with one running subagent");
+    </script>
+  </body>
+</html>

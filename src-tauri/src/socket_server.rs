@@ -1,5 +1,4 @@
 use log::{debug, error, info};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -14,39 +13,7 @@ use crate::state::{
     Session, SessionMap, StatuslineUpdate, TodayStats,
 };
 
-type PendingSpawns = Arc<tokio::sync::Mutex<Vec<(String, String, chrono::DateTime<chrono::Utc>)>>>;
 static INTERACTION_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
-
-fn cleanup_pending_spawns(
-    pending_spawns: &mut Vec<(String, String, chrono::DateTime<chrono::Utc>)>,
-    now: chrono::DateTime<chrono::Utc>,
-) {
-    pending_spawns.retain(|(_, _, ts)| now.signed_duration_since(*ts).num_seconds() <= 30);
-}
-
-fn match_pending_parent(
-    pending_spawns: &mut Vec<(String, String, chrono::DateTime<chrono::Utc>)>,
-    child_session_id: &str,
-    child_cwd: &str,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Option<String> {
-    if child_cwd.is_empty() {
-        return None;
-    }
-
-    let index = pending_spawns.iter().rposition(|(_, cwd, ts)| {
-        cwd == child_cwd && now.signed_duration_since(*ts).num_seconds() <= 10
-    });
-
-    index.and_then(|idx| {
-        let (parent_session_id, _, _) = pending_spawns.remove(idx);
-        if parent_session_id == child_session_id {
-            None
-        } else {
-            Some(parent_session_id)
-        }
-    })
-}
 
 fn interaction_request_id(payload: &HookPayload) -> String {
     if let Some(elicitation_id) = payload.elicitation_id.as_deref()
@@ -206,7 +173,6 @@ pub async fn start(
 ) {
     let socket_path = installer::socket_path();
     info!("[Orbit] Starting socket server on {}", socket_path);
-    let pending_spawns: PendingSpawns = Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
     // Remove stale socket
     let _ = std::fs::remove_file(&socket_path);
@@ -230,22 +196,13 @@ pub async fn start(
                 let handle = app_handle.clone();
                 let conn_count = conn_count.clone();
                 let today_stats = today_stats.clone();
-                let pending_spawns = pending_spawns.clone();
 
                 // Increment connection count
                 let count = conn_count.fetch_add(1, Ordering::Relaxed) + 1;
                 let _ = handle.emit("connection-count", count);
 
                 tauri::async_runtime::spawn(async move {
-                    handle_connection(
-                        stream,
-                        sessions,
-                        pending,
-                        pending_spawns,
-                        &handle,
-                        &today_stats,
-                    )
-                    .await;
+                    handle_connection(stream, sessions, pending, &handle, &today_stats).await;
 
                     // Decrement connection count when done (guard against underflow)
                     let prev = conn_count.load(Ordering::Relaxed);
@@ -272,7 +229,6 @@ async fn handle_connection(
     stream: tokio::net::UnixStream,
     sessions: SessionMap,
     pending: PendingPermissions,
-    pending_spawns: PendingSpawns,
     app_handle: &tauri::AppHandle,
     today_stats: &TodayStats,
 ) {
@@ -324,10 +280,18 @@ async fn handle_connection(
                     update.session_id, update.tokens_in, update.tokens_out, update.cost_usd
                 );
                 let mut sessions_guard = sessions.lock().await;
-                if let Some(session) = sessions_guard.get_mut(&update.session_id) {
-                    session.apply_statusline_update(&update);
-                    let _ = app_handle.emit("session-update", session.clone());
-                }
+                let session = sessions_guard
+                    .entry(update.session_id.clone())
+                    .or_insert_with(|| {
+                        Session::new(
+                            update.session_id.clone(),
+                            update.cwd.clone().unwrap_or_default(),
+                            update.pid,
+                            update.tty.clone(),
+                        )
+                    });
+                session.apply_statusline_update(&update);
+                let _ = app_handle.emit("session-update", session.clone());
                 refresh_today_stats(&sessions_guard, today_stats);
             }
             return;
@@ -373,22 +337,10 @@ async fn handle_connection(
         && payload.notification_type.as_deref() == Some("permission_prompt");
     let is_session_end = payload.hook_event_name == "SessionEnd";
     let is_stop = payload.hook_event_name == "Stop" || payload.hook_event_name == "SubagentStop";
-    let is_task_pre_tool_use =
-        payload.hook_event_name == "PreToolUse" && payload.tool_name.as_deref() == Some("Task");
     let session_id = payload.session_id.clone();
-
-    let parent_for_new_session = {
-        let sessions_guard = sessions.lock().await;
-        if sessions_guard.contains_key(&session_id) {
-            None
-        } else {
-            drop(sessions_guard);
-            let now = chrono::Utc::now();
-            let mut pending_spawns_guard = pending_spawns.lock().await;
-            cleanup_pending_spawns(&mut pending_spawns_guard, now);
-            match_pending_parent(&mut pending_spawns_guard, &session_id, &payload.cwd, now)
-        }
-    };
+    // When payload.agent_id is present, the hook originates from a subagent
+    // inside this session (parent/child relationship is authoritative — not a guess).
+    let is_subagent_event = payload.agent_id.is_some();
 
     if is_session_end {
         info!(
@@ -404,25 +356,23 @@ async fn handle_connection(
     }
 
     // Update session state
-    let mut pending_parent_candidate: Option<(String, String, chrono::DateTime<chrono::Utc>)> =
-        None;
     {
         let mut sessions_guard = sessions.lock().await;
         let session = sessions_guard.entry(session_id.clone()).or_insert_with(|| {
-            let mut session = Session::new(
+            Session::new(
                 session_id.clone(),
                 payload.cwd.clone(),
                 payload.pid,
                 payload.tty.clone(),
-            );
-            session.parent_session_id = parent_for_new_session.clone();
-            session
+            )
         });
-        session.apply_event(&payload);
 
-        if is_task_pre_tool_use {
-            pending_parent_candidate =
-                Some((session.id.clone(), session.cwd.clone(), chrono::Utc::now()));
+        if is_subagent_event {
+            // Subagent event: update only the per-agent record; parent session's
+            // status/tool_count/tokens intentionally unchanged.
+            session.apply_subagent_event(&payload);
+        } else {
+            session.apply_event(&payload);
         }
 
         if session.title.is_none() {
@@ -431,13 +381,6 @@ async fn handle_connection(
 
         // Emit update to frontend
         let _ = app_handle.emit("session-update", session.clone());
-    }
-
-    if let Some(candidate) = pending_parent_candidate {
-        let now = chrono::Utc::now();
-        let mut pending_spawns_guard = pending_spawns.lock().await;
-        cleanup_pending_spawns(&mut pending_spawns_guard, now);
-        pending_spawns_guard.push(candidate);
     }
 
     if is_permission_prompt {
@@ -665,6 +608,11 @@ mod tests {
             pid: None,
             tty: None,
             status: None,
+            title: None,
+            model: None,
+            agent_id: None,
+            agent_type: None,
+            agent_transcript_path: None,
         }
     }
 

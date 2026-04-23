@@ -20,6 +20,8 @@ pub const SOCKET_PATH: &str = "/tmp/orbit.sock";
 pub const SOCKET_PATH_ENV: &str = "ORBIT_SOCKET_PATH";
 const STATUSLINE_STATE_FILE: &str = "statusline-state.json";
 const STATUSLINE_WRAPPER_FILE: &str = "statusline-wrapper.sh";
+const OPENCODE_PLUGIN_FILE: &str = "orbit.js";
+const OPENCODE_PLUGIN_MARKER: &str = "Orbit managed opencode plugin";
 const CLI_BINARY_NAME: &str = "orbit-cli";
 const HELPER_BINARY_NAME: &str = "orbit-helper";
 const FALLBACK_ORBIT_HELPER_PATH: &str = "/Applications/Orbit.app/Contents/MacOS/orbit-helper";
@@ -78,6 +80,506 @@ if [ -n "$ORIGINAL_CMD" ]; then
 
     echo "$INPUT" | /bin/bash -lc "$ORIGINAL_CMD"
 fi
+"#;
+
+/// Global opencode plugin that forwards opencode lifecycle events into Orbit.
+const OPENCODE_PLUGIN_TEMPLATE: &str = r#"// Orbit managed opencode plugin. Do not edit by hand.
+import net from "node:net";
+
+const SOCKET_PATH = process.env.ORBIT_SOCKET_PATH || __ORBIT_SOCKET_PATH__;
+const FIRE_AND_FORGET_TIMEOUT_MS = 1500;
+const INTERACTION_TIMEOUT_MS = 300000;
+const toolCalls = new Map();
+const sessionInfo = new Map();
+const countedStepParts = new Map();
+const sessionTotals = new Map();
+
+function safeObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function numberValue(value) {
+  return Number.isFinite(value) ? Number(value) : 0;
+}
+
+function compact(value, max = 500) {
+  if (value === undefined || value === null) return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length > max ? text.slice(0, max - 3) + "..." : text;
+}
+
+function connectionPayload(payload) {
+  return JSON.stringify({
+    ...payload,
+    cwd: payload.cwd || sessionDirectory(payload.session_id),
+    pid: process.pid,
+    tty: process.env.TTY || null,
+    provider: "opencode",
+    orbit_source: "opencode",
+  }) + "\n";
+}
+
+function sendToOrbit(payload, options = {}) {
+  const waitForResponse = Boolean(options.waitForResponse);
+  const timeoutMs = options.timeoutMs || (waitForResponse ? INTERACTION_TIMEOUT_MS : FIRE_AND_FORGET_TIMEOUT_MS);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let buffer = "";
+
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+
+    const socket = net.createConnection(SOCKET_PATH);
+    const timer = setTimeout(() => {
+      socket.destroy();
+      done(null);
+    }, timeoutMs);
+
+    socket.setEncoding("utf8");
+    socket.on("connect", () => {
+      socket.write(connectionPayload(payload), () => {
+        if (!waitForResponse) {
+          socket.end();
+          done(null);
+        }
+      });
+    });
+    socket.on("data", (chunk) => {
+      buffer += chunk;
+    });
+    socket.on("end", () => {
+      const text = buffer.trim();
+      if (!text) return done(null);
+      try {
+        done(JSON.parse(text));
+      } catch {
+        done(null);
+      }
+    });
+    socket.on("close", () => {
+      if (!waitForResponse) return done(null);
+      const text = buffer.trim();
+      if (!text) return done(null);
+      try {
+        done(JSON.parse(text));
+      } catch {
+        done(null);
+      }
+    });
+    socket.on("error", () => done(null));
+  });
+}
+
+function sessionDirectory(sessionID) {
+  return sessionInfo.get(sessionID)?.directory || process.cwd();
+}
+
+function rememberSession(info) {
+  if (!info?.id) return;
+  sessionInfo.set(info.id, {
+    directory: info.directory || sessionInfo.get(info.id)?.directory || process.cwd(),
+    title: info.title || sessionInfo.get(info.id)?.title || "",
+  });
+}
+
+function modelName(input) {
+  const model = input?.model || input;
+  if (!model) return undefined;
+  const provider = model.providerID || input?.providerID;
+  const id = model.modelID || model.id || input?.modelID;
+  if (provider && id) return `${provider}/${id}`;
+  return id || undefined;
+}
+
+function hook(sessionID, hookEventName, extra = {}) {
+  if (!sessionID) return Promise.resolve(null);
+  return sendToOrbit({
+    session_id: sessionID,
+    hook_event_name: hookEventName,
+    ...extra,
+  });
+}
+
+function textFromParts(parts) {
+  if (!Array.isArray(parts)) return "";
+  return parts
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n")
+    .trim();
+}
+
+function toolKey(sessionID, callID) {
+  return `${sessionID || ""}:${callID || ""}`;
+}
+
+function rememberToolCall(input, args) {
+  if (!input?.sessionID || !input?.callID) return;
+  toolCalls.set(toolKey(input.sessionID, input.callID), {
+    tool: input.tool,
+    args: safeObject(args),
+    cwd: sessionDirectory(input.sessionID),
+    updatedAt: Date.now(),
+  });
+
+  if (toolCalls.size > 200) {
+    const cutoff = Date.now() - 10 * 60 * 1000;
+    for (const [key, value] of toolCalls.entries()) {
+      if (value.updatedAt < cutoff) toolCalls.delete(key);
+    }
+  }
+}
+
+function toolInputForPermission(permission) {
+  const call = toolCalls.get(toolKey(permission.sessionID, permission.tool?.callID));
+  const metadata = safeObject(permission.metadata);
+  const args = safeObject(call?.args);
+  const input = {
+    ...args,
+    ...metadata,
+    permission: permission.permission,
+    patterns: permission.patterns || [],
+    always: permission.always || [],
+  };
+
+  if (metadata.filepath && !input.file_path) input.file_path = metadata.filepath;
+  if (args.filePath && !input.file_path) input.file_path = args.filePath;
+  if (metadata.diff && !input.diff) input.diff = metadata.diff;
+  if (!input.command && typeof args.command === "string") input.command = args.command;
+  if (!input.command && permission.permission === "bash") input.command = (permission.patterns || []).join(" ");
+  return { call, input };
+}
+
+async function handlePermission(client, permission) {
+  if (!permission?.sessionID || !permission?.id) return;
+
+  const { call, input } = toolInputForPermission(permission);
+  const response = await sendToOrbit(
+    {
+      session_id: permission.sessionID,
+      hook_event_name: "PermissionRequest",
+      cwd: call?.cwd || sessionDirectory(permission.sessionID),
+      tool_name: call?.tool || permission.permission,
+      tool_input: input,
+      tool_use_id: permission.tool?.callID || permission.id,
+      message: `${permission.permission}: ${(permission.patterns || []).join(", ")}`,
+    },
+    { waitForResponse: true },
+  );
+
+  const behavior = response?.hookSpecificOutput?.decision?.behavior;
+  if (behavior === "allow") {
+    await replyPermission(client, permission, "once");
+  } else if (behavior === "deny") {
+    await replyPermission(client, permission, "reject");
+  }
+}
+
+async function replyPermission(client, permission, reply) {
+  if (client.permission?.reply) {
+    await client.permission.reply({ requestID: permission.id, reply }).catch(() => {});
+    return;
+  }
+
+  if (client.postSessionIdPermissionsPermissionId) {
+    await client
+      .postSessionIdPermissionsPermissionId({
+        path: { id: permission.sessionID, permissionID: permission.id },
+        body: { response: reply },
+      })
+      .catch(() => {});
+  }
+}
+
+function questionsForOrbit(request) {
+  return (request.questions || []).map((question) => ({
+    question: question.question,
+    header: question.header,
+    options: (question.options || []).map((option) => ({
+      label: option.label,
+      description: option.description || "",
+    })),
+    multiSelect: Boolean(question.multiple),
+  }));
+}
+
+function answersForOpencode(request, answersByQuestion) {
+  return (request.questions || []).map((question) => {
+    const value = answersByQuestion?.[question.question];
+    if (Array.isArray(value)) return value.map(String);
+    if (value === undefined || value === null || value === "") return [];
+    return [String(value)];
+  });
+}
+
+async function handleQuestion(client, request) {
+  if (!request?.sessionID || !request?.id) return;
+
+  const response = await sendToOrbit(
+    {
+      session_id: request.sessionID,
+      hook_event_name: "PermissionRequest",
+      cwd: sessionDirectory(request.sessionID),
+      tool_name: "AskUserQuestion",
+      tool_input: { questions: questionsForOrbit(request) },
+      tool_use_id: request.tool?.callID || request.id,
+      message: "OpenCode question",
+    },
+    { waitForResponse: true },
+  );
+
+  const decision = response?.hookSpecificOutput?.decision;
+  if (decision?.behavior === "allow") {
+    const answers = answersForOpencode(request, decision.updatedInput?.answers);
+    await client.question?.reply?.({ requestID: request.id, answers }).catch(() => {});
+  } else if (decision?.behavior === "deny") {
+    await client.question?.reject?.({ requestID: request.id }).catch(() => {});
+  }
+}
+
+function addUsage(sessionID, part, model) {
+  if (!sessionID || !part?.id || part.type !== "step-finish") return;
+  if (countedStepParts.has(part.id)) return;
+  countedStepParts.set(part.id, true);
+
+  const tokens = part.tokens || {};
+  const cache = tokens.cache || {};
+  const input = numberValue(tokens.input) + numberValue(cache.read) + numberValue(cache.write);
+  const output = numberValue(tokens.output) + numberValue(tokens.reasoning);
+  const cost = numberValue(part.cost);
+  const totals = sessionTotals.get(sessionID) || { tokensIn: 0, tokensOut: 0, costUsd: 0, model: undefined };
+  totals.tokensIn += input;
+  totals.tokensOut += output;
+  totals.costUsd += cost;
+  totals.model = model || totals.model;
+  sessionTotals.set(sessionID, totals);
+
+  sendToOrbit({
+    type: "StatuslineUpdate",
+    session_id: sessionID,
+    cwd: sessionDirectory(sessionID),
+    title: sessionInfo.get(sessionID)?.title,
+    tokens_in: totals.tokensIn,
+    tokens_out: totals.tokensOut,
+    cost_usd: totals.costUsd,
+    model: totals.model,
+    status: "Working",
+  });
+}
+
+function handleEventUsage(event) {
+  const props = event?.properties || {};
+  if (event?.type === "message.updated" && props.info?.role === "assistant") {
+    const info = props.info;
+    if (info.modelID || info.providerID) {
+      const totals = sessionTotals.get(info.sessionID) || { tokensIn: 0, tokensOut: 0, costUsd: 0, model: undefined };
+      totals.model = modelName(info) || totals.model;
+      sessionTotals.set(info.sessionID, totals);
+    }
+  }
+
+  if (event?.type === "message.part.updated") {
+    addUsage(props.sessionID, props.part);
+  }
+}
+
+function responseData(response, fallback) {
+  if (response && typeof response === "object" && "data" in response) return response.data ?? fallback;
+  return response ?? fallback;
+}
+
+async function callClient(fn, directParams = {}, legacyOptions = {}) {
+  if (typeof fn !== "function") return null;
+  try {
+    return responseData(await fn(directParams), null);
+  } catch {
+    try {
+      return responseData(await fn(legacyOptions), null);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function sessionTitle(info) {
+  return info?.title || info?.slug || "";
+}
+
+function sessionFields(sessionID, info, directory) {
+  return {
+    cwd: info?.directory || directory || sessionDirectory(sessionID),
+    title: sessionTitle(info),
+  };
+}
+
+async function syncSessionStatus(sessionID, status, info, directory) {
+  if (!sessionID || !status?.type) return;
+  rememberSession(info || { id: sessionID, directory });
+  const fields = sessionFields(sessionID, info, directory);
+
+  if (status.type === "idle") {
+    await hook(sessionID, "SessionStart", {
+      ...fields,
+      status: "Idle",
+    });
+  } else if (status.type === "busy") {
+    await hook(sessionID, "UserPromptSubmit", {
+      ...fields,
+      status: "Thinking",
+    });
+  } else if (status.type === "retry") {
+    await hook(sessionID, "Notification", {
+      ...fields,
+      notification_type: "retry",
+      message: status.message,
+      status: `Retry ${status.attempt}`,
+    });
+  }
+}
+
+async function syncOpenCodeSnapshot(client, directory) {
+  const query = directory ? { directory } : {};
+  const [sessionList, statusMap, permissions, questions] = await Promise.all([
+    callClient(client.session?.list?.bind(client.session), { ...query, limit: 50 }, { query: { ...query, limit: 50 } }),
+    callClient(client.session?.status?.bind(client.session), query, { query }),
+    callClient(client.permission?.list?.bind(client.permission), query, { query }),
+    callClient(client.question?.list?.bind(client.question), query, { query }),
+  ]);
+
+  const sessions = Array.isArray(sessionList) ? sessionList : [];
+  const byID = new Map(sessions.map((info) => [info.id, info]));
+  const statuses = safeObject(statusMap);
+
+  for (const [sessionID, status] of Object.entries(statuses)) {
+    await syncSessionStatus(sessionID, status, byID.get(sessionID), directory);
+  }
+
+  for (const permission of Array.isArray(permissions) ? permissions : []) {
+    void handlePermission(client, permission);
+  }
+
+  for (const question of Array.isArray(questions) ? questions : []) {
+    void handleQuestion(client, question);
+  }
+}
+
+export const OrbitPlugin = async ({ client, directory }) => {
+  void syncOpenCodeSnapshot(client, directory);
+
+  return {
+    "chat.message": async (input, output) => {
+      const sessionID = input.sessionID || output?.message?.sessionID;
+      if (!sessionID) return;
+      const prompt = textFromParts(output?.parts);
+      await hook(sessionID, "UserPromptSubmit", {
+        cwd: directory || sessionDirectory(sessionID),
+        message: prompt,
+        title: prompt,
+        model: modelName(input),
+        status: "Thinking",
+      });
+    },
+
+    "tool.execute.before": async (input, output) => {
+      rememberToolCall(input, output?.args);
+      await hook(input.sessionID, "PreToolUse", {
+        cwd: sessionDirectory(input.sessionID),
+        tool_name: input.tool,
+        tool_input: output?.args || {},
+        tool_use_id: input.callID,
+        status: `Running ${input.tool}`,
+      });
+    },
+
+    "tool.execute.after": async (input, output) => {
+      await hook(input.sessionID, "PostToolUse", {
+        cwd: sessionDirectory(input.sessionID),
+        tool_name: input.tool,
+        tool_input: input.args || {},
+        tool_use_id: input.callID,
+        tool_response: {
+          title: output?.title,
+          output: compact(output?.output),
+          metadata: output?.metadata,
+        },
+        status: "Thinking",
+      });
+    },
+
+    "experimental.session.compacting": async (input) => {
+      await hook(input.sessionID, "PreCompact", {
+        cwd: sessionDirectory(input.sessionID),
+        status: "Compacting",
+      });
+    },
+
+    event: async ({ event }) => {
+      const type = event?.type;
+      const props = event?.properties || {};
+      handleEventUsage(event);
+
+      if (type === "session.created") {
+        rememberSession(props.info);
+        await hook(props.sessionID, "SessionStart", {
+          cwd: props.info?.directory || directory,
+          title: sessionTitle(props.info),
+          status: "Idle",
+        });
+        return;
+      }
+
+      if (type === "session.updated") {
+        rememberSession(props.info);
+        return;
+      }
+
+      if (type === "session.deleted") {
+        await hook(props.sessionID || props.info?.id, "SessionEnd", {
+          cwd: props.info?.directory || directory,
+          status: "Ended",
+        });
+        return;
+      }
+
+      if (type === "session.status") {
+        await syncSessionStatus(props.sessionID, props.status, sessionInfo.get(props.sessionID), directory);
+        return;
+      }
+
+      if (type === "session.idle") {
+        await hook(props.sessionID, "Stop", {
+          cwd: sessionDirectory(props.sessionID),
+          status: "Idle",
+        });
+        return;
+      }
+
+      if (type === "session.error") {
+        await hook(props.sessionID, "Notification", {
+          cwd: sessionDirectory(props.sessionID),
+          notification_type: "error",
+          message: compact(props.error?.data?.message || props.error?.message || props.error),
+          status: "Error",
+        });
+        return;
+      }
+
+      if (type === "permission.asked") {
+        await handlePermission(client, props);
+        return;
+      }
+
+      if (type === "question.asked") {
+        await handleQuestion(client, props);
+      }
+    },
+  };
+};
 "#;
 
 /// Tracks the state of a statusline installation
@@ -208,6 +710,29 @@ pub enum InstallState {
     Orphaned,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ManagedFileState {
+    Current,
+    Missing,
+    Drift,
+    Conflict(String),
+}
+
+fn combine_install_states(
+    claude_state: InstallState,
+    opencode_state: ManagedFileState,
+) -> InstallState {
+    match claude_state {
+        InstallState::OrbitInstalled => match opencode_state {
+            ManagedFileState::Current => InstallState::OrbitInstalled,
+            ManagedFileState::Missing => InstallState::NotInstalled,
+            ManagedFileState::Drift => InstallState::DriftDetected,
+            ManagedFileState::Conflict(path) => InstallState::OtherTool(path),
+        },
+        other => other,
+    }
+}
+
 /// Check the current installation state without modifying anything
 pub fn check_install_state(orbit_helper_path: &str) -> Result<InstallState, InstallError> {
     let settings_path = get_claude_settings_path()
@@ -230,19 +755,18 @@ pub fn check_install_state(orbit_helper_path: &str) -> Result<InstallState, Inst
     let current_command = get_statusline_command(&settings).map(str::to_string);
     let desired_hook_command = helper_hook_command(orbit_helper_path);
 
-    // Check if we have state first - this determines if Orbit was ever installed
-    if let Some(state) = state {
+    let claude_state = if let Some(state) = state {
         // We have state file - check if statusLine still points to our wrapper
         if current_command.as_deref() == Some(state.managed_command.as_str()) {
             // statusLine matches our managed command
             if !wrapper_path.exists() {
-                Ok(InstallState::Orphaned)
+                InstallState::Orphaned
             } else if !settings_have_required_hook_commands(&settings, &desired_hook_command)
                 || state.hook_command.as_deref() != Some(desired_hook_command.as_str())
             {
-                Ok(InstallState::NotInstalled)
+                InstallState::NotInstalled
             } else {
-                Ok(InstallState::OrbitInstalled)
+                InstallState::OrbitInstalled
             }
         } else {
             // statusLine has changed from our managed command
@@ -250,13 +774,13 @@ pub fn check_install_state(orbit_helper_path: &str) -> Result<InstallState, Inst
             if let Some(cmd) = current_command {
                 if cmd == managed_command {
                     // This shouldn't happen due to the check above, but just in case
-                    Ok(InstallState::Orphaned)
+                    InstallState::Orphaned
                 } else {
-                    Ok(InstallState::DriftDetected)
+                    InstallState::DriftDetected
                 }
             } else {
                 // statusLine was removed entirely
-                Ok(InstallState::DriftDetected)
+                InstallState::DriftDetected
             }
         }
     } else {
@@ -264,20 +788,23 @@ pub fn check_install_state(orbit_helper_path: &str) -> Result<InstallState, Inst
         match classify_statusline(&settings, &managed_command) {
             StatusLineConfig::OrbitOrphaned => {
                 // Settings point to our wrapper but no state - truly orphaned
-                Ok(InstallState::Orphaned)
+                InstallState::Orphaned
             }
             StatusLineConfig::Unsupported => {
                 // Something else is using statusLine
                 if let Some(cmd) = current_command {
-                    Ok(InstallState::OtherTool(cmd))
+                    InstallState::OtherTool(cmd)
                 } else {
-                    Ok(InstallState::OtherTool("unknown".to_string()))
+                    InstallState::OtherTool("unknown".to_string())
                 }
             }
-            StatusLineConfig::StandardCommand { .. } => Ok(InstallState::NotInstalled),
-            StatusLineConfig::Absent => Ok(InstallState::NotInstalled),
+            StatusLineConfig::StandardCommand { .. } => InstallState::NotInstalled,
+            StatusLineConfig::Absent => InstallState::NotInstalled,
         }
-    }
+    };
+
+    let opencode_state = check_opencode_plugin_state().map_err(InstallError::Other)?;
+    Ok(combine_install_states(claude_state, opencode_state))
 }
 
 /// Attempt silent installation (for GUI auto-install)
@@ -286,6 +813,15 @@ pub fn silent_install(orbit_cli_path: &str) -> Result<(), InstallError> {
 
     let settings_path = get_claude_settings_path()
         .map_err(|e| InstallError::Other(format!("Failed to get settings path: {}", e)))?;
+    let opencode_plugin_path = get_opencode_plugin_path()
+        .map_err(|e| InstallError::Other(format!("Failed to get OpenCode plugin path: {}", e)))?;
+    let opencode_plugin = render_opencode_plugin();
+    let opencode_plugin_was_current = opencode_plugin_path.exists()
+        && read_text_if_exists(&opencode_plugin_path)
+            .ok()
+            .flatten()
+            .as_deref()
+            == Some(opencode_plugin.as_str());
 
     with_file_lock(&settings_path, || {
         let current_settings = read_settings(&settings_path)
@@ -293,14 +829,25 @@ pub fn silent_install(orbit_cli_path: &str) -> Result<(), InstallError> {
         ensure_settings_object(&current_settings)
             .map_err(|e| InstallError::Other(format!("Invalid settings: {}", e)))?;
 
+        ensure_opencode_plugin_installable(&opencode_plugin_path, &opencode_plugin, false)
+            .map_err(InstallError::from_io_string)?;
+
         let prepared = prepare_install(current_settings.clone(), orbit_cli_path, &hook_command)
             .map_err(InstallError::from_io_string)?;
 
         write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script)
             .map_err(InstallError::from_io_string)?;
 
+        if let Err(e) = write_opencode_plugin(&opencode_plugin_path, &opencode_plugin) {
+            let _ = remove_file_if_exists(&prepared.wrapper_path);
+            return Err(InstallError::from_io_string(e));
+        }
+
         if let Err(e) = write_settings(&settings_path, &prepared.settings) {
             let _ = remove_file_if_exists(&prepared.wrapper_path);
+            if !opencode_plugin_was_current {
+                let _ = remove_file_if_exists(&opencode_plugin_path);
+            }
             return Err(InstallError::from_io_string(e));
         }
 
@@ -309,6 +856,9 @@ pub fn silent_install(orbit_cli_path: &str) -> Result<(), InstallError> {
             let _ = write_settings(&settings_path, &current_settings);
             let _ = remove_file_if_exists(&prepared.wrapper_path);
             let _ = remove_file_if_exists(&state_path);
+            if !opencode_plugin_was_current {
+                let _ = remove_file_if_exists(&opencode_plugin_path);
+            }
             return Err(InstallError::from_io_string(e));
         }
 
@@ -327,6 +877,15 @@ pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
 
     let settings_path = get_claude_settings_path()
         .map_err(|e| InstallError::Other(format!("Failed to get settings path: {}", e)))?;
+    let opencode_plugin_path = get_opencode_plugin_path()
+        .map_err(|e| InstallError::Other(format!("Failed to get OpenCode plugin path: {}", e)))?;
+    let opencode_plugin = render_opencode_plugin();
+    let opencode_plugin_was_current = opencode_plugin_path.exists()
+        && read_text_if_exists(&opencode_plugin_path)
+            .ok()
+            .flatten()
+            .as_deref()
+            == Some(opencode_plugin.as_str());
     let managed_command = get_statusline_wrapper_path()
         .map_err(|e| InstallError::Other(format!("Failed to get wrapper path: {}", e)))?
         .to_string_lossy()
@@ -337,6 +896,9 @@ pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
             .map_err(|e| InstallError::Other(format!("Failed to read settings: {}", e)))?;
         ensure_settings_object(&current_settings)
             .map_err(|e| InstallError::Other(format!("Invalid settings: {}", e)))?;
+
+        ensure_opencode_plugin_installable(&opencode_plugin_path, &opencode_plugin, true)
+            .map_err(InstallError::from_io_string)?;
 
         // Backup before any mutation
         backup_settings(&current_settings)?;
@@ -377,8 +939,19 @@ pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
             return Err(InstallError::from_io_string(e));
         }
 
+        if let Err(e) = write_opencode_plugin(&opencode_plugin_path, &opencode_plugin) {
+            let _ = remove_file_if_exists(&prepared.wrapper_path);
+            if let Some(ref st) = old_state {
+                let _ = write_statusline_state(&state_path, st);
+            }
+            return Err(InstallError::from_io_string(e));
+        }
+
         if let Err(e) = write_settings(&settings_path, &prepared.settings) {
             let _ = remove_file_if_exists(&prepared.wrapper_path);
+            if !opencode_plugin_was_current {
+                let _ = remove_file_if_exists(&opencode_plugin_path);
+            }
             if let Some(ref st) = old_state {
                 let _ = write_statusline_state(&state_path, st);
             }
@@ -388,6 +961,9 @@ pub fn silent_force_install(orbit_cli_path: &str) -> Result<(), InstallError> {
         if let Err(e) = write_statusline_state(&state_path, &prepared.state) {
             let _ = write_settings(&settings_path, &current_settings);
             let _ = remove_file_if_exists(&prepared.wrapper_path);
+            if !opencode_plugin_was_current {
+                let _ = remove_file_if_exists(&opencode_plugin_path);
+            }
             if let Some(ref st) = old_state {
                 let _ = write_statusline_state(&state_path, st);
             } else {
@@ -422,6 +998,8 @@ fn backup_settings(settings: &Value) -> Result<(), InstallError> {
 pub fn silent_uninstall(force: bool) -> Result<(), InstallError> {
     let settings_path = get_claude_settings_path()
         .map_err(|e| InstallError::Other(format!("Failed to get settings path: {}", e)))?;
+    let opencode_plugin_path = get_opencode_plugin_path()
+        .map_err(|e| InstallError::Other(format!("Failed to get OpenCode plugin path: {}", e)))?;
 
     let settings_exists = settings_path.exists();
 
@@ -455,6 +1033,9 @@ pub fn silent_uninstall(force: bool) -> Result<(), InstallError> {
         for path in &prepared.files_to_remove {
             remove_file_if_exists(path).map_err(InstallError::Other)?;
         }
+
+        remove_opencode_plugin_if_managed(&opencode_plugin_path, force)
+            .map_err(InstallError::Other)?;
 
         Ok(())
     })
@@ -690,6 +1271,14 @@ pub fn write_settings(path: &Path, settings: &Value) -> Result<(), String> {
     let pretty = serde_json::to_string_pretty(settings)
         .map_err(|e| format!("failed to serialize settings: {}", e))?;
     atomic_write(path, pretty.as_bytes())
+}
+
+fn read_text_if_exists(path: &Path) -> Result<Option<String>, String> {
+    match fs::read_to_string(path) {
+        Ok(content) => Ok(Some(content)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("failed to read {}: {}", path.display(), e)),
+    }
 }
 
 /// Atomic file write using temp file + rename
@@ -946,6 +1535,72 @@ pub fn write_wrapper_script(path: &Path, script: &str) -> Result<(), String> {
     })
 }
 
+fn write_opencode_plugin(path: &Path, script: &str) -> Result<(), String> {
+    atomic_write(path, script.as_bytes())
+}
+
+fn ensure_opencode_plugin_installable(
+    path: &Path,
+    expected: &str,
+    force: bool,
+) -> Result<(), String> {
+    let Some(current) = read_text_if_exists(path)? else {
+        return Ok(());
+    };
+
+    if current == expected {
+        return Ok(());
+    }
+
+    if current.contains(OPENCODE_PLUGIN_MARKER) {
+        if force {
+            return Ok(());
+        }
+        return Err(format!(
+            "OpenCode Orbit plugin drift detected at {}; retry from Orbit to repair it",
+            path.display()
+        ));
+    }
+
+    Err(format!(
+        "OpenCode plugin path {} already exists and is not managed by Orbit",
+        path.display()
+    ))
+}
+
+fn check_opencode_plugin_state() -> Result<ManagedFileState, String> {
+    let path = get_opencode_plugin_path()?;
+    let expected = render_opencode_plugin();
+    let Some(current) = read_text_if_exists(&path)? else {
+        return Ok(ManagedFileState::Missing);
+    };
+
+    if current == expected {
+        return Ok(ManagedFileState::Current);
+    }
+
+    if current.contains(OPENCODE_PLUGIN_MARKER) {
+        return Ok(ManagedFileState::Drift);
+    }
+
+    Ok(ManagedFileState::Conflict(
+        path.to_string_lossy().to_string(),
+    ))
+}
+
+fn remove_opencode_plugin_if_managed(path: &Path, _force: bool) -> Result<(), String> {
+    let Some(current) = read_text_if_exists(path)? else {
+        return Ok(());
+    };
+
+    let expected = render_opencode_plugin();
+    if current == expected || current.contains(OPENCODE_PLUGIN_MARKER) {
+        return remove_file_if_exists(path);
+    }
+
+    Ok(())
+}
+
 /// Remove file if it exists
 pub fn remove_file_if_exists(path: &Path) -> Result<(), String> {
     match fs::remove_file(path) {
@@ -993,6 +1648,28 @@ fn resolve_home_dir() -> Result<PathBuf, String> {
 
 fn get_orbit_dir() -> Result<PathBuf, String> {
     Ok(resolve_home_dir()?.join(".orbit"))
+}
+
+fn get_opencode_config_dir() -> Result<PathBuf, String> {
+    if let Ok(path) = std::env::var("OPENCODE_CONFIG_DIR")
+        && !path.trim().is_empty()
+    {
+        return Ok(PathBuf::from(path));
+    }
+
+    if let Ok(path) = std::env::var("XDG_CONFIG_HOME")
+        && !path.trim().is_empty()
+    {
+        return Ok(PathBuf::from(path).join("opencode"));
+    }
+
+    Ok(resolve_home_dir()?.join(".config").join("opencode"))
+}
+
+fn get_opencode_plugin_path() -> Result<PathBuf, String> {
+    Ok(get_opencode_config_dir()?
+        .join("plugins")
+        .join(OPENCODE_PLUGIN_FILE))
 }
 
 /// Get path to statusline state file
@@ -1046,6 +1723,12 @@ fn render_wrapper_script(orbit_cli_path: &str, original_command: Option<&str>) -
             "__ORBIT_ORIGINAL_CMD__",
             &shell_single_quote(original_command.unwrap_or("")),
         )
+}
+
+fn render_opencode_plugin() -> String {
+    let socket_path_json =
+        serde_json::to_string(&socket_path()).unwrap_or_else(|_| format!("\"{}\"", SOCKET_PATH));
+    OPENCODE_PLUGIN_TEMPLATE.replace("__ORBIT_SOCKET_PATH__", &socket_path_json)
 }
 
 fn original_statusline_command(state: &StatuslineState) -> Option<&str> {
@@ -1258,13 +1941,17 @@ mod tests {
 
         let orbit_helper = "/Applications/Orbit.app/Contents/MacOS/orbit-helper".to_string();
         let hook_command = format!("{} hook", orbit_helper);
+        let opencode_plugin_path = get_opencode_plugin_path()?;
+        let opencode_plugin = render_opencode_plugin();
 
         with_file_lock(&settings_path, || {
             let current_settings = read_settings(&settings_path)?;
             ensure_settings_object(&current_settings)?;
+            ensure_opencode_plugin_installable(&opencode_plugin_path, &opencode_plugin, false)?;
             let prepared = prepare_install(current_settings.clone(), &orbit_helper, &hook_command)?;
 
             write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script)?;
+            write_opencode_plugin(&opencode_plugin_path, &opencode_plugin)?;
             write_settings(&settings_path, &prepared.settings)?;
             write_statusline_state(&home.state_path(), &prepared.state)?;
             Ok(())
@@ -1281,10 +1968,13 @@ mod tests {
 
         let orbit_helper = "/Applications/Orbit.app/Contents/MacOS/orbit-helper".to_string();
         let hook_command = format!("{} hook", orbit_helper);
+        let opencode_plugin_path = get_opencode_plugin_path()?;
+        let opencode_plugin = render_opencode_plugin();
 
         with_file_lock(&settings_path, || {
             let current_settings = read_settings(&settings_path)?;
             ensure_settings_object(&current_settings)?;
+            ensure_opencode_plugin_installable(&opencode_plugin_path, &opencode_plugin, true)?;
 
             let state_path = home.state_path();
             let _ = remove_file_if_exists(&state_path);
@@ -1293,6 +1983,7 @@ mod tests {
                 prepare_install_force(current_settings.clone(), &orbit_helper, &hook_command)?;
 
             write_wrapper_script(&prepared.wrapper_path, &prepared.wrapper_script)?;
+            write_opencode_plugin(&opencode_plugin_path, &opencode_plugin)?;
             write_settings(&settings_path, &prepared.settings)?;
             write_statusline_state(&state_path, &prepared.state)?;
             Ok(())
@@ -1310,6 +2001,7 @@ mod tests {
                 return Ok(());
             }
 
+            let opencode_plugin_path = get_opencode_plugin_path()?;
             let mut settings_to_write = prepared.settings.clone();
             let stale_hook_commands =
                 collect_hook_commands_for_cleanup(prepared.state.as_ref(), &settings_to_write);
@@ -1318,6 +2010,7 @@ mod tests {
             for path in &prepared.files_to_remove {
                 remove_file_if_exists(path)?;
             }
+            remove_opencode_plugin_if_managed(&opencode_plugin_path, force)?;
             Ok(())
         })
         .map_err(|e: InstallError| e.to_string())
@@ -1755,6 +2448,8 @@ mod tests {
         assert_eq!(installed_command, home.wrapper_path().to_string_lossy());
         assert!(home.wrapper_path().exists());
         assert!(home.state_path().exists());
+        let opencode_plugin_path = get_opencode_plugin_path().unwrap();
+        assert!(opencode_plugin_path.exists());
 
         run_uninstall_for_test(&home, false).unwrap();
 
@@ -1762,6 +2457,7 @@ mod tests {
         assert_eq!(restored, original_settings);
         assert!(!home.wrapper_path().exists());
         assert!(!home.state_path().exists());
+        assert!(!opencode_plugin_path.exists());
     }
 
     #[test]
@@ -1976,6 +2672,46 @@ mod tests {
         let state =
             check_install_state("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
         assert_eq!(state, InstallState::OrbitInstalled);
+    }
+
+    #[test]
+    fn install_writes_global_opencode_plugin() {
+        let home = TestHome::new();
+        run_install_for_test(&home, json!({})).unwrap();
+
+        let plugin_path = get_opencode_plugin_path().unwrap();
+        let plugin = fs::read_to_string(plugin_path).unwrap();
+
+        assert!(plugin.contains(OPENCODE_PLUGIN_MARKER));
+        assert!(plugin.contains("tool.execute.before"));
+        assert!(plugin.contains("permission.asked"));
+        assert!(plugin.contains("question.asked"));
+    }
+
+    #[test]
+    fn check_install_state_detects_missing_opencode_plugin_as_not_installed() {
+        let home = TestHome::new();
+        run_install_for_test(&home, json!({})).unwrap();
+        remove_file_if_exists(&get_opencode_plugin_path().unwrap()).unwrap();
+
+        let state =
+            check_install_state("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
+        assert_eq!(state, InstallState::NotInstalled);
+    }
+
+    #[test]
+    fn check_install_state_detects_opencode_plugin_conflict() {
+        let home = TestHome::new();
+        run_install_for_test(&home, json!({})).unwrap();
+        let plugin_path = get_opencode_plugin_path().unwrap();
+        atomic_write(&plugin_path, b"export const OtherPlugin = async () => ({})").unwrap();
+
+        let state =
+            check_install_state("/Applications/Orbit.app/Contents/MacOS/orbit-helper").unwrap();
+        assert_eq!(
+            state,
+            InstallState::OtherTool(plugin_path.to_string_lossy().to_string())
+        );
     }
 
     #[test]

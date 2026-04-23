@@ -26,10 +26,10 @@ let sessionTree = null;
 let onboardingState = null;
 let onboardingRetryPending = false;
 let collapseDebounceTimer = null;
-let wantExpanded = false; // 鼠标期望状态，动画结束后据此对账
+let wantExpanded = false; // Desired hover state, reconciled after animations finish.
 let hoverInside = false;
-const COLLAPSE_DELAY = 200; // ms, hover 离开后延迟收起防抖
-let cachedHistory = null; // 预取的 history，expand 时直接渲染避免 IPC 延迟
+const COLLAPSE_DELAY = 200; // ms, debounce collapse after hover leaves.
+let cachedHistory = null; // Prefetched history to avoid IPC delay during expand.
 let lastExpandedFrame = { width: null, height: null };
 let lastCompactFrameHeight = null;
 let compactFrameUpdatePending = false;
@@ -39,13 +39,13 @@ const FOCUS_EXPANDED_HEIGHT = 560;
 const FOCUS_WIDTH_BASE = 640;
 const FOCUS_WIDTH_WIDE = 720;
 const WINDOW_EDGE_MARGIN = 24;
-const LIVE_STRIP_EXTRA_HEIGHT = 72;
-const LIVE_STRIP_MIN_HEIGHT = 98;
-const LIVE_STRIP_MAX_HEIGHT = 124;
-const QUESTION_OPTION_MAX_WIDTH = 260;
-const QUESTION_OPTION_MIN_WIDTH = 168;
-const QUESTION_OPTION_LONG_MIN_WIDTH = 220;
-const QUESTION_OPTION_GAP = 6;
+const LIVE_STRIP_EXTRA_HEIGHT = 48;
+const LIVE_STRIP_MIN_HEIGHT = 78;
+const LIVE_STRIP_MAX_HEIGHT = 100;
+const QUESTION_OPTION_MAX_WIDTH = 208;
+const QUESTION_OPTION_MIN_WIDTH = 144;
+const QUESTION_OPTION_LONG_MIN_WIDTH = 180;
+const QUESTION_OPTION_GAP = 5;
 const QUESTION_OPTION_LAYOUT_LEFT_INSET = 16;
 const QUESTION_OPTION_LAYOUT_RIGHT_INSET = 16;
 
@@ -101,11 +101,13 @@ const onboardingStatusDot = document.querySelector(".onboarding-status-dot");
 const onboardingStatusText = document.querySelector(".onboarding-status-text");
 const onboardingRetryButton = document.querySelector(".btn-retry");
 const detail = document.querySelector(".detail");
+const activeSection = document.querySelector(".active-section");
 const activeList = document.querySelector(".active-list");
 const permissionSection = document.querySelector(".permission-section");
 const permissionTool = document.querySelector(".permission-tool");
 const permissionMessage = document.querySelector(".permission-message");
 const permissionActions = document.querySelector(".permission-actions");
+const historySection = document.querySelector(".history-section");
 const historyList = document.querySelector(".history-list");
 const mascot = document.querySelector(".mascot");
 const liveStrip = document.querySelector(".live-strip");
@@ -114,7 +116,6 @@ const liveCwd = document.querySelector(".live-cwd");
 const liveTitle = document.querySelector(".live-title");
 const liveTicker = document.querySelector(".live-ticker");
 const liveTickerPrimary = document.querySelector(".live-ticker-primary");
-const liveTickerDetail = document.querySelector(".live-ticker-detail");
 const liveMetrics = document.querySelector(".live-metrics");
 const DEFAULT_PROVIDER = "claude-code";
 let currentStatusText = "";
@@ -192,8 +193,8 @@ function scheduleAnimationFallback(handler) {
   }, 350);
 }
 
-// 统一的展开请求入口：即便当前正处于收起/展开动画，也保留这次展开意图
-// 交给 transition 结束后的 reconcileExpandState 继续完成。
+// Central expand request: preserve intent even while collapse/expand is animating.
+// reconcileExpandState applies that intent after the transition finishes.
 function requestExpand() {
   if (collapseDebounceTimer) {
     clearTimeout(collapseDebounceTimer);
@@ -429,16 +430,32 @@ function applyInteractionFocus(request) {
 }
 
 function clearInteractionFocus() {
+  const hadFocus = island.classList.contains("interaction-focus");
   island.classList.remove("interaction-focus");
   document.documentElement.style.removeProperty("--interaction-width");
   lastExpandedFrame = { width: null, height: null };
 
-  if (isExpanded) {
-    scheduleExpandedHeightUpdate();
+  if (!isExpanded) {
+    return;
   }
+
+  if (hadFocus) {
+    // 同步收回原生窗口宽度。否则若 settleAfterInteractionsComplete 紧接着同步触发
+    // collapseIsland，isExpanded 会在 scheduleExpandedHeightUpdate 的 rAF 执行前翻成
+    // false，rAF 内的 early return 会让 set_expanded_frame 永远不被调到，窗口残留在
+    // interaction-width。
+    const pillWidth = notchInfo.pill_width || 480;
+    const inlineHeight =
+      parseFloat(island.style.getPropertyValue("--expanded-height")) ||
+      island.getBoundingClientRect().height ||
+      DEFAULT_EXPANDED_HEIGHT;
+    applyExpandedFrame(pillWidth, inlineHeight);
+  }
+
+  scheduleExpandedHeightUpdate();
 }
 
-// 动画结束后根据 wantExpanded 期望状态对账，确保不丢事件
+// Reconcile to the desired hover state after animation so no event is lost.
 function reconcileExpandState() {
   isAnimating = false;
   if (!wantExpanded && isExpanded) {
@@ -762,18 +779,15 @@ function getLiveSessionView(session) {
       : null;
   let tone = "idle";
   let primary = t("live.idle");
-  let detail = t("live.waitingInput");
 
   switch (status.type) {
     case "Processing":
       tone = "thinking";
       primary = cliStatusText || t("live.thinking");
-      detail = status.description || t("live.readingContext");
       break;
     case "RunningTool":
       tone = "running-tool";
       primary = t("live.runningTool", { tool: toolName });
-      detail = status.description || formatTool(status.tool_name);
       break;
     case "WaitingForApproval":
       tone = "blocked";
@@ -781,33 +795,25 @@ function getLiveSessionView(session) {
         pendingInteraction?.kind === "elicitation"
           ? t("live.respond")
           : t("live.blocked");
-      detail =
-        pendingInteraction?.kind === "elicitation"
-          ? t("live.waitingForChoice")
-          : t("live.waitingForApproval", { tool: toolName });
       break;
     case "Anomaly":
       tone = "stuck";
       primary = t("live.stuckSeconds", {
         seconds: status.idle_seconds || 0,
       });
-      detail = t("live.waitingForUser");
       break;
     case "Compacting":
       tone = "thinking";
       primary = cliStatusText || t("live.compacting");
-      detail = t("live.compactingDetail");
       break;
     case "Ended":
       tone = "ended";
       primary = t("status.ended");
-      detail = t("live.endedDetail");
       break;
     case "WaitingForInput":
     default:
       tone = "idle";
       primary = t("live.idle");
-      detail = t("live.waitingInput");
       break;
   }
 
@@ -826,7 +832,6 @@ function getLiveSessionView(session) {
   return {
     tone,
     primary,
-    detail,
     cwd: formatLiveCwd(session.cwd),
     title: formatLiveTitle(session),
     metrics,
@@ -841,7 +846,6 @@ function renderLiveStrip() {
     !liveTitle ||
     !liveTicker ||
     !liveTickerPrimary ||
-    !liveTickerDetail ||
     !liveMetrics
   ) {
     return;
@@ -869,11 +873,10 @@ function renderLiveStrip() {
   liveTitle.textContent = view.title;
   liveTicker.dataset.tone = view.tone;
   liveTickerPrimary.textContent = view.primary;
-  liveTickerDetail.textContent = view.detail;
   liveMetrics.textContent = view.metrics;
   liveStrip.setAttribute(
     "aria-label",
-    `${view.title}. ${view.primary}. ${view.detail}. ${view.metrics}`,
+    `${view.cwd}: ${view.title}. ${view.primary}. ${view.metrics}`,
   );
 
   scheduleCompactFrameUpdate();
@@ -980,7 +983,7 @@ function updateUI(session) {
       setStatusText(
         pendingInteraction?.kind === "elicitation"
           ? t("status.respond")
-          : t("status.approve"),
+          : pendingInteraction?.message || t("status.approve"),
       );
       break;
     case "Anomaly":
@@ -1614,8 +1617,19 @@ function hideInteractionSection() {
   delete permissionSection.dataset.density;
   delete permissionSection.dataset.family;
   delete permissionSection.dataset.risk;
+  setInteractionOnlyMode(false);
   clearInteractionFocus();
   scheduleExpandedHeightUpdate();
+}
+
+function setInteractionOnlyMode(isInteractionOnly) {
+  island.classList.toggle("interaction-only", isInteractionOnly);
+  if (activeSection) {
+    activeSection.hidden = isInteractionOnly;
+  }
+  if (historySection) {
+    historySection.hidden = isInteractionOnly;
+  }
 }
 
 function isShowingPendingInteraction() {
@@ -1661,6 +1675,7 @@ function renderActionButton({
   disabled = false,
   ariaLabel,
   title,
+  instant = false,
 }) {
   const button = document.createElement("button");
   button.type = "button";
@@ -1692,6 +1707,10 @@ function renderActionButton({
   button.addEventListener("click", (event) => {
     event.stopPropagation();
     if (button.disabled) {
+      return;
+    }
+    if (instant) {
+      onClick();
       return;
     }
     button.classList.add("btn-clicked");
@@ -1838,6 +1857,7 @@ function renderAskUserQuestion(request) {
         description: option.description,
         className: "btn-option",
         parent: options,
+        instant: true,
         onClick: () => {
           if (question.multiSelect) {
             if (selectedValues.has(option.value)) {
@@ -1908,6 +1928,7 @@ function renderAskUserQuestion(request) {
 
 function showInteraction(requestId, request) {
   applyInteractionFocus(request);
+  setInteractionOnlyMode(true);
   setInteractionSubmitting(false);
   permissionSection.style.display = "block";
   permissionSection.dataset.requestId = requestId;

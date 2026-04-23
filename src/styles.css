@@ -209,14 +209,14 @@ body {
   color: rgba(255, 255, 255, 0.88);
 }
 
-/* === Compact live session strip === */
+/* === Compact live session strip (Variant A: Minimal Poster) === */
 .live-strip {
   display: grid;
-  grid-template-columns: 4px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
+  grid-template-columns: 2px minmax(0, 1fr) auto;
+  column-gap: 10px;
+  align-items: end;
   min-height: calc(
-    var(--compact-live-height, 108px) - var(--notch-height, 37px)
+    var(--compact-live-height, 85px) - var(--notch-height, 37px)
   );
   padding: 10px 14px 12px;
   color: #ffffff;
@@ -229,124 +229,108 @@ body {
 }
 
 .live-rail {
-  width: 3px;
-  height: 38px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.1);
+  width: 2px;
+  align-self: stretch;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .live-rail.thinking {
-  background: linear-gradient(180deg, rgba(96, 165, 250, 0.2), #60a5fa);
+  background: #60a5fa;
 }
 
 .live-rail.running-tool {
-  background: linear-gradient(180deg, rgba(167, 139, 250, 0.2), #a78bfa);
+  background: #a78bfa;
 }
 
 .live-rail.idle {
-  background: linear-gradient(180deg, rgba(74, 222, 128, 0.18), #4ade80);
+  background: rgba(74, 222, 128, 0.55);
 }
 
-.live-rail.blocked,
+.live-rail.blocked {
+  width: 3px;
+  background: #f97316;
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.28);
+}
+
 .live-rail.stuck {
-  width: 4px;
-  background: linear-gradient(180deg, #f97316, #facc15);
-  box-shadow: 0 0 16px rgba(249, 115, 22, 0.25);
+  width: 3px;
+  background: #facc15;
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.28);
+}
+
+.live-rail.ended {
+  background: #6b7280;
 }
 
 .live-main {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .live-session {
   display: grid;
   min-width: 0;
-  gap: 3px;
-  margin-bottom: 7px;
+  gap: 2px;
 }
 
 .live-cwd {
   min-width: 0;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.34);
+  color: rgba(255, 255, 255, 0.5);
   font-size: 10px;
-  font-weight: 650;
-  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  line-height: 1.2;
   text-overflow: ellipsis;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .live-title {
   min-width: 0;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .live-ticker {
-  display: inline-flex;
+  display: block;
   max-width: 100%;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 8px;
+  min-width: 0;
   overflow: hidden;
-  border: 0.5px solid rgba(255, 255, 255, 0.07);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.035);
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  line-height: 1.2;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .live-ticker-primary {
-  color: rgba(255, 255, 255, 0.84);
-  font-weight: 760;
-}
-
-.live-ticker-detail {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
 }
 
 .live-metrics {
-  max-width: 118px;
+  max-width: 170px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.34);
-  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
-  line-height: 1.25;
+  letter-spacing: -0.2px;
+  line-height: 1.2;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.live-strip[data-tone="blocked"] .live-ticker,
-.live-strip[data-tone="stuck"] .live-ticker {
-  border-color: rgba(249, 115, 22, 0.18);
-  background: rgba(249, 115, 22, 0.095);
-  color: rgba(255, 222, 190, 0.7);
-}
-
-.live-strip[data-tone="blocked"] .live-ticker-primary,
-.live-strip[data-tone="stuck"] .live-ticker-primary {
-  color: rgba(255, 242, 223, 0.96);
-}
-
-.live-strip[data-tone="blocked"] .live-title,
-.live-strip[data-tone="stuck"] .live-title {
-  color: rgba(255, 246, 232, 0.94);
-}
-
-.live-strip[data-tone="blocked"] .live-metrics,
-.live-strip[data-tone="stuck"] .live-metrics {
-  color: rgba(255, 214, 160, 0.58);
 }
 
 /* === Detail view (expanded) === */
@@ -359,6 +343,11 @@ body {
 
 .island.interaction-focus .detail {
   padding: 10px 16px 16px;
+}
+
+.island.interaction-only .active-section,
+.island.interaction-only .history-section {
+  display: none;
 }
 
 .active-section {
@@ -629,6 +618,20 @@ body {
   max-height: 238px;
   margin-bottom: 10px;
   line-height: 1.45;
+}
+
+.island.interaction-only .permission-message,
+.island.interaction-only .permission-section[data-mode="permission"] .permission-message,
+.island.interaction-only .permission-section[data-density="focus"] .permission-message {
+  max-height: none;
+  overflow-y: visible;
+}
+
+.island.interaction-only .permission-section[data-mode="permission"] .permission-tool,
+.island.interaction-only .permission-headline {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: initial;
 }
 
 .permission-detail-stack {
@@ -1007,8 +1010,8 @@ body {
 .interaction-options {
   display: grid;
   justify-content: start;
-  gap: var(--question-option-gap, 6px);
-  margin-top: 12px;
+  gap: var(--question-option-gap, 5px);
+  margin-top: 10px;
   width: fit-content;
   max-width: 100%;
 }
@@ -1017,22 +1020,22 @@ body {
   position: relative;
   width: 100%;
   min-height: 0;
-  padding: 9px 10px 9px 16px;
+  padding: 7px 9px 7px 13px;
   align-items: flex-start;
   text-align: left;
   background: transparent;
   border: none;
-  border-radius: 7px;
+  border-radius: 6px;
   color: rgba(255, 255, 255, 0.9);
 }
 
 .interaction-options .btn-option::before {
   content: "";
   position: absolute;
-  left: 5px;
-  top: 10px;
-  bottom: 10px;
-  width: 3px;
+  left: 4px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
   border-radius: 3px;
   background: transparent;
 }
@@ -1041,14 +1044,14 @@ body {
   color: rgba(255, 255, 255, 0.94);
   font-size: 13px;
   font-weight: 700;
-  line-height: 1.18;
+  line-height: 1.2;
 }
 
 .interaction-options .btn-option .btn-desc {
   color: rgba(255, 255, 255, 0.68);
-  font-size: 12px;
-  line-height: 1.3;
-  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.28;
+  margin-top: 2px;
   opacity: 1;
 }
 

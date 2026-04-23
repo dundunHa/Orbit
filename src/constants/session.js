@@ -9,31 +9,31 @@ export const STATUS_CONFIG = {
     icon: "◼",
     color: "#3fb950",
     bgColor: "rgba(63, 185, 80, 0.1)",
-    label: "运行中",
+    label: "Running",
   },
   pending: {
     icon: "◻",
     color: "#8b949e",
     bgColor: "rgba(139, 148, 158, 0.1)",
-    label: "等待中",
+    label: "Waiting",
   },
   blocked: {
     icon: "◻",
     color: "#d29922",
     bgColor: "rgba(210, 153, 34, 0.1)",
-    label: "已阻塞",
+    label: "Blocked",
   },
   completed: {
     icon: "◼",
     color: "#58a6ff",
     bgColor: "rgba(88, 166, 255, 0.1)",
-    label: "已完成",
+    label: "Completed",
   },
   error: {
     icon: "◼",
     color: "#f85149",
     bgColor: "rgba(248, 81, 73, 0.1)",
-    label: "错误",
+    label: "Error",
   },
 };
 

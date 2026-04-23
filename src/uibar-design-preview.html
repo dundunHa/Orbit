@@ -1,0 +1,966 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orbit UIBar Design Preview</title>
+    <!--
+      Assumptions:
+      - Base native width follows Rust geometry: 35 + 200 + 25 = 260px.
+      - Preview states are visual prototypes, not production behavior.
+      - The design direction is Command Capsule: status-first, low-noise, dark OLED.
+      Reasoning:
+      - Compact states should answer one question: "Does Claude need me?"
+      - Session/tree/detail data belongs behind expansion or debug surfaces.
+      - Approval/question states must keep actions visible while content scrolls.
+      Placeholders:
+      - Mock session labels and token values stand in for real backend payloads.
+    -->
+    <style>
+      :root {
+        --orbit-bg: #030405;
+        --orbit-surface: #090a0c;
+        --orbit-surface-raised: #101216;
+        --orbit-surface-soft: #15181d;
+        --orbit-line: rgba(255, 255, 255, 0.08);
+        --orbit-line-strong: rgba(255, 255, 255, 0.16);
+        --orbit-text: rgba(255, 255, 255, 0.92);
+        --orbit-text-muted: rgba(255, 255, 255, 0.56);
+        --orbit-text-faint: rgba(255, 255, 255, 0.34);
+        --orbit-blue: #58a6ff;
+        --orbit-green: #3fe37d;
+        --orbit-orange: #f97316;
+        --orbit-red: #ff5f57;
+        --orbit-amber: #f6c15b;
+        --orbit-radius: 22px;
+        --orbit-inner-radius: 8px;
+        --pill-width: 260px;
+        --notch-width: 200px;
+        --notch-height: 37px;
+        --interaction-width: 640px;
+        --preview-scale: 1;
+        color-scheme: dark;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Display",
+          "Helvetica Neue", Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100dvh;
+        margin: 0;
+        overflow: hidden;
+        background: #080a0d;
+        color: var(--orbit-text);
+        font-family: inherit;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: minmax(680px, 1fr) 420px;
+        gap: 24px;
+        min-height: 100dvh;
+        padding: 24px;
+      }
+
+      .stage {
+        position: relative;
+        min-height: calc(100dvh - 48px);
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 8px;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          #020304;
+        background-size: 32px 32px;
+      }
+
+      .stage::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 50%;
+        z-index: 1;
+        width: var(--notch-width);
+        height: var(--notch-height);
+        border-radius: 0 0 20px 20px;
+        background: #000;
+        transform: translateX(-50%);
+      }
+
+      .stage-label {
+        position: absolute;
+        right: 18px;
+        bottom: 16px;
+        color: rgba(255, 255, 255, 0.24);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .uibar {
+        position: absolute;
+        top: 0;
+        left: 50%;
+        z-index: 2;
+        width: var(--pill-width);
+        height: var(--notch-height);
+        overflow: hidden;
+        border-radius: 0 0 var(--orbit-radius) var(--orbit-radius);
+        background: #000;
+        color: var(--orbit-text);
+        transform: translateX(-50%) scale(var(--preview-scale));
+        transform-origin: top center;
+        transition:
+          width 180ms cubic-bezier(0.2, 0, 0, 1),
+          height 260ms cubic-bezier(0.2, 0, 0, 1),
+          box-shadow 180ms ease;
+      }
+
+      .uibar[data-state="compact"] {
+        height: 104px;
+        box-shadow: 0 12px 42px rgba(0, 0, 0, 0.46);
+      }
+
+      .uibar[data-state="expanded"] {
+        height: 196px;
+        box-shadow: 0 12px 42px rgba(0, 0, 0, 0.46);
+      }
+
+      .uibar[data-state="permission"],
+      .uibar[data-state="question"] {
+        width: var(--interaction-width);
+        height: 396px;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.54);
+      }
+
+      .pill {
+        display: grid;
+        grid-template-columns: 35px 1fr 25px;
+        align-items: center;
+        height: var(--notch-height);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+      }
+
+      .mark {
+        width: 18px;
+        height: 14px;
+        margin-left: 9px;
+        opacity: 0.92;
+      }
+
+      .mark svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .top-center {
+        height: 100%;
+      }
+
+      .status-lamp {
+        justify-self: end;
+        width: 7px;
+        height: 7px;
+        margin-right: 8px;
+        border-radius: 999px;
+        background: var(--orbit-green);
+        box-shadow: 0 0 0 3px rgba(63, 227, 125, 0.08);
+      }
+
+      .uibar[data-state="permission"] .status-lamp,
+      .uibar[data-state="question"] .status-lamp {
+        background: var(--orbit-orange);
+        box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
+      }
+
+      .uibar[data-state="expanded"] .status-lamp {
+        background: var(--orbit-blue);
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.09);
+      }
+
+      .capsule-body {
+        display: none;
+        padding: 9px 14px 13px;
+      }
+
+      .uibar[data-state="compact"] .compact-body,
+      .uibar[data-state="expanded"] .expanded-body,
+      .uibar[data-state="permission"] .permission-body,
+      .uibar[data-state="question"] .question-body {
+        display: block;
+      }
+
+      .live-row {
+        display: grid;
+        grid-template-columns: 2px minmax(0, 1fr);
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .rail {
+        width: 2px;
+        height: 42px;
+        margin-top: 2px;
+        border-radius: 4px;
+        background: var(--orbit-blue);
+      }
+
+      .rail.blocked {
+        background: var(--orbit-orange);
+      }
+
+      .live-copy {
+        min-width: 0;
+      }
+
+      .cwd {
+        overflow: hidden;
+        color: var(--orbit-text-faint);
+        font-size: 10px;
+        font-weight: 650;
+        line-height: 1.15;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .title {
+        overflow: hidden;
+        margin-top: 3px;
+        color: var(--orbit-text);
+        font-size: 12.5px;
+        font-weight: 680;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ticker {
+        overflow: hidden;
+        margin-top: 5px;
+        color: var(--orbit-text-muted);
+        font-size: 11px;
+        font-weight: 540;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ticker strong {
+        color: rgba(255, 255, 255, 0.82);
+        font-weight: 700;
+      }
+
+      .summary-stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .summary-line {
+        display: grid;
+        grid-template-columns: 2px minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        min-height: 32px;
+      }
+
+      .summary-line .label {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--orbit-text);
+        font-size: 12px;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .summary-line .meta {
+        color: var(--orbit-text-faint);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 10px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .summary-dot {
+        width: 2px;
+        height: 22px;
+        border-radius: 4px;
+        background: var(--orbit-blue);
+      }
+
+      .session-mini {
+        display: grid;
+        gap: 5px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--orbit-line);
+      }
+
+      .session-mini-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .session-mini-title {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--orbit-text-muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .session-mini-count {
+        color: var(--orbit-text-faint);
+        font-size: 10px;
+        font-weight: 650;
+      }
+
+      .focus-layout {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        height: calc(396px - var(--notch-height));
+        min-height: 0;
+        padding: 18px 24px 18px;
+      }
+
+      .focus-kicker {
+        color: var(--orbit-text-muted);
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.01em;
+      }
+
+      .focus-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .metric-chip {
+        height: 22px;
+        padding: 4px 8px;
+        border: 1px solid var(--orbit-line);
+        border-radius: 999px;
+        color: var(--orbit-text-faint);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 10px;
+        line-height: 1.2;
+      }
+
+      .focus-scroll {
+        min-height: 0;
+        margin: 16px -4px 10px 0;
+        overflow: auto;
+        padding-right: 6px;
+      }
+
+      .focus-scroll::-webkit-scrollbar {
+        width: 4px;
+      }
+
+      .focus-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .focus-scroll::-webkit-scrollbar-thumb {
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.14);
+      }
+
+      .focus-title {
+        max-width: 520px;
+        color: var(--orbit-text);
+        font-size: 17px;
+        font-weight: 720;
+        line-height: 1.26;
+      }
+
+      .focus-card {
+        margin-top: 12px;
+        padding: 10px 11px;
+        border: 1px solid var(--orbit-line);
+        border-radius: var(--orbit-inner-radius);
+        background: var(--orbit-surface);
+      }
+
+      .focus-card-title {
+        margin-bottom: 6px;
+        color: var(--orbit-text-faint);
+        font-size: 9px;
+        font-weight: 760;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .code-line {
+        overflow-wrap: anywhere;
+        color: rgba(255, 255, 255, 0.72);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .risk-copy {
+        color: rgba(255, 255, 255, 0.64);
+        font-size: 11.5px;
+        line-height: 1.45;
+      }
+
+      .question-copy {
+        max-width: 540px;
+        color: var(--orbit-text);
+        font-size: 17px;
+        font-weight: 720;
+        line-height: 1.28;
+      }
+
+      .options-list {
+        display: grid;
+        gap: 7px;
+        margin-top: 14px;
+      }
+
+      .option {
+        display: grid;
+        grid-template-columns: 2px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        min-height: 44px;
+        padding: 9px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.065);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.026);
+      }
+
+      .option.is-selected {
+        border-color: rgba(249, 115, 22, 0.3);
+        background: rgba(249, 115, 22, 0.12);
+      }
+
+      .option-mark {
+        width: 2px;
+        height: 26px;
+        border-radius: 3px;
+        background: transparent;
+      }
+
+      .option.is-selected .option-mark {
+        background: var(--orbit-orange);
+      }
+
+      .option-title {
+        color: var(--orbit-text);
+        font-size: 12.5px;
+        font-weight: 720;
+        line-height: 1.2;
+      }
+
+      .option-desc {
+        margin-top: 3px;
+        color: var(--orbit-text-muted);
+        font-size: 11px;
+        line-height: 1.28;
+      }
+
+      .focus-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-top: 10px;
+        border-top: 1px solid var(--orbit-line);
+        background: #000;
+      }
+
+      .scope {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--orbit-text-faint);
+        font-size: 11px;
+        font-weight: 620;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .actions {
+        display: flex;
+        gap: 7px;
+      }
+
+      .icon-btn,
+      .primary-btn,
+      .ghost-btn {
+        min-width: 44px;
+        min-height: 36px;
+        border: 1px solid var(--orbit-line-strong);
+        border-radius: 8px;
+        cursor: pointer;
+        transition:
+          border-color 150ms ease,
+          background 150ms ease,
+          transform 100ms ease;
+      }
+
+      .icon-btn {
+        width: 44px;
+        background: #050607;
+        color: var(--orbit-text);
+        font-size: 15px;
+        font-weight: 760;
+      }
+
+      .primary-btn {
+        min-width: 148px;
+        padding: 0 18px;
+        border-color: rgba(249, 115, 22, 0.52);
+        background: var(--orbit-orange);
+        color: #130904;
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      .ghost-btn {
+        min-width: 132px;
+        padding: 0 12px;
+        border-color: transparent;
+        background: transparent;
+        color: var(--orbit-text-muted);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .icon-btn:hover,
+      .primary-btn:hover,
+      .ghost-btn:hover {
+        border-color: rgba(255, 255, 255, 0.28);
+      }
+
+      .icon-btn:active,
+      .primary-btn:active,
+      .ghost-btn:active {
+        transform: scale(0.97);
+      }
+
+      .side {
+        display: grid;
+        align-content: start;
+        gap: 16px;
+        min-height: calc(100dvh - 48px);
+        overflow: auto;
+      }
+
+      .panel {
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 8px;
+        background: #17191d;
+        padding: 18px;
+      }
+
+      .panel h1,
+      .panel h2 {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      .panel h2 {
+        font-size: 14px;
+      }
+
+      .panel p {
+        margin: 10px 0 0;
+        color: var(--orbit-text-muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .state-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .state-button {
+        min-height: 42px;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        border-radius: 8px;
+        background: #101216;
+        color: var(--orbit-text-muted);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 650;
+        transition:
+          background 150ms ease,
+          border-color 150ms ease,
+          color 150ms ease;
+      }
+
+      .state-button:hover {
+        border-color: rgba(255, 255, 255, 0.22);
+        color: var(--orbit-text);
+      }
+
+      .state-button[aria-pressed="true"] {
+        border-color: rgba(88, 166, 255, 0.55);
+        background: rgba(88, 166, 255, 0.12);
+        color: var(--orbit-text);
+      }
+
+      .rules {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .rule {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 12px;
+        align-items: start;
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .rule:last-child {
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+
+      .rule-key {
+        color: var(--orbit-text-faint);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+
+      .rule-value {
+        color: var(--orbit-text-muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .swatches {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 7px;
+        margin-top: 14px;
+      }
+
+      .swatch {
+        height: 42px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+      }
+
+      .swatch.black {
+        background: #030405;
+      }
+
+      .swatch.surface {
+        background: #101216;
+      }
+
+      .swatch.blue {
+        background: var(--orbit-blue);
+      }
+
+      .swatch.orange {
+        background: var(--orbit-orange);
+      }
+
+      .swatch.green {
+        background: var(--orbit-green);
+      }
+
+      @media (max-width: 1120px) {
+        body {
+          overflow: auto;
+        }
+
+        .page {
+          grid-template-columns: 1fr;
+        }
+
+        .stage,
+        .side {
+          min-height: 620px;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .page {
+          padding: 12px;
+        }
+
+        .uibar[data-state="permission"],
+        .uibar[data-state="question"] {
+          width: min(640px, calc(100vw - 32px));
+        }
+
+        .focus-layout {
+          padding-inline: 16px;
+        }
+
+        .focus-footer {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .actions {
+          justify-content: flex-end;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="stage" aria-label="Orbit UIBar design stage">
+        <div class="uibar" data-state="compact" id="uibar">
+          <div class="pill">
+            <div class="mark" aria-hidden="true">
+              <svg viewBox="0 0 36 24" role="img">
+                <path
+                  d="M4 7h4V3h4v4h12V3h4v4h4v10h-4v4h-4v-4H12v4H8v-4H4V7Z"
+                  fill="#d78787"
+                />
+                <path d="M11 10h4v3h-4v-3Zm10 0h4v3h-4v-3Z" fill="#030405" />
+              </svg>
+            </div>
+            <div class="top-center"></div>
+            <div class="status-lamp"></div>
+          </div>
+
+          <div class="capsule-body compact-body">
+            <div class="live-row">
+              <div class="rail"></div>
+              <div class="live-copy">
+                <div class="cwd">~/mygitspace/Orbit</div>
+                <div class="title">Browser debug session</div>
+                <div class="ticker"><strong>running</strong> style inspection</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="capsule-body expanded-body">
+            <div class="summary-stack">
+              <div class="summary-line">
+                <div class="summary-dot"></div>
+                <div class="label">Browser debug session</div>
+                <div class="meta">active</div>
+              </div>
+              <div class="summary-line">
+                <div class="summary-dot" style="background: var(--orbit-green)"></div>
+                <div class="label">1 child agent is waiting on layout pass</div>
+                <div class="meta">11k tok</div>
+              </div>
+            </div>
+            <div class="session-mini">
+              <div class="session-mini-row">
+                <div class="session-mini-title">Session tree folded into summary</div>
+                <div class="session-mini-count">2 nodes</div>
+              </div>
+              <div class="session-mini-row">
+                <div class="session-mini-title">Recent history hidden until detail view</div>
+                <div class="session-mini-count">quiet</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="capsule-body permission-body">
+            <div class="focus-layout">
+              <header>
+                <div class="focus-kicker">Claude needs your permission</div>
+                <div class="focus-metrics">
+                  <span class="metric-chip">8.2k in</span>
+                  <span class="metric-chip">3.1k out</span>
+                  <span class="metric-chip">sonnet-4</span>
+                </div>
+              </header>
+
+              <div class="focus-scroll">
+                <div class="focus-title">Run a local command in the Orbit workspace</div>
+                <div class="focus-card">
+                  <div class="focus-card-title">Command</div>
+                  <div class="code-line">python3 scripts/debug-ui-server.py --port 6666</div>
+                </div>
+                <div class="focus-card">
+                  <div class="focus-card-title">Risk</div>
+                  <div class="risk-copy">
+                    Starts a local browser preview server. No files are modified, and the process
+                    is scoped to the current workspace.
+                  </div>
+                </div>
+                <div class="focus-card">
+                  <div class="focus-card-title">Context</div>
+                  <div class="risk-copy">
+                    Approval state suppresses active sessions and history. The card gives the
+                    user one decision surface with actions fixed at the bottom.
+                  </div>
+                </div>
+              </div>
+
+              <footer class="focus-footer">
+                <div class="scope">Applies once to this request</div>
+                <div class="actions">
+                  <button class="icon-btn" aria-label="Allow">Y</button>
+                  <button class="icon-btn" aria-label="Deny">N</button>
+                  <button class="icon-btn" aria-label="Continue in Claude Code">↗</button>
+                </div>
+              </footer>
+            </div>
+          </div>
+
+          <div class="capsule-body question-body">
+            <div class="focus-layout">
+              <header>
+                <div class="focus-kicker">Question from Claude</div>
+                <div class="focus-metrics">
+                  <span class="metric-chip">single select</span>
+                  <span class="metric-chip">1 pending</span>
+                </div>
+              </header>
+
+              <div class="focus-scroll">
+                <div class="question-copy">Which UI state should Orbit keep open?</div>
+                <div class="options-list">
+                  <div class="option is-selected">
+                    <div class="option-mark"></div>
+                    <div>
+                      <div class="option-title">Expanded</div>
+                      <div class="option-desc">Keep the browser surface open for visual debugging.</div>
+                    </div>
+                  </div>
+                  <div class="option">
+                    <div class="option-mark"></div>
+                    <div>
+                      <div class="option-title">Compact</div>
+                      <div class="option-desc">Return to the notch-sized surface after the answer.</div>
+                    </div>
+                  </div>
+                  <div class="option">
+                    <div class="option-mark"></div>
+                    <div>
+                      <div class="option-title">Continue in Claude Code</div>
+                      <div class="option-desc">
+                        Move the full choice back to the CLI when the prompt is too long.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <footer class="focus-footer">
+                <div class="scope">Selection required</div>
+                <div class="actions">
+                  <button class="primary-btn">Submit</button>
+                  <button class="ghost-btn">Continue in Claude Code</button>
+                </div>
+              </footer>
+            </div>
+          </div>
+        </div>
+        <div class="stage-label">Rust base width: 260px</div>
+      </section>
+
+      <aside class="side" aria-label="Preview controls">
+        <section class="panel">
+          <h1>Orbit Command Capsule</h1>
+          <p>Low-noise status surface for Claude Code session monitoring.</p>
+          <div class="state-grid" id="state-grid">
+            <button class="state-button" data-state="compact" aria-pressed="true">
+              Compact
+            </button>
+            <button class="state-button" data-state="expanded" aria-pressed="false">
+              Expanded
+            </button>
+            <button class="state-button" data-state="permission" aria-pressed="false">
+              Permission
+            </button>
+            <button class="state-button" data-state="question" aria-pressed="false">
+              Question
+            </button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Style Tokens</h2>
+          <div class="swatches" aria-label="Color swatches">
+            <div class="swatch black" title="#030405"></div>
+            <div class="swatch surface" title="#101216"></div>
+            <div class="swatch blue" title="#58a6ff"></div>
+            <div class="swatch orange" title="#f97316"></div>
+            <div class="swatch green" title="#3fe37d"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Rules</h2>
+          <div class="rules">
+            <div class="rule">
+              <div class="rule-key">Compact</div>
+              <div class="rule-value">One task, one line. No raw token triplets.</div>
+            </div>
+            <div class="rule">
+              <div class="rule-key">Tree</div>
+              <div class="rule-value">Fold session tree into summary until a full detail surface exists.</div>
+            </div>
+            <div class="rule">
+              <div class="rule-key">Focus</div>
+              <div class="rule-value">Hide history and active sessions during approvals.</div>
+            </div>
+            <div class="rule">
+              <div class="rule-key">Actions</div>
+              <div class="rule-value">Keep approval and submit controls visible at the bottom.</div>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <script>
+      const uibar = document.getElementById("uibar");
+      const stateGrid = document.getElementById("state-grid");
+      const buttons = Array.from(stateGrid.querySelectorAll(".state-button"));
+
+      function setState(nextState) {
+        uibar.dataset.state = nextState;
+        buttons.forEach((button) => {
+          button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.state === nextState),
+          );
+        });
+      }
+
+      stateGrid.addEventListener("click", (event) => {
+        const button = event.target.closest(".state-button");
+        if (!button) return;
+        setState(button.dataset.state);
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set("state", button.dataset.state);
+        window.history.replaceState(null, "", nextUrl);
+      });
+
+      const initialState = new URLSearchParams(window.location.search).get("state");
+      if (["compact", "expanded", "permission", "question"].includes(initialState)) {
+        setState(initialState);
+      }
+    </script>
+  </body>
+</html>

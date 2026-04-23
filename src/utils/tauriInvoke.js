@@ -7,7 +7,12 @@ function toLowerCamelCaseKey(key) {
 }
 
 export function normalizeInvokeArgs(args) {
-  if (args === undefined || args === null || Array.isArray(args) || typeof args !== "object") {
+  if (
+    args === undefined ||
+    args === null ||
+    Array.isArray(args) ||
+    typeof args !== "object"
+  ) {
     return args;
   }
 
@@ -28,5 +33,7 @@ export function normalizeInvokeArgs(args) {
 export function invokeCommand(command, args) {
   const { invoke } = window.__TAURI__.core;
   const normalizedArgs = normalizeInvokeArgs(args);
-  return normalizedArgs === undefined ? invoke(command) : invoke(command, normalizedArgs);
+  return normalizedArgs === undefined
+    ? invoke(command)
+    : invoke(command, normalizedArgs);
 }

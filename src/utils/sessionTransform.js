@@ -10,16 +10,6 @@ const STATUS_MAP = {
   Ended: "completed",
 };
 
-const STATUS_PRIORITY = {
-  WaitingForApproval: 6,
-  Anomaly: 5,
-  RunningTool: 4,
-  Processing: 3,
-  Compacting: 2,
-  WaitingForInput: 1,
-  Ended: 0,
-};
-
 function formatDuration(seconds) {
   if (!seconds || seconds < 0) return "0s";
   if (seconds < 60) return seconds + "s";
@@ -122,6 +112,45 @@ function transformSession(session, level = 0) {
   };
 }
 
+function transformSubagent(agent, level) {
+  const startedAt = agent.started_at || null;
+  const lastEventAt = agent.last_event_at || startedAt;
+  const durationSecs = startedAt
+    ? Math.max(
+        0,
+        Math.floor((new Date(lastEventAt) - new Date(startedAt)) / 1000),
+      )
+    : 0;
+  const shortId = agent.agent_id ? agent.agent_id.slice(-4) : "sub";
+  const statusKey = agent.ended ? "completed" : "running";
+  const description =
+    agent.last_tool_description ||
+    agent.last_tool_name ||
+    agent.agent_type ||
+    "subagent";
+
+  return {
+    id: shortId,
+    status: statusKey,
+    description,
+    agent: agent.agent_type ? `@${agent.agent_type}` : null,
+    metadata: {
+      duration: formatDuration(durationSecs),
+      tokens: "—",
+      tokensIn: "—",
+      tokensOut: "—",
+      tokensTotal: "—",
+      tokensInCompact: "—",
+      tokensOutCompact: "—",
+      outputRateCompact: "—",
+      averageTps: "—",
+    },
+    started_at: startedAt,
+    level,
+    children: [],
+  };
+}
+
 export function buildSessionTree(sessions, activeSessionId) {
   void activeSessionId;
 
@@ -132,13 +161,6 @@ export function buildSessionTree(sessions, activeSessionId) {
     return [];
   }
 
-  const sortByPriority = (a, b) => {
-    const prioA = STATUS_PRIORITY[a.status?.type] || 0;
-    const prioB = STATUS_PRIORITY[b.status?.type] || 0;
-    if (prioA !== prioB) return prioB - prioA;
-    return new Date(b.last_event_at || 0) - new Date(a.last_event_at || 0);
-  };
-
   const sortByStartedAtAsc = (a, b) => {
     const startedA = new Date(a.started_at || 0).getTime();
     const startedB = new Date(b.started_at || 0).getTime();
@@ -147,76 +169,27 @@ export function buildSessionTree(sessions, activeSessionId) {
     return new Date(a.last_event_at || 0) - new Date(b.last_event_at || 0);
   };
 
-  const hasParentSessionData = activeSessions.some((s) => s.parent_session_id);
+  // Each session_id represents an independent Claude Code process. Parent/child
+  // relationships between sessions are NOT reliably reported by Claude Code
+  // hooks, so we never attempt to nest one session under another. Subagents
+  // spawned inside a session share that session's session_id and are exposed
+  // via session.agents[agent_id]; we render them as children of their parent.
+  const roots = activeSessions.slice().sort(sortByStartedAtAsc);
 
-  if (hasParentSessionData) {
-    const sessionById = new Map(activeSessions.map((s) => [s.id, s]));
-    const childrenByParentId = new Map();
-    const rootCandidates = [];
-
-    for (const session of activeSessions) {
-      const parentId = session.parent_session_id;
-
-      if (
-        parentId &&
-        parentId !== session.id &&
-        sessionById.has(parentId)
-      ) {
-        if (!childrenByParentId.has(parentId)) {
-          childrenByParentId.set(parentId, []);
-        }
-        childrenByParentId.get(parentId).push(session);
-      } else {
-        rootCandidates.push(session);
-      }
+  return roots.map((session) => {
+    const node = transformSession(session, 0);
+    const agents = session.agents ? Object.values(session.agents) : [];
+    if (agents.length > 0) {
+      const sortedAgents = agents.slice().sort((a, b) => {
+        const endedA = a.ended ? 1 : 0;
+        const endedB = b.ended ? 1 : 0;
+        if (endedA !== endedB) return endedA - endedB;
+        return new Date(b.last_event_at || 0) - new Date(a.last_event_at || 0);
+      });
+      node.children = sortedAgents.map((agent) => transformSubagent(agent, 1));
     }
-
-    rootCandidates.sort(sortByStartedAtAsc);
-    const builtNodeIds = new Set();
-
-    const buildNode = (session, level = 0, ancestry = new Set()) => {
-      const node = transformSession(session, level);
-      builtNodeIds.add(session.id);
-
-      if (ancestry.has(session.id)) {
-        return node;
-      }
-
-      const nextAncestry = new Set(ancestry);
-      nextAncestry.add(session.id);
-
-      const children = (childrenByParentId.get(session.id) || [])
-        .slice()
-        .sort(sortByPriority);
-
-      node.children = children.map((child) =>
-        buildNode(child, level + 1, nextAncestry),
-      );
-      return node;
-    };
-
-    const roots = rootCandidates.map((session) => buildNode(session, 0));
-
-    const unbuilt = activeSessions
-      .filter((session) => !builtNodeIds.has(session.id))
-      .sort(sortByStartedAtAsc)
-      .map((session) => buildNode(session, 0));
-
-    return roots.concat(unbuilt);
-  }
-
-  const sortedByStart = activeSessions.slice().sort(sortByStartedAtAsc);
-  const mainSession = sortedByStart[0];
-  const mainNode = transformSession(mainSession, 0);
-
-  const otherSessions = activeSessions
-    .filter((s) => s.id !== mainSession.id)
-    .sort(sortByPriority);
-  if (otherSessions.length > 0) {
-    mainNode.children = otherSessions.map((s) => transformSession(s, 1));
-  }
-
-  return [mainNode];
+    return node;
+  });
 }
 
 export function getSessionCounts(sessions) {

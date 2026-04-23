@@ -1,135 +1,25 @@
-// i18n — lightweight localization
-// Detects system language; falls back to English for non-Chinese locales.
-
-const zh = {
-  // Pill status
-  "status.thinking": "思考中...",
-  "status.approve": "待批准",
-  "status.respond": "待选择",
-  "status.stuck": "卡住了？({seconds}秒)",
-  "status.compacting": "压缩中...",
-  "status.ended": "已结束",
-  "status.idle": "空闲",
-  "status.noConnections": "无连接",
-  "status.waiting": "等待中...",
-
-  // Tool descriptions
-  "tool.bash": "$ 运行中...",
-  "tool.read": "读取中...",
-  "tool.edit": "编辑中...",
-  "tool.write": "写入中...",
-  "tool.grep": "搜索中...",
-  "tool.glob": "查找中...",
-  "tool.agent": "代理中...",
-  "tool.fallback": "{name}...",
-
-  // Onboarding
-  "onboarding.welcome": "欢迎使用 Orbit",
-  "onboarding.checking": "正在检查 Claude Code 配置...",
-  "onboarding.installing": "正在将 Orbit 连接到 Claude Code...",
-  "onboarding.connected": "已连接到 Claude Code",
-  "onboarding.conflict": "检测到配置冲突",
-  "onboarding.permissionDenied": "需要权限",
-  "onboarding.drift": "检测到配置漂移",
-  "onboarding.error": "Orbit 设置失败",
-  "onboarding.requiresAttention": "Orbit 设置需要处理",
-  "onboarding.retrying": "重试中...",
-  "onboarding.retry": "重试",
-
-  // Sections
-  "section.setup": "设置",
-  "section.active": "活跃会话",
-  "section.recent": "最近",
-
-  // Sessions
-  "session.noActive": "无活跃会话",
-  "session.noHistory": "暂无历史记录",
-  "session.noRecent": "无最近会话 (3小时内)",
-  "session.untitled": "无标题",
-
-  // Session status labels
-  "sessionStatus.thinking": "思考中",
-  "sessionStatus.running": "运行中",
-  "sessionStatus.approve": "待批准",
-  "sessionStatus.respond": "待选择",
-  "sessionStatus.stuck": "卡住了",
-  "sessionStatus.compacting": "压缩中",
-  "sessionStatus.idle": "空闲",
-
-  // Compact live strip
-  "live.thinking": "思考中",
-  "live.runningTool": "运行 {tool}",
-  "live.blocked": "待处理",
-  "live.respond": "待选择",
-  "live.stuckSeconds": "阻塞 {seconds}秒",
-  "live.compacting": "压缩中",
-  "live.idle": "空闲",
-  "live.readingContext": "正在读取上下文",
-  "live.waitingInput": "等待下一条指令",
-  "live.waitingForApproval": "等待批准 {tool}",
-  "live.waitingForChoice": "等待你选择",
-  "live.waitingForUser": "等待你处理",
-  "live.compactingDetail": "压缩当前上下文",
-  "live.endedDetail": "会话已结束",
-  "live.approvalTitle": "Claude Code 需要批准",
-  "live.tool": "工具",
-  "live.noModel": "—",
-  "live.unknownCwd": "~/unknown",
-  "live.noTokens": "暂无 token",
-  "live.tokenMetrics": "{input} 入 · {output} 出",
-  "live.metricsWithModel": "{tokens} · {model}",
-
-  // Permission
-  "permission.allow": "允许",
-  "permission.deny": "拒绝",
-  "permission.allowAria": "允许执行一次",
-  "permission.denyAria": "拒绝本次请求",
-  "permission.scopeOnce": "允许一次 · 当前会话",
-  "permission.toolLabel.bash": "Bash 想运行",
-  "permission.toolLabel.edit": "文件将被修改",
-  "permission.toolLabel.read": "工具想读取上下文",
-  "permission.toolLabel.network": "工具想访问网络",
-  "permission.toolLabel.mcp": "MCP 工具调用",
-  "permission.toolLabel.agent": "工具想派生任务",
-  "permission.toolLabel.plan": "计划状态更新",
-  "permission.toolLabel.unknown": "自定义工具请求",
-  "permission.detail.prompt": "Claude 提示",
-  "permission.detail.command": "命令",
-  "permission.detail.cwd": "工作目录",
-  "permission.detail.file": "文件",
-  "permission.detail.preview": "预览",
-  "permission.detail.scope": "范围",
-  "permission.detail.destination": "目标",
-  "permission.detail.arguments": "参数",
-  "permission.detail.risk": "风险",
-  "interaction.question": "问题",
-  "interaction.submit": "提交选择",
-  "interaction.passThrough": "回到终端处理",
-  "interaction.passThroughAria": "回到终端处理",
-  "interaction.cancel": "取消",
-  "interaction.unsupported":
-    "这个请求需要更复杂的输入，Orbit 先让 Claude/Codex 在终端继续处理。",
-};
+// i18n — lightweight copy registry.
+// Orbit's UI bar intentionally renders Claude Code-facing text in English.
 
 const en = {
   "status.thinking": "Thinking...",
-  "status.approve": "Approve?",
-  "status.respond": "Respond?",
-  "status.stuck": "Stuck? ({seconds}s)",
+  "status.approve": "Claude needs your permission",
+  "status.respond": "Choose an option",
+  "status.stuck": "Waiting for you ({seconds}s)",
   "status.compacting": "Compacting...",
-  "status.ended": "Ended",
-  "status.idle": "Idle",
-  "status.noConnections": "No connections",
+  "status.ended": "Session ended",
+  "status.idle": "Waiting for input",
+  "status.noConnections": "No Claude Code sessions",
   "status.waiting": "Waiting...",
 
-  "tool.bash": "$ Running...",
-  "tool.read": "Reading...",
-  "tool.edit": "Editing...",
-  "tool.write": "Writing...",
+  "tool.bash": "Running Bash...",
+  "tool.read": "Reading file...",
+  "tool.edit": "Editing file...",
+  "tool.write": "Writing file...",
   "tool.grep": "Searching...",
-  "tool.glob": "Finding...",
-  "tool.agent": "Agent...",
-  "tool.fallback": "{name}...",
+  "tool.glob": "Searching files...",
+  "tool.agent": "Running Task...",
+  "tool.fallback": "Running {name}...",
 
   "onboarding.welcome": "Welcome to Orbit",
   "onboarding.checking": "Checking Claude Code configuration...",
@@ -152,33 +42,33 @@ const en = {
   "session.noRecent": "No recent sessions (last 3h)",
   "session.untitled": "Untitled",
 
-  "sessionStatus.thinking": "thinking",
-  "sessionStatus.running": "running",
-  "sessionStatus.approve": "approve?",
-  "sessionStatus.respond": "respond?",
-  "sessionStatus.stuck": "stuck",
-  "sessionStatus.compacting": "compacting",
-  "sessionStatus.idle": "idle",
+  "sessionStatus.thinking": "Thinking",
+  "sessionStatus.running": "Running",
+  "sessionStatus.approve": "Needs permission",
+  "sessionStatus.respond": "Needs response",
+  "sessionStatus.stuck": "Waiting for you",
+  "sessionStatus.compacting": "Compacting",
+  "sessionStatus.idle": "Waiting for input",
 
   "live.thinking": "Thinking",
   "live.runningTool": "Running {tool}",
-  "live.blocked": "Blocked",
-  "live.respond": "Respond",
-  "live.stuckSeconds": "Blocked {seconds}s",
+  "live.blocked": "Permission required",
+  "live.respond": "Response required",
+  "live.stuckSeconds": "Waiting for you {seconds}s",
   "live.compacting": "Compacting",
-  "live.idle": "Idle",
-  "live.readingContext": "reading context",
-  "live.waitingInput": "waiting for input",
-  "live.waitingForApproval": "waiting for {tool}",
-  "live.waitingForChoice": "waiting for your choice",
-  "live.waitingForUser": "waiting for you",
-  "live.compactingDetail": "compressing context",
-  "live.endedDetail": "session ended",
-  "live.approvalTitle": "Claude Code needs approval",
+  "live.idle": "Waiting for input",
+  "live.readingContext": "Reading context",
+  "live.waitingInput": "Waiting for input",
+  "live.waitingForApproval": "Claude needs your permission to use {tool}",
+  "live.waitingForChoice": "Choose an option to continue",
+  "live.waitingForUser": "Waiting for you",
+  "live.compactingDetail": "Compacting conversation",
+  "live.endedDetail": "Session ended",
+  "live.approvalTitle": "Claude needs your permission",
   "live.tool": "tool",
   "live.noModel": "—",
   "live.unknownCwd": "~/unknown",
-  "live.noTokens": "no tokens yet",
+  "live.noTokens": "No tokens yet",
   "live.tokenMetrics": "{input} in · {output} out",
   "live.metricsWithModel": "{tokens} · {model}",
 
@@ -186,16 +76,16 @@ const en = {
   "permission.deny": "Deny",
   "permission.allowAria": "Allow once",
   "permission.denyAria": "Deny this request",
-  "permission.scopeOnce": "Allow once · current session",
-  "permission.toolLabel.bash": "Bash wants to run",
-  "permission.toolLabel.edit": "Files may change",
-  "permission.toolLabel.read": "Tool wants context",
-  "permission.toolLabel.network": "Tool wants network",
+  "permission.scopeOnce": "Allow once for this session",
+  "permission.toolLabel.bash": "Claude wants to use Bash",
+  "permission.toolLabel.edit": "Claude wants to edit files",
+  "permission.toolLabel.read": "Claude wants to read files",
+  "permission.toolLabel.network": "Claude wants to access the network",
   "permission.toolLabel.mcp": "MCP tool call",
-  "permission.toolLabel.agent": "Tool wants to delegate",
+  "permission.toolLabel.agent": "Claude wants to launch a task",
   "permission.toolLabel.plan": "Plan state update",
   "permission.toolLabel.unknown": "Custom tool request",
-  "permission.detail.prompt": "Claude prompt",
+  "permission.detail.prompt": "Claude's request",
   "permission.detail.command": "Command",
   "permission.detail.cwd": "Working directory",
   "permission.detail.file": "File",
@@ -206,18 +96,17 @@ const en = {
   "permission.detail.risk": "Risk",
   "interaction.question": "Question",
   "interaction.submit": "Submit",
-  "interaction.passThrough": "Continue in terminal",
-  "interaction.passThroughAria": "Continue in terminal",
+  "interaction.passThrough": "Continue in Claude Code",
+  "interaction.passThroughAria": "Continue in Claude Code",
   "interaction.cancel": "Cancel",
   "interaction.unsupported":
-    "This request needs a richer form, so Orbit will hand it back to Claude/Codex in the terminal.",
+    "Continue in Claude Code to respond to this request.",
 };
 
-const locales = { zh, en };
+const locales = { en };
 
 function detectLocale() {
-  const lang = navigator.language || navigator.languages?.[0] || "en";
-  return lang.startsWith("zh") ? "zh" : "en";
+  return "en";
 }
 
 const currentLocale = detectLocale();
@@ -225,7 +114,7 @@ const messages = locales[currentLocale] || en;
 
 /**
  * Translate a key, with optional interpolation.
- * t("status.stuck", { seconds: 30 }) → "Stuck? (30s)"
+ * t("status.stuck", { seconds: 30 }) -> "Waiting for you (30s)"
  */
 export function t(key, params) {
   let text = messages[key];

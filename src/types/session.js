@@ -13,6 +13,20 @@
  */
 
 /**
+ * Subagent record emitted by the Rust backend. Subagents live inside a parent
+ * session (share its session_id) and are keyed by agent_id.
+ * @typedef {Object} Subagent
+ * @property {string} agent_id - Unique subagent identifier supplied by Claude Code hooks
+ * @property {string} [agent_type] - Subagent type, e.g. "general-purpose"
+ * @property {string} started_at - ISO timestamp when we first observed this subagent
+ * @property {string} last_event_at - ISO timestamp of the latest hook event for this subagent
+ * @property {number} tool_count - Number of tool invocations made by this subagent
+ * @property {boolean} ended - Whether SubagentStop has been received
+ * @property {string} [last_tool_name] - Last tool name the subagent invoked
+ * @property {string} [last_tool_description] - Last tool description, if the input carried one
+ */
+
+/**
  * Tree node representing a single session and its nested children.
  * @typedef {Object} SessionNode
  * @property {string} id - Unique session identifier, e.g. "Session-001"
@@ -32,7 +46,7 @@
  * @property {'◼' | '◻'} icon - Status icon
  * @property {string} color - Status color (hex)
  * @property {string} bgColor - Background color (rgba)
- * @property {string} label - Status label in Chinese
+ * @property {string} label - Status label
  */
 
 // Export types for JSDoc usage

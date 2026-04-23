@@ -24,11 +24,11 @@ pub fn init<R: tauri::Runtime>(app: &AppHandle<R>, today_stats: TodayStats) -> t
     let toggle_window_item = MenuItem::with_id(
         app,
         TOGGLE_WINDOW_MENU_ID,
-        "显示/隐藏 Orbit",
+        "Show/Hide Orbit",
         true,
         None::<&str>,
     )?;
-    let quit_item = MenuItem::with_id(app, QUIT_MENU_ID, "退出", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, QUIT_MENU_ID, "Quit", true, None::<&str>)?;
 
     let menu = MenuBuilder::new(app)
         .item(&token_stats_item)

@@ -22,6 +22,23 @@ cargo build
 cargo build --release
 ```
 
+Browser UI debugging:
+
+```bash
+make debug-ui
+```
+
+The server starts scanning at port `6666`, skips browser-blocked ports, and
+falls forward if a port is busy. Open the URL printed by the command, for
+example:
+
+```text
+http://127.0.0.1:6670/debug.html
+```
+
+This serves the real frontend module with a mocked Tauri bridge, so the Orbit
+surface can be expanded and inspected in a normal browser.
+
 For local development, the bridge binary used for Claude Code integration is:
 
 ```bash

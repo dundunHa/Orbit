@@ -1,7 +1,7 @@
 use chrono::{DateTime, Datelike, Local, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use tokio::sync::{Mutex, oneshot};
 
@@ -9,6 +9,8 @@ use tokio::sync::{Mutex, oneshot};
 #[derive(Debug, Clone, Deserialize)]
 pub struct StatuslineUpdate {
     pub session_id: String,
+    #[serde(default)]
+    pub cwd: Option<String>,
     pub tokens_in: u64,
     pub tokens_out: u64,
     #[serde(default)]
@@ -17,6 +19,12 @@ pub struct StatuslineUpdate {
     pub model: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub pid: Option<u32>,
+    #[serde(default)]
+    pub tty: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,11 +111,38 @@ fn normalize_cli_status_text(raw: &str) -> Option<String> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Subagent {
+    pub agent_id: String,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_type: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub last_event_at: DateTime<Utc>,
+    #[serde(default)]
+    pub tool_count: u32,
+    #[serde(default)]
+    pub ended: bool,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_tool_name: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_tool_description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
     pub cwd: String,
+    /// Subagents spawned inside this session, keyed by agent_id.
+    /// Claude Code reports subagent activity through PreToolUse/PostToolUse/SubagentStop
+    /// events that share the parent session_id but include an additional agent_id.
     #[serde(default)]
-    pub has_spawned_subagent: bool,
+    pub agents: BTreeMap<String, Subagent>,
+    /// Deprecated: Claude Code never emits a reliable parent_session_id. Kept only
+    /// for backward compatibility with existing history.json entries; new writes
+    /// always set this to None.
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
     pub status: SessionStatus,
@@ -197,6 +232,23 @@ pub struct HookPayload {
     pub tty: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Present when the hook event originates from a subagent inside the session.
+    /// Claude Code reuses the parent session_id for subagent events and
+    /// distinguishes them via this field. Absent/None means the event came from
+    /// the main (parent) agent.
+    #[serde(default)]
+    #[serde(alias = "agentId")]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "agentType")]
+    pub agent_type: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "agentTranscriptPath")]
+    pub agent_transcript_path: Option<String>,
 }
 
 /// Pending user interaction request waiting for Orbit UI to answer.
@@ -364,7 +416,7 @@ impl Session {
         Self {
             id,
             cwd,
-            has_spawned_subagent: false,
+            agents: BTreeMap::new(),
             parent_session_id: None,
             status: SessionStatus::WaitingForInput,
             started_at: now,
@@ -439,6 +491,11 @@ impl Session {
         if let Some(ref model) = update.model {
             self.model = Some(model.clone());
         }
+        if let Some(ref title) = update.title
+            && let Some(normalized) = normalize_title(title)
+        {
+            self.set_title_if_higher_priority(normalized, TitleSource::SessionsMetadata);
+        }
         self.apply_cli_status_text(update.status.as_deref());
         self.last_event_at = Utc::now();
     }
@@ -466,6 +523,14 @@ impl Session {
     pub fn apply_event(&mut self, payload: &HookPayload) {
         self.last_event_at = Utc::now();
         self.apply_cli_status_text(payload.status.as_deref());
+        if let Some(ref title) = payload.title
+            && let Some(normalized) = normalize_title(title)
+        {
+            self.set_title_if_higher_priority(normalized, TitleSource::SessionsMetadata);
+        }
+        if let Some(ref model) = payload.model {
+            self.model = Some(model.clone());
+        }
 
         match payload.hook_event_name.as_str() {
             "UserPromptSubmit" => {
@@ -478,9 +543,6 @@ impl Session {
             }
             "PreToolUse" => {
                 self.tool_count += 1;
-                if payload.tool_name.as_deref() == Some("Task") {
-                    self.has_spawned_subagent = true;
-                }
                 self.status = SessionStatus::RunningTool {
                     tool_name: payload.tool_name.clone().unwrap_or_default(),
                     description: payload
@@ -556,6 +618,57 @@ impl Session {
             },
             "PreCompact" => {
                 self.status = SessionStatus::Compacting;
+            }
+            _ => {}
+        }
+    }
+
+    /// Apply an event that originated from a subagent (payload.agent_id present).
+    ///
+    /// Claude Code reuses the parent session_id for subagent hooks and
+    /// distinguishes them with `agent_id`/`agent_type`. We track per-agent
+    /// state here and deliberately do NOT mutate the parent session's
+    /// status/tool_count so that the main agent's dot remains accurate
+    /// while its subagents run in parallel.
+    pub fn apply_subagent_event(&mut self, payload: &HookPayload) {
+        let Some(agent_id) = payload.agent_id.clone() else {
+            return;
+        };
+        let now = Utc::now();
+        self.last_event_at = now;
+
+        let entry = self
+            .agents
+            .entry(agent_id.clone())
+            .or_insert_with(|| Subagent {
+                agent_id: agent_id.clone(),
+                agent_type: payload.agent_type.clone(),
+                started_at: now,
+                last_event_at: now,
+                tool_count: 0,
+                ended: false,
+                last_tool_name: None,
+                last_tool_description: None,
+            });
+
+        if entry.agent_type.is_none() {
+            entry.agent_type = payload.agent_type.clone();
+        }
+        entry.last_event_at = now;
+
+        match payload.hook_event_name.as_str() {
+            "PreToolUse" => {
+                entry.tool_count += 1;
+                entry.last_tool_name = payload.tool_name.clone();
+                entry.last_tool_description = payload
+                    .tool_input
+                    .as_ref()
+                    .and_then(|v| v.get("description"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+            }
+            "SubagentStop" => {
+                entry.ended = true;
             }
             _ => {}
         }
@@ -660,6 +773,11 @@ mod tests {
             pid: None,
             tty: None,
             status: None,
+            title: None,
+            model: None,
+            agent_id: None,
+            agent_type: None,
+            agent_transcript_path: None,
         }
     }
 
@@ -669,11 +787,15 @@ mod tests {
 
         let update = StatuslineUpdate {
             session_id: "test".to_string(),
+            cwd: None,
             tokens_in: 5000,
             tokens_out: 2000,
             cost_usd: 0.05,
             model: Some("claude-sonnet-4-20250514".to_string()),
             status: None,
+            title: None,
+            pid: None,
+            tty: None,
         };
 
         session.apply_statusline_update(&update);
@@ -690,21 +812,29 @@ mod tests {
 
         let update1 = StatuslineUpdate {
             session_id: "test".to_string(),
+            cwd: None,
             tokens_in: 1000,
             tokens_out: 500,
             cost_usd: 0.01,
             model: Some("claude-sonnet-4-20250514".to_string()),
             status: None,
+            title: None,
+            pid: None,
+            tty: None,
         };
         session.apply_statusline_update(&update1);
 
         let update2 = StatuslineUpdate {
             session_id: "test".to_string(),
+            cwd: None,
             tokens_in: 3000,
             tokens_out: 1500,
             cost_usd: 0.03,
             model: Some("claude-sonnet-4-20250514".to_string()),
             status: None,
+            title: None,
+            pid: None,
+            tty: None,
         };
         session.apply_statusline_update(&update2);
 
@@ -720,16 +850,42 @@ mod tests {
 
         let update = StatuslineUpdate {
             session_id: "test".to_string(),
+            cwd: None,
             tokens_in: 1000,
             tokens_out: 500,
             cost_usd: 0.01,
             model: None,
             status: Some("Stewing".to_string()),
+            title: None,
+            pid: None,
+            tty: None,
         };
 
         session.apply_statusline_update(&update);
 
         assert_eq!(session.cli_status_text.as_deref(), Some("Stewing"));
+    }
+
+    #[test]
+    fn test_statusline_update_applies_external_title() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        let update = StatuslineUpdate {
+            session_id: "test".to_string(),
+            cwd: None,
+            tokens_in: 1000,
+            tokens_out: 500,
+            cost_usd: 0.01,
+            model: None,
+            status: None,
+            title: Some("OpenCode active task".to_string()),
+            pid: None,
+            tty: None,
+        };
+
+        session.apply_statusline_update(&update);
+
+        assert_eq!(session.title.as_deref(), Some("OpenCode active task"));
     }
 
     #[test]
@@ -741,6 +897,22 @@ mod tests {
         session.apply_event(&payload);
 
         assert_eq!(session.cli_status_text.as_deref(), Some("Stewing"));
+    }
+
+    #[test]
+    fn test_hook_payload_applies_external_title_and_model() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        let mut payload = make_hook_payload("SessionStart");
+        payload.title = Some("OpenCode session".to_string());
+        payload.model = Some("anthropic/claude-sonnet-4-5".to_string());
+
+        session.apply_event(&payload);
+
+        assert_eq!(session.title.as_deref(), Some("OpenCode session"));
+        assert_eq!(
+            session.model.as_deref(),
+            Some("anthropic/claude-sonnet-4-5")
+        );
     }
 
     #[test]

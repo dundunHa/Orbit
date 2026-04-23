@@ -12,11 +12,22 @@ const UNINSTALL_MENU_ID: &str = "tray-settings-uninstall";
 const RECHECK_MENU_ID: &str = "tray-settings-recheck";
 
 pub fn build_submenu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Submenu<R>> {
-    let uninstall_item =
-        MenuItem::with_id(app, UNINSTALL_MENU_ID, "卸载Orbit", true, None::<&str>)?;
-    let recheck_item = MenuItem::with_id(app, RECHECK_MENU_ID, "重新检查连接", true, None::<&str>)?;
+    let uninstall_item = MenuItem::with_id(
+        app,
+        UNINSTALL_MENU_ID,
+        "Uninstall Orbit",
+        true,
+        None::<&str>,
+    )?;
+    let recheck_item = MenuItem::with_id(
+        app,
+        RECHECK_MENU_ID,
+        "Recheck Connection",
+        true,
+        None::<&str>,
+    )?;
 
-    SubmenuBuilder::with_id(app, SETTINGS_SUBMENU_ID, "设置")
+    SubmenuBuilder::with_id(app, SETTINGS_SUBMENU_ID, "Settings")
         .item(&uninstall_item)
         .item(&recheck_item)
         .build()

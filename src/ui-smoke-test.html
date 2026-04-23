@@ -190,7 +190,6 @@
               </div>
               <div class="live-ticker" aria-hidden="true">
                 <span class="live-ticker-primary"></span>
-                <span class="live-ticker-detail"></span>
               </div>
             </div>
             <div class="live-metrics"></div>
@@ -692,6 +691,71 @@
           },
         ],
         [
+          "Live strip blocked tone uses 3px rail (WCAG non-color cue)",
+          async () => {
+            updatePrimarySession({
+              status: { type: "WaitingForApproval" },
+            });
+            await settle(80);
+            const rail = document.querySelector(".live-rail");
+            const strip = document.querySelector(".live-strip");
+            assert(
+              getComputedStyle(rail).width === "3px",
+              `blocked rail should be 3px, got ${getComputedStyle(rail).width}`,
+            );
+            assert(
+              strip.dataset.tone === "blocked",
+              `dataset.tone should be 'blocked' for WaitingForApproval, got '${strip.dataset.tone}'`,
+            );
+          },
+        ],
+        [
+          "Live strip aria-label uses 4-field format without detail",
+          async () => {
+            updatePrimarySession({
+              status: { type: "Processing" },
+              cli_status_text: "Thinking hard",
+            });
+            await settle(80);
+            const label = document
+              .querySelector(".live-strip")
+              ?.getAttribute("aria-label");
+            assert(
+              typeof label === "string" && label.length > 0,
+              "aria-label should be set on live strip",
+            );
+            assert(
+              !label.includes("undefined"),
+              `aria-label must not contain 'undefined', got: ${label}`,
+            );
+            const parts = label.split(". ");
+            assert(
+              parts.length === 3,
+              `aria-label should split into 3 parts on '. ' (cwd:title / primary / metrics), got ${parts.length}: ${label}`,
+            );
+          },
+        ],
+        [
+          "Live strip row 3 baseline alignment under long primary text",
+          async () => {
+            updatePrimarySession({
+              status: {
+                type: "WaitingForApproval",
+                tool_name: "very-long-tool-name-for-baseline-test",
+              },
+            });
+            await settle(80);
+            const primary = document.querySelector(".live-ticker-primary");
+            const metrics = document.querySelector(".live-metrics");
+            const pBottom = primary.getBoundingClientRect().bottom;
+            const mBottom = metrics.getBoundingClientRect().bottom;
+            assert(
+              Math.abs(pBottom - mBottom) <= 2,
+              `row 3 baseline drift: primary.bottom=${pBottom} metrics.bottom=${mBottom} diff=${Math.abs(pBottom - mBottom)}`,
+            );
+          },
+        ],
+        [
           "Icon Corner permission renders three compact actions",
           async () => {
             emit("interaction-request", permissionPayload("perm-icon"));
@@ -758,10 +822,7 @@
             assert(
               document
                 .querySelector(".permission-action-meta")
-                ?.textContent.includes("once") ||
-                document
-                  .querySelector(".permission-action-meta")
-                  ?.textContent.includes("一次"),
+                ?.textContent.includes("once"),
               "permission scope meta missing",
             );
           },
