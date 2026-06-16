@@ -1,12 +1,9 @@
-use std::collections::HashMap;
 use std::sync::Arc;
-
-use tokio::sync::Mutex;
 
 use crate::state::{HookPayload, Session, SessionMap, StatuslineUpdate};
 
 fn create_test_session_map() -> SessionMap {
-    Arc::new(Mutex::new(HashMap::new()))
+    Arc::new(dashmap::DashMap::new())
 }
 
 fn create_hook_payload(session_id: &str, event: &str) -> HookPayload {
@@ -16,6 +13,7 @@ fn create_hook_payload(session_id: &str, event: &str) -> HookPayload {
         cwd: "/tmp".to_string(),
         tool_name: None,
         tool_input: None,
+        permission_suggestions: None,
         tool_use_id: None,
         tool_response: None,
         mcp_server_name: None,
@@ -23,6 +21,7 @@ fn create_hook_payload(session_id: &str, event: &str) -> HookPayload {
         message: None,
         mode: None,
         url: None,
+        transcript_path: None,
         elicitation_id: None,
         requested_schema: None,
         action: None,
@@ -65,7 +64,6 @@ async fn test_full_session_lifecycle_with_statusline_tokens() {
     let session_id = "test-session-001";
 
     {
-        let mut guard = sessions.lock().await;
         let mut session = Session::new(session_id.to_string(), "/tmp".to_string(), None, None);
         session.apply_event(&create_hook_payload(session_id, "SessionStart"));
 
@@ -84,12 +82,12 @@ async fn test_full_session_lifecycle_with_statusline_tokens() {
             0.03,
             "claude-sonnet-4-6",
         ));
-        guard.insert(session_id.to_string(), session);
+        sessions.insert(session_id.to_string(), session);
     }
 
     let history_entry = {
-        let guard = sessions.lock().await;
-        let session = guard.get(session_id).unwrap();
+        let session_ref = sessions.get(session_id).unwrap();
+        let session = session_ref.value();
 
         // Values are REPLACED (cumulative), not added
         assert_eq!(session.tokens_in, 250);
@@ -111,8 +109,6 @@ async fn test_sessions_keep_independent_token_totals() {
     let sessions = create_test_session_map();
 
     {
-        let mut guard = sessions.lock().await;
-
         let mut first = Session::new("session-1".to_string(), "/tmp".to_string(), None, None);
         first.apply_statusline_update(&create_statusline_update(
             "session-1",
@@ -131,13 +127,12 @@ async fn test_sessions_keep_independent_token_totals() {
             "claude-sonnet-4-6",
         ));
 
-        guard.insert(first.id.clone(), first);
-        guard.insert(second.id.clone(), second);
+        sessions.insert(first.id.clone(), first);
+        sessions.insert(second.id.clone(), second);
     }
 
-    let guard = sessions.lock().await;
-    let first = guard.get("session-1").unwrap();
-    let second = guard.get("session-2").unwrap();
+    let first = sessions.get("session-1").unwrap();
+    let second = sessions.get("session-2").unwrap();
 
     assert_eq!(first.tokens_in, 120);
     assert_eq!(first.tokens_out, 80);
@@ -178,7 +173,6 @@ async fn test_subagent_pretooluse_routes_to_agents_map_not_parent() {
     let session_id = "sid-parent";
 
     {
-        let mut guard = sessions.lock().await;
         let mut session = Session::new(session_id.to_string(), "/tmp".to_string(), None, None);
 
         // Main agent performs one tool call -> parent tool_count should go to 1.
@@ -200,37 +194,38 @@ async fn test_subagent_pretooluse_routes_to_agents_map_not_parent() {
         sub_pre2.agent_type = Some("general-purpose".to_string());
         session.apply_subagent_event(&sub_pre2);
 
-        guard.insert(session.id.clone(), session);
+        sessions.insert(session.id.clone(), session);
     }
 
-    let guard = sessions.lock().await;
-    let session = guard.get(session_id).unwrap();
+    let parent_status_before = {
+        let session_ref = sessions.get(session_id).unwrap();
+        let session = session_ref.value();
 
-    // Parent session untouched by subagent events.
-    assert_eq!(
-        session.tool_count, 1,
-        "parent tool_count should reflect only the main agent's tool calls"
-    );
+        // Parent session untouched by subagent events.
+        assert_eq!(
+            session.tool_count, 1,
+            "parent tool_count should reflect only the main agent's tool calls"
+        );
 
-    // Subagent record exists and tracks its own tool count + type.
-    let sub = session.agents.get("aaa111").expect("subagent should exist");
-    assert_eq!(sub.tool_count, 2);
-    assert_eq!(sub.agent_type.as_deref(), Some("general-purpose"));
-    assert!(!sub.ended, "should not be ended until SubagentStop arrives");
-    assert_eq!(sub.last_tool_name.as_deref(), Some("Grep"));
+        // Subagent record exists and tracks its own tool count + type.
+        let sub = session.agents.get("aaa111").expect("subagent should exist");
+        assert_eq!(sub.tool_count, 2);
+        assert_eq!(sub.agent_type.as_deref(), Some("general-purpose"));
+        assert!(!sub.ended, "should not be ended until SubagentStop arrives");
+        assert_eq!(sub.last_tool_name.as_deref(), Some("Grep"));
+
+        format!("{:?}", session.status)
+    };
 
     // SubagentStop must mark the agent as ended and leave parent status alone.
-    let parent_status_before = format!("{:?}", session.status);
-    drop(guard);
     {
-        let mut guard = sessions.lock().await;
-        let session = guard.get_mut(session_id).unwrap();
+        let mut entry = sessions.get_mut(session_id).unwrap();
         let mut stop = create_hook_payload(session_id, "SubagentStop");
         stop.agent_id = Some("aaa111".to_string());
-        session.apply_subagent_event(&stop);
+        entry.apply_subagent_event(&stop);
     }
-    let guard = sessions.lock().await;
-    let session = guard.get(session_id).unwrap();
+    let session_ref = sessions.get(session_id).unwrap();
+    let session = session_ref.value();
     assert!(session.agents.get("aaa111").unwrap().ended);
     assert_eq!(
         format!("{:?}", session.status),
@@ -250,7 +245,6 @@ async fn test_two_independent_sessions_same_cwd_are_never_linked() {
     let sessions = create_test_session_map();
 
     {
-        let mut guard = sessions.lock().await;
         let cwd = "/Users/alice/project";
 
         // Main agent A kicks off a Task PreToolUse in the shared cwd.
@@ -266,13 +260,14 @@ async fn test_two_independent_sessions_same_cwd_are_never_linked() {
         bread.tool_name = Some("Read".to_string());
         second.apply_event(&bread);
 
-        guard.insert(first.id.clone(), first);
-        guard.insert(second.id.clone(), second);
+        sessions.insert(first.id.clone(), first);
+        sessions.insert(second.id.clone(), second);
     }
 
-    let guard = sessions.lock().await;
-    let a = guard.get("sid-aaa").unwrap();
-    let b = guard.get("sid-bbb").unwrap();
+    let a_ref = sessions.get("sid-aaa").unwrap();
+    let a = a_ref.value();
+    let b_ref = sessions.get("sid-bbb").unwrap();
+    let b = b_ref.value();
 
     assert!(a.parent_session_id.is_none());
     assert!(b.parent_session_id.is_none());

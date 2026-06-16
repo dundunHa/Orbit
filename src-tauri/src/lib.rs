@@ -115,7 +115,22 @@ fn geometry_changed_significantly(a: &notch::NotchGeometry, b: &notch::NotchGeom
         || (a.notch_width - b.notch_width).abs() > THRESHOLD
 }
 
+fn init_logger() {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        if std::env::var_os("RUST_LOG").is_none() {
+            // SAFETY: called once, before any threads spawn.
+            unsafe {
+                std::env::set_var("RUST_LOG", "info");
+            }
+        }
+        let _ = pretty_env_logger::try_init_timed();
+    });
+}
+
 pub fn run() {
+    init_logger();
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![

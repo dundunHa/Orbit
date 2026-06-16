@@ -73,10 +73,13 @@ const en = {
   "live.metricsWithModel": "{tokens} · {model}",
 
   "permission.allow": "Allow",
+  "permission.allowRemember": "Always allow",
   "permission.deny": "Deny",
   "permission.allowAria": "Allow once",
+  "permission.allowRememberAria": "Always allow this permission",
   "permission.denyAria": "Deny this request",
   "permission.scopeOnce": "Allow once for this session",
+  "permission.scopeRememberAvailable": "Allow once or always allow",
   "permission.toolLabel.bash": "Claude wants to use Bash",
   "permission.toolLabel.edit": "Claude wants to edit files",
   "permission.toolLabel.read": "Claude wants to read files",

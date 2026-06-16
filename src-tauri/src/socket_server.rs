@@ -54,7 +54,7 @@ fn build_permission_request_response(
     tool_input: Option<&serde_json::Value>,
 ) -> Option<serde_json::Value> {
     match decision.normalized_decision() {
-        "allow" => {
+        "allow" | "allow_and_remember" => {
             let mut response = serde_json::json!({
                 "hookSpecificOutput": {
                     "hookEventName": "PermissionRequest",
@@ -69,6 +69,14 @@ fn build_permission_request_response(
                 response["hookSpecificOutput"]["decision"]["updatedInput"] = updated_input;
             }
 
+            if decision.normalized_decision() == "allow_and_remember"
+                && let Some(updated_permissions) =
+                    build_updated_permissions(tool_input, decision.content.as_ref())
+            {
+                response["hookSpecificOutput"]["decision"]["updatedPermissions"] =
+                    updated_permissions;
+            }
+
             Some(response)
         }
         "deny" => Some(serde_json::json!({
@@ -80,6 +88,31 @@ fn build_permission_request_response(
         "passthrough" => None,
         _ => None,
     }
+}
+
+fn build_updated_permissions(
+    tool_input: Option<&serde_json::Value>,
+    content: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    content
+        .and_then(|value| value.get("updatedPermissions"))
+        .cloned()
+        .or_else(|| {
+            content
+                .and_then(|value| value.get("updated_permissions"))
+                .cloned()
+        })
+        .or_else(|| {
+            tool_input
+                .and_then(|value| value.get("permission_suggestions"))
+                .cloned()
+        })
+        .or_else(|| {
+            tool_input
+                .and_then(|value| value.get("permissionSuggestions"))
+                .cloned()
+        })
+        .or_else(|| tool_input.and_then(|value| value.get("always")).cloned())
 }
 
 fn build_ask_user_question_updated_input(
@@ -156,12 +189,17 @@ async fn clear_session_waiting_for_approval(
     app_handle: &tauri::AppHandle,
     session_id: &str,
 ) {
-    let mut sessions = sessions.lock().await;
-    if let Some(session) = sessions.get_mut(session_id)
-        && session.clear_waiting_for_approval()
-    {
-        let _ = app_handle.emit("session-update", session.clone());
-    }
+    let snapshot = {
+        let mut entry = match sessions.get_mut(session_id) {
+            Some(e) => e,
+            None => return,
+        };
+        if !entry.clear_waiting_for_approval() {
+            return;
+        }
+        entry.clone()
+    };
+    let _ = app_handle.emit("session-update", snapshot);
 }
 
 pub async fn start(
@@ -279,20 +317,22 @@ async fn handle_connection(
                     "[Orbit] StatuslineUpdate: session={}, tokens_in={}, tokens_out={}, cost=${}",
                     update.session_id, update.tokens_in, update.tokens_out, update.cost_usd
                 );
-                let mut sessions_guard = sessions.lock().await;
-                let session = sessions_guard
-                    .entry(update.session_id.clone())
-                    .or_insert_with(|| {
-                        Session::new(
-                            update.session_id.clone(),
-                            update.cwd.clone().unwrap_or_default(),
-                            update.pid,
-                            update.tty.clone(),
-                        )
-                    });
-                session.apply_statusline_update(&update);
-                let _ = app_handle.emit("session-update", session.clone());
-                refresh_today_stats(&sessions_guard, today_stats);
+                let snapshot = {
+                    let mut entry = sessions
+                        .entry(update.session_id.clone())
+                        .or_insert_with(|| {
+                            Session::new(
+                                update.session_id.clone(),
+                                update.cwd.clone().unwrap_or_default(),
+                                update.pid,
+                                update.tty.clone(),
+                            )
+                        });
+                    entry.apply_statusline_update(&update);
+                    entry.clone()
+                };
+                let _ = app_handle.emit("session-update", snapshot);
+                refresh_today_stats(&sessions, today_stats);
             }
             return;
         }
@@ -355,32 +395,47 @@ async fn handle_connection(
         );
     }
 
-    // Update session state
     {
-        let mut sessions_guard = sessions.lock().await;
-        let session = sessions_guard.entry(session_id.clone()).or_insert_with(|| {
-            Session::new(
-                session_id.clone(),
-                payload.cwd.clone(),
-                payload.pid,
-                payload.tty.clone(),
-            )
-        });
+        let snapshot = {
+            let mut entry = sessions.entry(session_id.clone()).or_insert_with(|| {
+                Session::new(
+                    session_id.clone(),
+                    payload.cwd.clone(),
+                    payload.pid,
+                    payload.tty.clone(),
+                )
+            });
 
-        if is_subagent_event {
-            // Subagent event: update only the per-agent record; parent session's
-            // status/tool_count/tokens intentionally unchanged.
-            session.apply_subagent_event(&payload);
-        } else {
-            session.apply_event(&payload);
+            if is_subagent_event {
+                entry.apply_subagent_event(&payload);
+            } else {
+                entry.apply_event(&payload);
+            }
+
+            entry.clone()
+        };
+
+        let _ = app_handle.emit("session-update", snapshot);
+    }
+
+    if should_refresh_title(&sessions, &session_id) {
+        let session_id_for_fetch = session_id.clone();
+        let fetched = tokio::task::spawn_blocking(move || {
+            crate::state::Session::fetch_title_from_claude_sessions(&session_id_for_fetch)
+        })
+        .await
+        .ok()
+        .flatten();
+
+        if let Some((title, source)) = fetched {
+            let snapshot = sessions.get_mut(&session_id).map(|mut entry| {
+                entry.set_title_if_higher_priority(title, source);
+                entry.clone()
+            });
+            if let Some(s) = snapshot {
+                let _ = app_handle.emit("session-update", s);
+            }
         }
-
-        if session.title.is_none() {
-            session.refresh_title_from_claude();
-        }
-
-        // Emit update to frontend
-        let _ = app_handle.emit("session-update", session.clone());
     }
 
     if is_permission_prompt {
@@ -393,18 +448,14 @@ async fn handle_connection(
         );
     }
 
-    // Write history outside the lock to avoid blocking tokio worker
     let history_entry = if is_session_end {
-        let sessions_guard = sessions.lock().await;
-        sessions_guard
-            .get(&session_id)
-            .map(|s| s.to_history_entry())
+        sessions.get(&session_id).map(|entry| entry.to_history_entry())
     } else {
         None
     };
 
     if let Some(entry) = history_entry {
-        history::save_entry(entry);
+        tokio::task::spawn_blocking(move || history::save_entry(entry));
     }
 
     // Handle permission request / elicitation: wait for Orbit UI to answer.
@@ -488,6 +539,7 @@ async fn handle_connection(
                 "url": payload.url,
                 "mcp_server_name": payload.mcp_server_name,
                 "requested_schema": payload.requested_schema,
+                "permission_suggestions": payload.permission_suggestions,
             }),
         );
 
@@ -558,16 +610,14 @@ async fn handle_connection(
     }
 }
 
-fn refresh_today_stats(
-    sessions: &std::collections::HashMap<String, Session>,
-    today_stats: &TodayStats,
-) {
+fn refresh_today_stats(sessions: &SessionMap, today_stats: &TodayStats) {
     let mut stats = today_stats.lock();
     stats.reset_if_new_day();
 
     let today = chrono::Local::now().date_naive();
     let (mut total_in, mut total_out) = (0u64, 0u64);
-    for s in sessions.values() {
+    for entry in sessions.iter() {
+        let s = entry.value();
         let session_date = s.last_event_at.with_timezone(&chrono::Local).date_naive();
         if session_date == today {
             let (delta_in, delta_out) = stats.session_today_delta(&s.id, s.tokens_in, s.tokens_out);
@@ -579,7 +629,17 @@ fn refresh_today_stats(
     stats.tokens_in = total_in;
     stats.tokens_out = total_out;
     stats.update_rate(total_out);
-    stats.save_to_disk();
+    // Snapshot the stats so we can release the parking_lot mutex before doing fs I/O.
+    let snapshot = stats.clone();
+    drop(stats);
+    tokio::task::spawn_blocking(move || snapshot.save_to_disk());
+}
+
+fn should_refresh_title(sessions: &SessionMap, session_id: &str) -> bool {
+    sessions
+        .get(session_id)
+        .map(|entry| entry.title.is_none())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -594,6 +654,7 @@ mod tests {
             cwd: "/tmp".to_string(),
             tool_name: None,
             tool_input: None,
+            permission_suggestions: None,
             tool_use_id: None,
             tool_response: None,
             mcp_server_name: None,
@@ -601,6 +662,7 @@ mod tests {
             message: None,
             mode: None,
             url: None,
+            transcript_path: None,
             elicitation_id: None,
             requested_schema: None,
             action: None,
@@ -899,6 +961,38 @@ mod tests {
         assert_eq!(
             response["hookSpecificOutput"]["decision"]["updatedInput"]["answers"]["要加吗？"],
             "全部处理"
+        );
+    }
+
+    #[test]
+    fn test_build_interaction_response_builds_updated_permissions_for_remembered_allow() {
+        let mut payload = create_hook_payload("PermissionRequest", "test-remember-permission");
+        payload.tool_name = Some("Bash".to_string());
+        let updated_permissions = serde_json::json!([{
+            "type": "addRules",
+            "behavior": "allow",
+            "destination": "localSettings",
+            "rules": ["Bash(git status:*)"]
+        }]);
+        payload.tool_input = Some(serde_json::json!({
+            "command": "git status",
+            "permission_suggestions": updated_permissions
+        }));
+
+        let response =
+            build_interaction_response(&payload, &make_decision("allow_and_remember")).unwrap();
+
+        assert_eq!(
+            response["hookSpecificOutput"]["decision"]["behavior"],
+            "allow"
+        );
+        assert_eq!(
+            response["hookSpecificOutput"]["decision"]["updatedPermissions"][0]["type"],
+            "addRules"
+        );
+        assert_eq!(
+            response["hookSpecificOutput"]["decision"]["updatedPermissions"][0]["rules"][0],
+            "Bash(git status:*)"
         );
     }
 

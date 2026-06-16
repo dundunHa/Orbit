@@ -116,7 +116,7 @@ fn run_on_main_thread<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static)
         );
     }
 
-    rx.recv().ok()
+    rx.recv_timeout(std::time::Duration::from_millis(500)).ok()
 }
 
 #[cfg(target_os = "macos")]

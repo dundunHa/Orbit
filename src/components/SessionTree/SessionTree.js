@@ -148,7 +148,6 @@ export class SessionTree {
       <div class="content-wrapper">
         <span class="status-icon" style="color: ${statusConfig.color}">${statusConfig.icon}</span>
         <span class="message-text">
-          <strong>${session.id}</strong>
           <span style="color: var(--text-muted)">${session.description}</span>
         </span>
         ${isParent ? '<span class="parent-tag">Parent</span>' : ""}

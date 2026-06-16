@@ -206,16 +206,85 @@ fn cmd_statusline() {
         std::process::exit(0);
     }
 
+    let debug_context = statusline_debug_context(input);
+    let payload_summary = hook_debug_payload_summary(input);
+
+    hook_debug::append_hook_debug_log(
+        "orbit_cli",
+        debug_context.session_id.as_deref(),
+        debug_context.hook_event_name.as_deref(),
+        None,
+        "statusline-received",
+        None,
+        Some(payload_summary.as_str()),
+    );
+
     let Some(msg) = build_statusline_message(input) else {
+        hook_debug::append_hook_debug_log(
+            "orbit_cli",
+            debug_context.session_id.as_deref(),
+            debug_context.hook_event_name.as_deref(),
+            None,
+            "statusline-parse-failed",
+            None,
+            Some(payload_summary.as_str()),
+        );
         std::process::exit(0)
     };
 
-    if let Ok(mut stream) = UnixStream::connect(&socket_path) {
-        let payload = format!("{}\n", msg);
-        let _ = stream.write_all(payload.as_bytes());
+    hook_debug::append_hook_debug_log(
+        "orbit_cli",
+        debug_context.session_id.as_deref(),
+        debug_context.hook_event_name.as_deref(),
+        None,
+        "statusline-transformed",
+        Some(msg.as_str()),
+        Some(payload_summary.as_str()),
+    );
+
+    match UnixStream::connect(&socket_path) {
+        Ok(mut stream) => {
+            if forward_statusline_payload(&msg, &mut stream).is_err() {
+                hook_debug::append_hook_debug_log(
+                    "orbit_cli",
+                    debug_context.session_id.as_deref(),
+                    debug_context.hook_event_name.as_deref(),
+                    None,
+                    "statusline-write-failed",
+                    Some(msg.as_str()),
+                    Some(payload_summary.as_str()),
+                );
+            } else {
+                hook_debug::append_hook_debug_log(
+                    "orbit_cli",
+                    debug_context.session_id.as_deref(),
+                    debug_context.hook_event_name.as_deref(),
+                    None,
+                    "statusline-forwarded",
+                    Some(msg.as_str()),
+                    Some(payload_summary.as_str()),
+                );
+            }
+        }
+        Err(_) => {
+            hook_debug::append_hook_debug_log(
+                "orbit_cli",
+                debug_context.session_id.as_deref(),
+                debug_context.hook_event_name.as_deref(),
+                None,
+                "statusline-socket-connect-failed",
+                Some(msg.as_str()),
+                Some(payload_summary.as_str()),
+            );
+        }
     }
 
     std::process::exit(0);
+}
+
+fn forward_statusline_payload<S: Write>(message: &str, stream: &mut S) -> io::Result<()> {
+    let payload = format!("{}\n", message);
+    stream.write_all(payload.as_bytes())
 }
 
 fn build_statusline_message(input: &str) -> Option<String> {
@@ -263,6 +332,25 @@ fn build_statusline_message(input: &str) -> Option<String> {
         })
         .to_string(),
     )
+}
+
+fn statusline_debug_context(input: &str) -> HookDebugContext {
+    let mut context = HookDebugContext {
+        session_id: None,
+        hook_event_name: Some("StatuslineUpdate".to_string()),
+    };
+
+    let Ok(value) = serde_json::from_str::<Value>(input) else {
+        return context;
+    };
+
+    context.session_id = value
+        .get("session_id")
+        .or_else(|| value.get("sessionId"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    context
 }
 
 #[cfg(test)]
@@ -398,5 +486,33 @@ mod tests {
         assert_eq!(forwarded["cost_usd"], 0.78);
         assert_eq!(forwarded["model"], "claude-sonnet-4-20250514");
         assert_eq!(forwarded["status"], "Stewing");
+    }
+
+    #[test]
+    fn forward_statusline_payload_writes_transformed_message() {
+        let payload = r#"{"type":"StatuslineUpdate","session_id":"session-5","tokens_in":10,"tokens_out":20}"#;
+        let (mut client, server) = UnixStream::pair().unwrap();
+
+        let server_thread = thread::spawn(move || {
+            let mut line = String::new();
+            let mut reader = BufReader::new(server);
+            reader.read_line(&mut line).unwrap();
+            line
+        });
+
+        forward_statusline_payload(payload, &mut client).unwrap();
+        let received = server_thread.join().unwrap();
+
+        assert_eq!(received.trim(), payload);
+    }
+
+    #[test]
+    fn statusline_debug_context_uses_statusline_event_name() {
+        let payload = r#"{"session_id":"session-6","status":"Working"}"#;
+
+        let context = statusline_debug_context(payload);
+
+        assert_eq!(context.session_id.as_deref(), Some("session-6"));
+        assert_eq!(context.hook_event_name.as_deref(), Some("StatuslineUpdate"));
     }
 }

@@ -41,11 +41,10 @@ const FOCUS_WIDTH_WIDE = 720;
 const WINDOW_EDGE_MARGIN = 24;
 const LIVE_STRIP_EXTRA_HEIGHT = 48;
 const LIVE_STRIP_MIN_HEIGHT = 78;
-const LIVE_STRIP_MAX_HEIGHT = 100;
-const QUESTION_OPTION_MAX_WIDTH = 208;
-const QUESTION_OPTION_MIN_WIDTH = 144;
-const QUESTION_OPTION_LONG_MIN_WIDTH = 180;
-const QUESTION_OPTION_GAP = 5;
+const LIVE_STRIP_MAX_HEIGHT = 96;
+const QUESTION_OPTION_MIN_WIDTH = 132;
+const QUESTION_OPTION_LONG_MIN_WIDTH = 150;
+const QUESTION_OPTION_GAP = 6;
 const QUESTION_OPTION_LAYOUT_LEFT_INSET = 16;
 const QUESTION_OPTION_LAYOUT_RIGHT_INSET = 16;
 
@@ -392,22 +391,14 @@ function getQuestionOptionLayout(question) {
         (minOptionWidth + QUESTION_OPTION_GAP),
     ),
   );
-  const preferredColumns = optionCount <= 1 ? 1 : optionCount <= 4 ? 2 : 3;
+  const preferredColumns = optionCount <= 4 ? optionCount : 3;
   const columns = Math.max(
     1,
     Math.min(optionCount, preferredColumns, maxColumnsByWidth),
   );
-  const optionWidth = Math.min(
-    QUESTION_OPTION_MAX_WIDTH,
-    Math.floor(
-      (availableWidth - QUESTION_OPTION_GAP * (columns - 1)) / columns,
-    ),
-  );
 
   return {
     columns,
-    optionWidth,
-    maxWidth: optionWidth * columns + QUESTION_OPTION_GAP * (columns - 1),
   };
 }
 
@@ -748,8 +739,8 @@ function formatLiveCwd(cwd) {
     return t("live.unknownCwd");
   }
 
-  const parts = cwd.split("/").filter(Boolean).slice(-2);
-  return parts.length > 0 ? `~/${parts.join("/")}` : cwd;
+  const parts = cwd.split("/").filter(Boolean);
+  return parts[parts.length - 1] || cwd;
 }
 
 function formatLiveTitle(session) {
@@ -768,11 +759,20 @@ function getCliStatusText(session) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getTaskStatusText(session) {
+  const value = session?.task_status_text ?? session?.taskStatusText;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getPreferredStatusText(session) {
+  return getCliStatusText(session) || getTaskStatusText(session);
+}
+
 function getLiveSessionView(session) {
   const status = session.status || {};
   const tokenStats = getSessionTokenStats(session);
   const toolName = status.tool_name || t("live.tool");
-  const cliStatusText = getCliStatusText(session);
+  const cliStatusText = getPreferredStatusText(session);
   const pendingInteraction =
     status.type === "WaitingForApproval"
       ? getPendingInteractionForSession(session.id)
@@ -787,7 +787,7 @@ function getLiveSessionView(session) {
       break;
     case "RunningTool":
       tone = "running-tool";
-      primary = t("live.runningTool", { tool: toolName });
+      primary = cliStatusText || t("live.runningTool", { tool: toolName });
       break;
     case "WaitingForApproval":
       tone = "blocked";
@@ -798,7 +798,7 @@ function getLiveSessionView(session) {
       break;
     case "Anomaly":
       tone = "stuck";
-      primary = t("live.stuckSeconds", {
+      primary = cliStatusText || t("live.stuckSeconds", {
         seconds: status.idle_seconds || 0,
       });
       break;
@@ -872,7 +872,7 @@ function renderLiveStrip() {
   liveCwd.textContent = view.cwd;
   liveTitle.textContent = view.title;
   liveTicker.dataset.tone = view.tone;
-  liveTickerPrimary.textContent = view.primary;
+  liveTickerPrimary.textContent = `${view.primary} · ${view.metrics}`;
   liveMetrics.textContent = view.metrics;
   liveStrip.setAttribute(
     "aria-label",
@@ -887,13 +887,16 @@ function clearSessionDetail() {
     return;
   }
 
-  sessionCwd.textContent = "";
-  detailStatus.textContent = shouldShowOnboardingPill()
-    ? getOnboardingView(onboardingState)?.text || t("status.waiting")
-    : t("status.waiting");
-  detailTools.textContent = "";
-  detailTokens.textContent = "";
-  detailModel.textContent = "";
+  // 当前会话摘要先隐藏，hover 展开时不填充这块内容。
+  if (sessionCwd || detailStatus || detailTools || detailTokens || detailModel) {
+    // sessionCwd.textContent = "";
+    // detailStatus.textContent = shouldShowOnboardingPill()
+    //   ? getOnboardingView(onboardingState)?.text || t("status.waiting")
+    //   : t("status.waiting");
+    // detailTools.textContent = "";
+    // detailTokens.textContent = "";
+    // detailModel.textContent = "";
+  }
 }
 
 function renderOnboardingSection() {
@@ -958,7 +961,7 @@ function updateUI(session) {
 
   const status = session.status;
   const statusType = status.type;
-  const cliStatusText = getCliStatusText(session);
+  const cliStatusText = getPreferredStatusText(session);
   const activeToolName = statusType === "RunningTool" ? status.tool_name : null;
   const pendingInteraction =
     statusType === "WaitingForApproval"
@@ -976,7 +979,9 @@ function updateUI(session) {
       break;
     case "RunningTool":
       statusDot.classList.add("running-tool");
-      setStatusText(formatTool(status.tool_name, status.description));
+      setStatusText(
+        cliStatusText || formatTool(status.tool_name, status.description),
+      );
       break;
     case "WaitingForApproval":
       statusDot.classList.add("waiting-approval");
@@ -988,7 +993,9 @@ function updateUI(session) {
       break;
     case "Anomaly":
       statusDot.classList.add("anomaly");
-      setStatusText(t("status.stuck", { seconds: status.idle_seconds }));
+      setStatusText(
+        cliStatusText || t("status.stuck", { seconds: status.idle_seconds }),
+      );
       break;
     case "Compacting":
       statusDot.classList.add("processing");
@@ -1007,22 +1014,35 @@ function updateUI(session) {
 
   // Detail view
   if (isExpanded) {
-    const cwdShort = session.cwd.split("/").slice(-2).join("/");
-    // sessionCwd.textContent = cwdShort;
-    detailStatus.textContent = currentStatusText;
-    // detailTools.textContent = session.tool_count + ' tool calls this session';
-
-    const tokenStats = getSessionTokenStats(session);
-    detailTokens.textContent =
-      `${formatTokenCount(tokenStats.input)} in · ` +
-      `${formatTokenCount(tokenStats.output)} out · ` +
-      `${formatTokenCount(tokenStats.total)} total`;
-
-    const rateLabel =
-      tokenStats.durationSecs > 0
-        ? `${formatTokenRate(tokenStats.averageOutputTps)} avg`
-        : "—";
-    detailModel.textContent = `${rateLabel} · ${session.model || "—"}`;
+    // 当前会话摘要先隐藏，hover 展开时不展示这块内容。
+    if (
+      sessionCwd ||
+      detailStatus ||
+      detailTools ||
+      detailTokens ||
+      detailModel
+    ) {
+      // const cwdShort = session.cwd.split("/").slice(-2).join("/");
+      // if (sessionCwd) sessionCwd.textContent = cwdShort;
+      // if (detailStatus) detailStatus.textContent = currentStatusText;
+      // if (detailTools) {
+      //   detailTools.textContent = session.tool_count + " tool calls this session";
+      // }
+      // const tokenStats = getSessionTokenStats(session);
+      // if (detailTokens) {
+      //   detailTokens.textContent =
+      //     `${formatTokenCount(tokenStats.input)} in · ` +
+      //     `${formatTokenCount(tokenStats.output)} out · ` +
+      //     `${formatTokenCount(tokenStats.total)} total`;
+      // }
+      // const rateLabel =
+      //   tokenStats.durationSecs > 0
+      //     ? `${formatTokenRate(tokenStats.averageOutputTps)} avg`
+      //     : "—";
+      // if (detailModel) {
+      //   detailModel.textContent = `${rateLabel} · ${session.model || "—"}`;
+      // }
+    }
   }
 
   // Pending interactions are resolved only by explicit lifecycle events.
@@ -1396,9 +1416,51 @@ function buildPermissionDisplay(request, payload = {}) {
     meta,
     requiresFocus:
       riskReasons.length > 0 ||
+      family === "edit" ||
+      family === "network" ||
+      family === "mcp" ||
       (request.message || "").length > 180 ||
       boxes.some((box) => box.text.length > 220),
   };
+}
+
+function normalizePermissionSuggestions(payload, toolInput) {
+  const candidates = [
+    payload.permission_suggestions,
+    payload.permissionSuggestions,
+    toolInput?.permission_suggestions,
+    toolInput?.permissionSuggestions,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate) && candidate.length > 0) {
+      return candidate;
+    }
+  }
+
+  if (Array.isArray(toolInput?.always) && toolInput.always.length > 0) {
+    return [
+      {
+        type: "addRules",
+        behavior: "allow",
+        destination: "localSettings",
+        rules: toolInput.always,
+      },
+    ];
+  }
+
+  return [];
+}
+
+function getPersistentPermissionUpdate(request) {
+  const suggestions = request.permissionSuggestions || [];
+  const addRules = suggestions.filter(
+    (suggestion) =>
+      suggestion &&
+      typeof suggestion === "object" &&
+      suggestion.type === "addRules",
+  );
+  return addRules.length > 0 ? addRules : null;
 }
 
 function extractElicitationOptions(schema) {
@@ -1563,6 +1625,7 @@ function normalizeInteractionRequest(payload) {
     fieldKey: null,
     questionGroups: [],
     options: [],
+    permissionSuggestions: normalizePermissionSuggestions(payload, toolInput),
     supported: kind === "permission",
     answerMode: kind === "permission" ? "permission" : "elicitation",
     requiresFocus: false,
@@ -1668,6 +1731,7 @@ function setInteractionSubmitting(isSubmitting) {
 
 function renderActionButton({
   label,
+  iconNode,
   description,
   className,
   onClick,
@@ -1700,6 +1764,8 @@ function renderActionButton({
 
     button.appendChild(titleSpan);
     button.appendChild(descSpan);
+  } else if (iconNode) {
+    button.appendChild(iconNode);
   } else {
     button.textContent = label;
   }
@@ -1723,10 +1789,31 @@ function renderActionButton({
   return button;
 }
 
-function renderIconCornerPermissionActions() {
+function createRememberPermissionIcon() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("class", "permission-icon-svg permission-icon-remember");
+
+  const left = document.createElementNS(ns, "path");
+  left.setAttribute("d", "M4.75 12.8l3.05 3.15 5.2-6.1");
+
+  const right = document.createElementNS(ns, "path");
+  right.setAttribute("d", "M10.55 12.8l3.05 3.15 5.2-6.1");
+
+  svg.append(left, right);
+  return svg;
+}
+
+function renderIconCornerPermissionActions(request) {
+  const persistentPermissionUpdate = getPersistentPermissionUpdate(request);
   const meta = document.createElement("div");
   meta.className = "permission-action-meta";
-  meta.textContent = t("permission.scopeOnce");
+  meta.textContent = persistentPermissionUpdate
+    ? t("permission.scopeRememberAvailable")
+    : t("permission.scopeOnce");
   permissionActions.appendChild(meta);
 
   const group = document.createElement("div");
@@ -1741,6 +1828,19 @@ function renderIconCornerPermissionActions() {
     title: t("permission.allow"),
     onClick: () => handleInteraction("allow"),
   });
+  if (persistentPermissionUpdate) {
+    renderActionButton({
+      iconNode: createRememberPermissionIcon(),
+      className: "btn-icon btn-allow btn-remember",
+      parent: group,
+      ariaLabel: t("permission.allowRememberAria"),
+      title: t("permission.allowRemember"),
+      onClick: () =>
+        handleInteraction("allow_and_remember", {
+          updatedPermissions: persistentPermissionUpdate,
+        }),
+    });
+  }
   renderActionButton({
     label: "×",
     className: "btn-icon btn-deny",
@@ -1841,8 +1941,7 @@ function renderAskUserQuestion(request) {
     options.dataset.multiSelect = String(question.multiSelect);
     const layout = getQuestionOptionLayout(question);
     options.dataset.columns = String(layout.columns);
-    options.style.gridTemplateColumns = `repeat(${layout.columns}, minmax(0, ${layout.optionWidth}px))`;
-    options.style.maxWidth = `${layout.maxWidth}px`;
+    options.style.gridTemplateColumns = `repeat(${layout.columns}, minmax(0, 1fr))`;
     options.style.setProperty(
       "--question-option-gap",
       `${QUESTION_OPTION_GAP}px`,
@@ -1954,7 +2053,7 @@ function showInteraction(requestId, request) {
     request.answerMode === "permission"
   ) {
     renderPermissionDetails(request);
-    renderIconCornerPermissionActions();
+    renderIconCornerPermissionActions(request);
     renderDefaultPass = false;
   } else if (request.supported && request.fieldKey) {
     permissionMessage.textContent =
@@ -2112,6 +2211,9 @@ async function collapseIsland() {
   const currentHeight = island.getBoundingClientRect().height;
   island.style.height = `${currentHeight}px`;
   const targetHeight = getCompactTargetHeight();
+  island.classList.remove("expanded");
+  island.classList.add("collapsed");
+  renderLiveStrip();
 
   requestAnimationFrame(() => {
     island.style.height = `${targetHeight}px`;
@@ -2129,7 +2231,8 @@ async function finishCollapse() {
   collapseAfterTransition = false;
   clearAnimationFallback();
 
-  // Now swap class and clean up inline style
+  // Collapse presentation is applied at animation start so the live strip
+  // shows during the close transition. Finish by cleaning up inline sizing.
   island.classList.remove("expanded");
   island.classList.add("collapsed");
   island.style.height = "";
@@ -2188,7 +2291,7 @@ function renderActiveSessions() {
   sessionTree = new SessionTree({
     container: treeContainer,
     sessions: treeData,
-    activeSessionId: activeSessionId?.slice(-4),
+    activeSessionId,
     onSessionClick: (session) => {
       console.log("Session clicked:", session.id);
     },

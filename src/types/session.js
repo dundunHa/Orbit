@@ -22,6 +22,9 @@
  * @property {string} last_event_at - ISO timestamp of the latest hook event for this subagent
  * @property {number} tool_count - Number of tool invocations made by this subagent
  * @property {boolean} ended - Whether SubagentStop has been received
+ * @property {number} tokens_in - Input tokens attributed to this subagent
+ * @property {number} tokens_out - Output tokens attributed to this subagent
+ * @property {string} [model] - Model name observed in the subagent transcript
  * @property {string} [last_tool_name] - Last tool name the subagent invoked
  * @property {string} [last_tool_description] - Last tool description, if the input carried one
  */

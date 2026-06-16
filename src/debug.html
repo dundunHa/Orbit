@@ -428,18 +428,26 @@
       }
 
       function permissionPayload(toolName, toolInput, overrides = {}) {
+        const normalizedToolInput = {
+          ...toolInput,
+        };
+        if (overrides.always) {
+          normalizedToolInput.always = overrides.always;
+        }
+
         return {
           request_id: nextRequestId(overrides.prefix || "debug-permission"),
           kind: "permission",
           session_id: overrides.session_id || "debug-primary",
           tool_name: toolName,
-          tool_input: toolInput,
+          tool_input: normalizedToolInput,
           message:
             overrides.message ||
             "Claude needs approval before continuing this debug scenario.",
           cwd: overrides.cwd || REPO_CWD,
           url: overrides.url || null,
           mcp_server_name: overrides.mcp_server_name || null,
+          permission_suggestions: overrides.permission_suggestions || null,
         };
       }
 
@@ -734,6 +742,7 @@
               permissionPayload("Edit", toolInput, {
                 message:
                   "Claude wants to tune the browser debug panel surface color.",
+                always: ["Edit(src/styles.css)"],
               }),
             ],
           };

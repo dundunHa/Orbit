@@ -2,6 +2,9 @@ use chrono::{DateTime, Datelike, Local, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{Mutex, oneshot};
 
@@ -110,6 +113,97 @@ fn normalize_cli_status_text(raw: &str) -> Option<String> {
     Some(trimmed.chars().take(80).collect())
 }
 
+fn value_string<'a>(value: &'a Value, key: &str, alias: Option<&str>) -> Option<&'a str> {
+    value
+        .get(key)
+        .or_else(|| alias.and_then(|alt| value.get(alt)))
+        .and_then(|v| v.as_str())
+}
+
+fn value_u64(value: &Value, key: &str) -> u64 {
+    value
+        .get(key)
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_i64().and_then(|n| u64::try_from(n).ok()))
+                .or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
+        })
+        .unwrap_or(0)
+}
+
+#[derive(Debug, Default, Clone)]
+struct TranscriptUsage {
+    tokens_in: u64,
+    tokens_out: u64,
+    model: Option<String>,
+}
+
+fn derive_subagent_transcript_path(payload: &HookPayload, agent_id: &str) -> Option<PathBuf> {
+    if let Some(path) = payload.agent_transcript_path.as_ref() {
+        return Some(PathBuf::from(path));
+    }
+
+    let transcript_path = payload.transcript_path.as_ref()?;
+    let base = transcript_path
+        .strip_suffix(".jsonl")
+        .unwrap_or(transcript_path);
+    Some(
+        Path::new(base)
+            .join("subagents")
+            .join(format!("agent-{}.jsonl", agent_id)),
+    )
+}
+
+fn read_subagent_transcript_usage(path: &Path) -> Option<TranscriptUsage> {
+    let file = File::open(path).ok()?;
+    let mut messages = BTreeMap::<String, TranscriptUsage>::new();
+
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(entry) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if value_string(&entry, "type", None) != Some("assistant") {
+            continue;
+        }
+
+        let Some(message) = entry.get("message") else {
+            continue;
+        };
+        let Some(usage) = message.get("usage") else {
+            continue;
+        };
+        let Some(message_id) =
+            value_string(message, "id", None).or_else(|| value_string(&entry, "uuid", None))
+        else {
+            continue;
+        };
+
+        let snapshot = TranscriptUsage {
+            tokens_in: value_u64(usage, "input_tokens")
+                + value_u64(usage, "cache_creation_input_tokens")
+                + value_u64(usage, "cache_read_input_tokens"),
+            tokens_out: value_u64(usage, "output_tokens") + value_u64(usage, "reasoning_tokens"),
+            model: value_string(message, "model", None).map(str::to_string),
+        };
+        messages.insert(message_id.to_string(), snapshot);
+    }
+
+    if messages.is_empty() {
+        return None;
+    }
+
+    let mut total = TranscriptUsage::default();
+    for usage in messages.values() {
+        total.tokens_in += usage.tokens_in;
+        total.tokens_out += usage.tokens_out;
+        if total.model.is_none() {
+            total.model = usage.model.clone();
+        }
+    }
+
+    Some(total)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Subagent {
     pub agent_id: String,
@@ -122,6 +216,13 @@ pub struct Subagent {
     pub tool_count: u32,
     #[serde(default)]
     pub ended: bool,
+    #[serde(default)]
+    pub tokens_in: u64,
+    #[serde(default)]
+    pub tokens_out: u64,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_tool_name: Option<String>,
@@ -169,6 +270,18 @@ pub struct Session {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cli_status_text: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_status_text: Option<String>,
+    #[serde(default)]
+    #[serde(skip)]
+    task_forms: BTreeMap<String, String>,
+    #[serde(default)]
+    #[serde(skip)]
+    pending_task_forms: BTreeMap<String, String>,
+    #[serde(default)]
+    #[serde(skip)]
+    active_task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -200,6 +313,9 @@ pub struct HookPayload {
     #[serde(alias = "toolInput")]
     pub tool_input: Option<Value>,
     #[serde(default)]
+    #[serde(alias = "permissionSuggestions")]
+    pub permission_suggestions: Option<Value>,
+    #[serde(default)]
     #[serde(alias = "toolUseId")]
     pub tool_use_id: Option<String>,
     #[serde(default)]
@@ -216,6 +332,9 @@ pub struct HookPayload {
     pub mode: Option<String>,
     #[serde(default)]
     pub url: Option<String>,
+    #[serde(default)]
+    #[serde(alias = "transcriptPath")]
+    pub transcript_path: Option<String>,
     #[serde(default)]
     #[serde(alias = "elicitationId")]
     pub elicitation_id: Option<String>,
@@ -278,7 +397,7 @@ impl PermissionDecision {
     }
 }
 
-pub type SessionMap = Arc<Mutex<HashMap<String, Session>>>;
+pub type SessionMap = Arc<dashmap::DashMap<String, Session>>;
 pub type PendingPermissions = Arc<Mutex<HashMap<String, PendingPermission>>>;
 pub type ConnectionCount = Arc<std::sync::atomic::AtomicU32>;
 
@@ -400,7 +519,7 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(dashmap::DashMap::new()),
             pending_permissions: Arc::new(Mutex::new(HashMap::new())),
             connection_count: Arc::new(std::sync::atomic::AtomicU32::new(0)),
         }
@@ -410,9 +529,6 @@ impl AppState {
 impl Session {
     pub fn new(id: String, cwd: String, pid: Option<u32>, tty: Option<String>) -> Self {
         let now = Utc::now();
-        let (title, title_source) = Self::fetch_title_from_claude_sessions(&id)
-            .map(|(t, s)| (Some(t), Some(s)))
-            .unwrap_or((None, None));
         Self {
             id,
             cwd,
@@ -424,17 +540,21 @@ impl Session {
             tool_count: 0,
             pid,
             tty,
-            title,
-            title_source,
+            title: None,
+            title_source: None,
             tokens_in: 0,
             tokens_out: 0,
             cost_usd: 0.0,
             model: None,
             cli_status_text: None,
+            task_status_text: None,
+            task_forms: BTreeMap::new(),
+            pending_task_forms: BTreeMap::new(),
+            active_task_id: None,
         }
     }
 
-    fn set_title_if_higher_priority(&mut self, title: String, source: TitleSource) {
+    pub fn set_title_if_higher_priority(&mut self, title: String, source: TitleSource) {
         match self.title_source {
             Some(current) if current >= source => {}
             _ => {
@@ -444,7 +564,7 @@ impl Session {
         }
     }
 
-    fn fetch_title_from_claude_sessions(session_id: &str) -> Option<(String, TitleSource)> {
+    pub fn fetch_title_from_claude_sessions(session_id: &str) -> Option<(String, TitleSource)> {
         let home = dirs_next::home_dir()?;
 
         let sessions_dir = home.join(".claude").join("sessions");
@@ -496,18 +616,102 @@ impl Session {
         {
             self.set_title_if_higher_priority(normalized, TitleSource::SessionsMetadata);
         }
-        self.apply_cli_status_text(update.status.as_deref());
+        let has_cli_status_text = self.apply_cli_status_text(update.status.as_deref());
+        if has_cli_status_text {
+            self.restore_anomaly_previous_status();
+        }
         self.last_event_at = Utc::now();
     }
 
-    fn apply_cli_status_text(&mut self, status: Option<&str>) {
+    fn apply_cli_status_text(&mut self, status: Option<&str>) -> bool {
         if let Some(raw) = status {
             self.cli_status_text = normalize_cli_status_text(raw);
+            return self.cli_status_text.is_some();
         }
+
+        false
     }
 
     fn clear_cli_status_text(&mut self) {
         self.cli_status_text = None;
+    }
+
+    fn set_task_status_text(&mut self, status: Option<&str>) {
+        self.task_status_text = status.and_then(normalize_cli_status_text);
+    }
+
+    fn clear_task_status_text(&mut self) {
+        self.active_task_id = None;
+        self.task_status_text = None;
+    }
+
+    fn remember_pending_task_form(&mut self, payload: &HookPayload) {
+        let Some(tool_use_id) = payload.tool_use_id.as_ref() else {
+            return;
+        };
+        let Some(tool_input) = payload.tool_input.as_ref() else {
+            return;
+        };
+        let Some(active_form) = value_string(tool_input, "activeForm", Some("active_form")) else {
+            return;
+        };
+        let Some(normalized) = normalize_cli_status_text(active_form) else {
+            return;
+        };
+        self.pending_task_forms
+            .insert(tool_use_id.clone(), normalized);
+    }
+
+    fn record_created_task_form(&mut self, payload: &HookPayload) {
+        let Some(tool_use_id) = payload.tool_use_id.as_ref() else {
+            return;
+        };
+        let Some(active_form) = self.pending_task_forms.remove(tool_use_id) else {
+            return;
+        };
+        let Some(tool_response) = payload.tool_response.as_ref() else {
+            return;
+        };
+        let task_id = tool_response
+            .get("task")
+            .and_then(|task| value_string(task, "id", None))
+            .or_else(|| value_string(tool_response, "taskId", Some("task_id")));
+        if let Some(task_id) = task_id {
+            self.task_forms.insert(task_id.to_string(), active_form);
+        }
+    }
+
+    fn apply_task_update(&mut self, payload: &HookPayload) {
+        let Some(tool_input) = payload.tool_input.as_ref() else {
+            return;
+        };
+        let Some(task_id) = value_string(tool_input, "taskId", Some("task_id")) else {
+            return;
+        };
+        let status = value_string(tool_input, "status", None).unwrap_or_default();
+        match status {
+            "in_progress" => {
+                self.active_task_id = Some(task_id.to_string());
+                let task_status_text = self.task_forms.get(task_id).cloned();
+                self.set_task_status_text(task_status_text.as_deref());
+            }
+            "completed" | "cancelled" | "failed" => {
+                self.task_forms.remove(task_id);
+                if self.active_task_id.as_deref() == Some(task_id) {
+                    self.clear_task_status_text();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn restore_anomaly_previous_status(&mut self) {
+        if let SessionStatus::Anomaly {
+            previous_status, ..
+        } = &self.status
+        {
+            self.status = *previous_status.clone();
+        }
     }
 
     pub fn clear_waiting_for_approval(&mut self) -> bool {
@@ -543,6 +747,11 @@ impl Session {
             }
             "PreToolUse" => {
                 self.tool_count += 1;
+                if payload.tool_name.as_deref() == Some("TaskCreate") {
+                    self.remember_pending_task_form(payload);
+                } else if payload.tool_name.as_deref() == Some("TaskUpdate") {
+                    self.apply_task_update(payload);
+                }
                 self.status = SessionStatus::RunningTool {
                     tool_name: payload.tool_name.clone().unwrap_or_default(),
                     description: payload
@@ -554,6 +763,9 @@ impl Session {
                 };
             }
             "PostToolUse" | "PostToolUseFailure" => {
+                if payload.tool_name.as_deref() == Some("TaskCreate") {
+                    self.record_created_task_form(payload);
+                }
                 self.status = SessionStatus::Processing;
             }
             "PermissionRequest" => {
@@ -585,10 +797,12 @@ impl Session {
                 // LLM generation stopped (reply completed, interrupted by user Ctrl+C, or subagent finished)
                 // Status dot becomes GREEN (idle) - session continues, waiting for next input
                 self.clear_cli_status_text();
+                self.clear_task_status_text();
                 self.status = SessionStatus::WaitingForInput;
             }
             "SessionStart" => {
                 self.clear_cli_status_text();
+                self.clear_task_status_text();
                 self.status = SessionStatus::WaitingForInput;
                 self.refresh_title_from_claude();
             }
@@ -596,11 +810,13 @@ impl Session {
                 // Entire session ended (user closed terminal, exited Claude Code)
                 // Status dot becomes GRAY (ended) - session is archived to history, cannot continue
                 self.clear_cli_status_text();
+                self.clear_task_status_text();
                 self.status = SessionStatus::Ended;
             }
             "Notification" => match payload.notification_type.as_deref() {
                 Some("idle_prompt") => {
                     self.clear_cli_status_text();
+                    self.clear_task_status_text();
                     self.status = SessionStatus::WaitingForInput;
                 }
                 Some("permission_prompt") => {
@@ -647,6 +863,9 @@ impl Session {
                 last_event_at: now,
                 tool_count: 0,
                 ended: false,
+                tokens_in: 0,
+                tokens_out: 0,
+                model: None,
                 last_tool_name: None,
                 last_tool_description: None,
             });
@@ -671,6 +890,16 @@ impl Session {
                 entry.ended = true;
             }
             _ => {}
+        }
+
+        if let Some(path) = derive_subagent_transcript_path(payload, &agent_id)
+            && let Some(usage) = read_subagent_transcript_usage(&path)
+        {
+            entry.tokens_in = usage.tokens_in;
+            entry.tokens_out = usage.tokens_out;
+            if usage.model.is_some() {
+                entry.model = usage.model;
+            }
         }
     }
 
@@ -759,6 +988,7 @@ mod tests {
             cwd: "/tmp".to_string(),
             tool_name: None,
             tool_input: None,
+            permission_suggestions: None,
             tool_use_id: None,
             tool_response: None,
             mcp_server_name: None,
@@ -766,6 +996,7 @@ mod tests {
             message: None,
             mode: None,
             url: None,
+            transcript_path: None,
             elicitation_id: None,
             requested_schema: None,
             action: None,
@@ -867,6 +1098,33 @@ mod tests {
     }
 
     #[test]
+    fn test_statusline_update_restores_anomaly_when_cli_status_is_live() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        session.status = SessionStatus::Anomaly {
+            idle_seconds: 75,
+            previous_status: Box::new(SessionStatus::Processing),
+        };
+
+        let update = StatuslineUpdate {
+            session_id: "test".to_string(),
+            cwd: None,
+            tokens_in: 1000,
+            tokens_out: 500,
+            cost_usd: 0.01,
+            model: None,
+            status: Some("Concocting...".to_string()),
+            title: None,
+            pid: None,
+            tty: None,
+        };
+
+        session.apply_statusline_update(&update);
+
+        assert!(matches!(session.status, SessionStatus::Processing));
+        assert_eq!(session.cli_status_text.as_deref(), Some("Concocting..."));
+    }
+
+    #[test]
     fn test_statusline_update_applies_external_title() {
         let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
 
@@ -897,6 +1155,109 @@ mod tests {
         session.apply_event(&payload);
 
         assert_eq!(session.cli_status_text.as_deref(), Some("Stewing"));
+    }
+
+    #[test]
+    fn test_task_update_uses_active_form_as_fallback_status_text() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+
+        let mut task_create = make_hook_payload("PreToolUse");
+        task_create.tool_name = Some("TaskCreate".to_string());
+        task_create.tool_use_id = Some("tool-create".to_string());
+        task_create.tool_input = Some(serde_json::json!({
+            "subject": "更新 PromptSets.test.tsx 适配新交互模型",
+            "activeForm": "新 PromptSets 测试…"
+        }));
+        session.apply_event(&task_create);
+
+        let mut task_create_done = make_hook_payload("PostToolUse");
+        task_create_done.tool_name = Some("TaskCreate".to_string());
+        task_create_done.tool_use_id = Some("tool-create".to_string());
+        task_create_done.tool_response = Some(serde_json::json!({
+            "task": {
+                "id": "7"
+            }
+        }));
+        session.apply_event(&task_create_done);
+
+        let mut task_update = make_hook_payload("PreToolUse");
+        task_update.tool_name = Some("TaskUpdate".to_string());
+        task_update.tool_input = Some(serde_json::json!({
+            "taskId": "7",
+            "status": "in_progress"
+        }));
+        session.apply_event(&task_update);
+
+        assert_eq!(
+            session.task_status_text.as_deref(),
+            Some("新 PromptSets 测试…")
+        );
+        assert_eq!(session.active_task_id.as_deref(), Some("7"));
+    }
+
+    #[test]
+    fn test_stop_clears_task_status_fallback_text() {
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        session.task_status_text = Some("新 PromptSets 测试…".to_string());
+        session.active_task_id = Some("7".to_string());
+
+        session.apply_event(&make_hook_payload("Stop"));
+
+        assert_eq!(session.task_status_text, None);
+        assert_eq!(session.active_task_id, None);
+    }
+
+    #[test]
+    fn test_subagent_pretooluse_loads_tokens_from_agent_transcript() {
+        let home = TestHome::new();
+        let transcript_path = home.path.join("agent-sub.jsonl");
+        fs::write(
+            &transcript_path,
+            concat!(
+                "{\"type\":\"assistant\",\"uuid\":\"evt-1\",\"message\":{\"id\":\"msg-1\",\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":5,\"cache_read_input_tokens\":0,\"output_tokens\":3}}}\n",
+                "{\"type\":\"assistant\",\"uuid\":\"evt-2\",\"message\":{\"id\":\"msg-1\",\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":5,\"cache_read_input_tokens\":0,\"output_tokens\":9}}}\n",
+                "{\"type\":\"assistant\",\"uuid\":\"evt-3\",\"message\":{\"id\":\"msg-2\",\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":8,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":2,\"output_tokens\":4}}}\n"
+            ),
+        )
+        .unwrap();
+
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        let mut payload = make_hook_payload("PreToolUse");
+        payload.agent_id = Some("aaa111".to_string());
+        payload.agent_transcript_path = Some(transcript_path.display().to_string());
+        payload.tool_name = Some("Bash".to_string());
+
+        session.apply_subagent_event(&payload);
+
+        let subagent = session.agents.get("aaa111").unwrap();
+        assert_eq!(subagent.tokens_in, 25);
+        assert_eq!(subagent.tokens_out, 13);
+        assert_eq!(subagent.model.as_deref(), Some("claude-sonnet-4-6"));
+    }
+
+    #[test]
+    fn test_subagent_pretooluse_derives_transcript_path_from_parent_transcript() {
+        let home = TestHome::new();
+        let session_dir = home.path.join("session-123");
+        let subagents_dir = session_dir.join("subagents");
+        fs::create_dir_all(&subagents_dir).unwrap();
+        let transcript_path = subagents_dir.join("agent-aaa111.jsonl");
+        fs::write(
+            &transcript_path,
+            "{\"type\":\"assistant\",\"uuid\":\"evt-1\",\"message\":{\"id\":\"msg-1\",\"model\":\"claude-sonnet-4-6\",\"usage\":{\"input_tokens\":12,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":3,\"output_tokens\":7}}}\n",
+        )
+        .unwrap();
+
+        let mut session = Session::new("test".to_string(), "/tmp".to_string(), None, None);
+        let mut payload = make_hook_payload("PreToolUse");
+        payload.agent_id = Some("aaa111".to_string());
+        payload.transcript_path = Some(home.path.join("session-123.jsonl").display().to_string());
+
+        session.apply_subagent_event(&payload);
+
+        let subagent = session.agents.get("aaa111").unwrap();
+        assert_eq!(subagent.tokens_in, 15);
+        assert_eq!(subagent.tokens_out, 7);
     }
 
     #[test]

@@ -274,7 +274,8 @@ async function handlePermission(client, permission) {
 
   const behavior = response?.hookSpecificOutput?.decision?.behavior;
   if (behavior === "allow") {
-    await replyPermission(client, permission, "once");
+    const updatedPermissions = response?.hookSpecificOutput?.decision?.updatedPermissions;
+    await replyPermission(client, permission, updatedPermissions ? "always" : "once");
   } else if (behavior === "deny") {
     await replyPermission(client, permission, "reject");
   }

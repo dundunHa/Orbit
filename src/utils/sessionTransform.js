@@ -90,7 +90,7 @@ function transformSession(session, level = 0) {
   const tokenStats = getSessionTokenStats(session);
 
   return {
-    id: session.id?.slice(-4) || session.id || "unknown",
+    id: session.id || "unknown",
     status: STATUS_MAP[session.status?.type] || "pending",
     description:
       session.title || session.status?.description || "No description",
@@ -121,29 +121,31 @@ function transformSubagent(agent, level) {
         Math.floor((new Date(lastEventAt) - new Date(startedAt)) / 1000),
       )
     : 0;
-  const shortId = agent.agent_id ? agent.agent_id.slice(-4) : "sub";
   const statusKey = agent.ended ? "completed" : "running";
-  const description =
-    agent.last_tool_description ||
-    agent.last_tool_name ||
-    agent.agent_type ||
-    "subagent";
+  const normalizedAgentType =
+    typeof agent.agent_type === "string" ? agent.agent_type.trim() : "";
+  const description = normalizedAgentType || "subagent";
+  const input = Math.max(0, Number(agent.tokens_in) || 0);
+  const output = Math.max(0, Number(agent.tokens_out) || 0);
+  const total = input + output;
+  const averageOutputTps = durationSecs > 0 ? output / durationSecs : 0;
+  const hasTokens = total > 0;
 
   return {
-    id: shortId,
+    id: agent.agent_id || "subagent",
     status: statusKey,
     description,
-    agent: agent.agent_type ? `@${agent.agent_type}` : null,
+    agent: null,
     metadata: {
       duration: formatDuration(durationSecs),
-      tokens: "—",
-      tokensIn: "—",
-      tokensOut: "—",
-      tokensTotal: "—",
-      tokensInCompact: "—",
-      tokensOutCompact: "—",
-      outputRateCompact: "—",
-      averageTps: "—",
+      tokens: hasTokens ? formatTokenCount(total) : "—",
+      tokensIn: hasTokens ? formatTokenCount(input) : "—",
+      tokensOut: hasTokens ? formatTokenCount(output) : "—",
+      tokensTotal: hasTokens ? formatTokenCount(total) : "—",
+      tokensInCompact: hasTokens ? formatCompactTokenCount(input) : "—",
+      tokensOutCompact: hasTokens ? formatCompactTokenCount(output) : "—",
+      outputRateCompact: hasTokens ? formatCompactTokenRate(averageOutputTps) : "—",
+      averageTps: hasTokens ? formatTokenRate(averageOutputTps) : "—",
     },
     started_at: startedAt,
     level,

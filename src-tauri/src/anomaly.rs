@@ -16,41 +16,36 @@ pub async fn start(app_handle: tauri::AppHandle) {
             None => continue,
         };
 
-        // Collect updates while holding the lock, then emit after releasing
-        let updates: Vec<Session> = {
-            let mut sessions = sessions_state.lock().await;
-            let now = chrono::Utc::now();
-            let mut changed = Vec::new();
+        let now = chrono::Utc::now();
+        let mut updates: Vec<Session> = Vec::new();
 
-            for session in sessions.values_mut() {
-                let delta = now.signed_duration_since(session.last_event_at);
-                let idle_secs = delta.num_seconds().max(0) as u64;
+        for mut entry in sessions_state.iter_mut() {
+            let session = entry.value_mut();
+            let delta = now.signed_duration_since(session.last_event_at);
+            let idle_secs = delta.num_seconds().max(0) as u64;
 
-                match &session.status {
-                    SessionStatus::Processing | SessionStatus::RunningTool { .. } => {
-                        if idle_secs >= ANOMALY_THRESHOLD_SECS {
-                            session.status = SessionStatus::Anomaly {
-                                idle_seconds: idle_secs,
-                                previous_status: Box::new(session.status.clone()),
-                            };
-                            changed.push(session.clone());
-                        }
-                    }
-                    SessionStatus::Anomaly {
-                        previous_status, ..
-                    } => {
+            match &session.status {
+                SessionStatus::Processing | SessionStatus::RunningTool { .. } => {
+                    if idle_secs >= ANOMALY_THRESHOLD_SECS {
                         session.status = SessionStatus::Anomaly {
                             idle_seconds: idle_secs,
-                            previous_status: previous_status.clone(),
+                            previous_status: Box::new(session.status.clone()),
                         };
-                        changed.push(session.clone());
+                        updates.push(session.clone());
                     }
-                    _ => {}
                 }
+                SessionStatus::Anomaly {
+                    previous_status, ..
+                } => {
+                    session.status = SessionStatus::Anomaly {
+                        idle_seconds: idle_secs,
+                        previous_status: previous_status.clone(),
+                    };
+                    updates.push(session.clone());
+                }
+                _ => {}
             }
-
-            changed
-        };
+        }
 
         for session in updates {
             let _ = app_handle.emit("session-update", session);

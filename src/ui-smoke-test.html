@@ -756,6 +756,37 @@
           },
         ],
         [
+          "Collapse switches back to live strip before close animation finishes",
+          async () => {
+            const island = document.getElementById("island");
+            emit("island-hover-enter");
+            await settle(80);
+            assert(
+              island.classList.contains("expanded"),
+              "hover enter should expand the island",
+            );
+
+            emit("island-hover-leave");
+            await settle(240);
+
+            assert(
+              island.classList.contains("collapsed"),
+              "collapse should switch presentation state immediately",
+            );
+            assert(
+              !document.querySelector(".live-strip")?.hidden,
+              "live strip should be visible during collapse",
+            );
+            assert(
+              getComputedStyle(document.querySelector(".detail")).display ===
+                "none",
+              "expanded detail should hide as soon as collapse begins",
+            );
+
+            await settle(200);
+          },
+        ],
+        [
           "Icon Corner permission renders three compact actions",
           async () => {
             emit("interaction-request", permissionPayload("perm-icon"));

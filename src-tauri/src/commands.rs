@@ -129,13 +129,21 @@ fn dispatch_on_main(f: impl FnOnce() + Send + 'static) {
 
 /// Dispatch a closure to the macOS main thread synchronously via GCD, returning its value.
 /// If already on the main thread, calls `f` directly to avoid deadlock.
+///
+/// Returns `None` if the main thread fails to respond within `MAIN_THREAD_TIMEOUT`.
+/// This bounded wait prevents the "tokio worker deadlocks forever on a stuck main
+/// thread" class of hangs (see docs/solutions / analysis 2026-04-27).
 #[cfg(target_os = "macos")]
-fn dispatch_sync_main<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+fn dispatch_sync_main<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
     use std::ffi::c_void;
     use std::sync::mpsc;
+    use std::time::Duration;
+
+    const MAIN_THREAD_TIMEOUT: Duration = Duration::from_millis(500);
+
     unsafe extern "C" {
         static _dispatch_main_q: c_void;
-        fn dispatch_sync_f(
+        fn dispatch_async_f(
             queue: *const c_void,
             context: *mut c_void,
             work: unsafe extern "C" fn(*mut c_void),
@@ -143,7 +151,7 @@ fn dispatch_sync_main<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static)
         fn pthread_main_np() -> i32;
     }
     if unsafe { pthread_main_np() } != 0 {
-        return f();
+        return Some(f());
     }
     let (tx, rx) = mpsc::sync_channel::<T>(1);
     let boxed: Box<Box<dyn FnOnce()>> = Box::new(Box::new(move || {
@@ -156,14 +164,22 @@ fn dispatch_sync_main<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static)
         }
     }
     unsafe {
-        dispatch_sync_f(
+        dispatch_async_f(
             &_dispatch_main_q as *const c_void,
             Box::into_raw(boxed) as *mut c_void,
             trampoline,
         );
     }
-    rx.recv()
-        .expect("dispatch_sync_main: main thread failed to respond")
+    match rx.recv_timeout(MAIN_THREAD_TIMEOUT) {
+        Ok(v) => Some(v),
+        Err(_) => {
+            log::warn!(
+                "[Orbit] dispatch_sync_main: main thread did not respond within {:?}",
+                MAIN_THREAD_TIMEOUT
+            );
+            None
+        }
+    }
 }
 
 pub fn set_window_frame_for_geometry_pub(
@@ -193,7 +209,8 @@ fn current_window_height(window: &tauri::WebviewWindow) -> Option<f64> {
             let view_addr = appkit.ns_view.as_ptr() as usize;
             // AppKit must be accessed on the main thread; dispatch_sync_main ensures this
             // regardless of which thread the Tauri command handler or async task is running on.
-            return dispatch_sync_main(move || unsafe { current_native_window_height(view_addr) });
+            return dispatch_sync_main(move || unsafe { current_native_window_height(view_addr) })
+                .flatten();
         }
         None
     }
@@ -276,13 +293,14 @@ pub fn get_notch_info() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 pub async fn get_sessions(sessions: tauri::State<'_, SessionMap>) -> Result<Vec<Session>, String> {
-    let sessions = sessions.lock().await;
-    Ok(sessions.values().cloned().collect())
+    Ok(sessions.iter().map(|entry| entry.value().clone()).collect())
 }
 
 #[tauri::command]
 pub async fn get_history() -> Result<Vec<history::HistoryEntry>, String> {
-    Ok(history::load_entries())
+    tokio::task::spawn_blocking(history::load_entries)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -318,12 +336,17 @@ async fn clear_session_waiting_for_approval(
     app_handle: &tauri::AppHandle,
     session_id: &str,
 ) {
-    let mut sessions = sessions.lock().await;
-    if let Some(session) = sessions.get_mut(session_id)
-        && session.clear_waiting_for_approval()
-    {
-        let _ = app_handle.emit("session-update", session.clone());
-    }
+    let snapshot = {
+        let mut entry = match sessions.get_mut(session_id) {
+            Some(e) => e,
+            None => return,
+        };
+        if !entry.clear_waiting_for_approval() {
+            return;
+        }
+        entry.clone()
+    };
+    let _ = app_handle.emit("session-update", snapshot);
 }
 
 #[tauri::command]
